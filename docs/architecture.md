@@ -57,9 +57,32 @@ pending_payment, paid, no_sale. A failed payment attempt leaves pending_payment 
 
 ## 8. Data model (tables)
 
-users, user_roles, categories (self-referencing), auctions (includes `original_end_time`, anti-sniping parameters, reserve nullable), auction_images, bids (append-only), proxy_bids, watchlist, settlements, payments, notifications, audit_log (append-only), sessions or refresh_tokens (hashed).
+Migrations `0001` to `0005` in `backend/alembic/versions/`. Money is BIGINT paise, every timestamp is `timestamptz`, every FK is `ON DELETE RESTRICT`. Constraint names follow the naming convention in `app/models/base.py` (`pk_`, `uq_`, `ck_`, `fk_`, `ix_`).
 
-Unique constraints: bids(auction_id, sequence_no); settlements(auction_id); settlements idempotency key; payments(gateway_ref); payments idempotency key; proxy_bids(auction_id, bidder_id) for active rows.
+| Table | PK | Key constraints and indexes |
+|---|---|---|
+| users | uuid | unique index on `lower(email)`; status CHECK (pending_verification, active, suspended) |
+| user_roles | (user_id, role) | role CHECK (bidder, seller, admin) |
+| sessions | uuid | `refresh_token_hash` UNIQUE; `revoked_at` for immediate revocation |
+| email_verification_tokens, password_reset_tokens | bigint | `token_hash` UNIQUE |
+| categories | bigint | `slug` UNIQUE; self-FK `parent_id`, indexed |
+| auctions | uuid | CHECKs: end > start, starting_price >= 0, min_increment > 0, reserve NULL or >= starting_price, extension_count 0..10, status in the 7 states. Trigger blocks any change to `original_end_time` (FR-14). Indexes: (status, start_time), (status, end_time), seller_id, category_id, GIN on generated `search_vector` ('simple' config, title weight A, description weight B) |
+| auction_images | bigint | index on auction_id |
+| bids (append-only) | bigint | UNIQUE (auction_id, sequence_no); amount > 0; bid_type manual or automatic; `end_time_after` (FR-55). Indexes: (auction_id, sequence_no DESC), (bidder_id, created_at DESC) |
+| proxy_bids | bigint | partial UNIQUE (auction_id, bidder_id) WHERE is_active; max_amount > 0 |
+| watchlist | (user_id, auction_id) | |
+| settlements | uuid | UNIQUE auction_id; UNIQUE idempotency_key; CHECK no_sale iff winner_id and final_price are NULL |
+| payments | uuid | UNIQUE gateway_ref; UNIQUE idempotency_key; partial UNIQUE settlement_id WHERE status = 'succeeded' (failed attempts can be retried) |
+| notifications | bigint | UNIQUE dedupe_key; type CHECK; partial index (user_id, created_at DESC) WHERE read_at IS NULL |
+| notification_preferences | (user_id, type) | type CHECK |
+| audit_log (append-only) | bigint | `actor_id` NULL for system actions. Indexes: (entity_type, entity_id), (actor_id, created_at), created_at |
+
+### Database roles (DC-4, FR-79)
+
+| Role | Used by | Privileges |
+|---|---|---|
+| owner (`POSTGRES_USER`) | Alembic only, via `MIGRATION_DATABASE_URL` | owns every object |
+| `auction_app` | api, worker, beat, via `DATABASE_URL` | SELECT, INSERT, UPDATE, DELETE on ordinary tables; SELECT, INSERT only on `bids` and `audit_log`; SELECT only on `alembic_version`; USAGE on schema and sequences; no TRUNCATE, no default privileges |
 
 ## 9. Error codes (add new ones here)
 

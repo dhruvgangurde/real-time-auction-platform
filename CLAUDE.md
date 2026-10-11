@@ -114,9 +114,11 @@ Keep this section current as commands come into existence.
 ```
 cp .env.example .env                           # first run only
 docker compose up --build                      # start everything
-docker compose exec api pytest                 # run tests
+docker compose exec api pytest                 # run all tests
+docker compose exec api pytest tests/db        # DB integration tests (own auction_test DB)
 docker compose exec api ruff check .           # lint
 docker compose exec api ruff format --check .  # format check
-docker compose exec api alembic upgrade head   # apply migrations
+docker compose exec api alembic upgrade head   # apply migrations (owner role, MIGRATION_DATABASE_URL)
+docker compose exec api alembic check          # models vs migrations drift check
 curl localhost:8010/api/v1/health/ready        # readiness check
 ```

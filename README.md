@@ -11,16 +11,24 @@ docker compose up --build
 
 ```
 docker compose exec api pytest
+docker compose exec api pytest tests/db
 docker compose exec api ruff check .
 docker compose exec api ruff format --check .
 ```
 
+`docker compose ps` shows `migrate` as `Exited (0)`. That is expected: it is a one-shot service that applies migrations before api, worker and beat start.
+
 ## Migrations
+
+Migrations run as the database owner (`MIGRATION_DATABASE_URL`). The app runs as the restricted `auction_app` role (`DATABASE_URL`).
 
 ```
 docker compose exec api alembic upgrade head
-docker compose exec api alembic revision --autogenerate -m "message"
+docker compose exec api alembic downgrade -1
+docker compose exec api alembic check
 ```
+
+New migrations are hand-written in `backend/alembic/versions/` and must grant privileges on any new table to the app role explicitly.
 
 ## Host ports
 

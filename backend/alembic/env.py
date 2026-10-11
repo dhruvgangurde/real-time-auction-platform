@@ -1,4 +1,4 @@
-"""Alembic environment. DATABASE_URL comes from Settings, not alembic.ini (NFR-26)."""
+"""Alembic environment. Runs as the owner role via MIGRATION_DATABASE_URL from Settings (NFR-26)."""
 
 import asyncio
 from logging.config import fileConfig
@@ -9,19 +9,19 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import settings
+from app.models import Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", settings.migration_database_url)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Models are added in Phase 2; metadata stays empty until then.
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.database_url, target_metadata=target_metadata, literal_binds=True
+        url=settings.migration_database_url, target_metadata=target_metadata, literal_binds=True
     )
     with context.begin_transaction():
         context.run_migrations()
