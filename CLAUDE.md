@@ -112,8 +112,11 @@ These come from the SRS. Breaking one is a bug, even if the tests pass.
 Keep this section current as commands come into existence.
 
 ```
+cp .env.example .env                           # first run only
 docker compose up --build                      # start everything
 docker compose exec api pytest                 # run tests
+docker compose exec api ruff check .           # lint
+docker compose exec api ruff format --check .  # format check
 docker compose exec api alembic upgrade head   # apply migrations
 curl localhost:8010/api/v1/health/ready        # readiness check
 ```
