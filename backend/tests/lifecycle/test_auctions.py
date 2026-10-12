@@ -399,3 +399,12 @@ async def test_seller_bid_refused_over_rest(api: AsyncClient, make_user, seeded)
             f"/api/v1/auctions/{auction_id}/{path}", json=body, headers=bearer(token)
         )
         assert (r.status_code, _code(r)) == (403, "SELLER_CANNOT_BID")
+
+
+async def test_image_upload_body_is_declared_in_openapi(api: AsyncClient) -> None:
+    """NFR-24: the raw image body is documented, so Swagger offers a file upload."""
+    spec = (await api.get("/openapi.json")).json()
+    body = spec["paths"]["/api/v1/auctions/{auction_id}/images"]["post"]["requestBody"]
+    assert body["required"] is True
+    assert set(body["content"]) == {"image/jpeg", "image/png", "image/webp"}
+    assert {c["schema"]["format"] for c in body["content"].values()} == {"binary"}

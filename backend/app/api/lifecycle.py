@@ -55,7 +55,20 @@ async def cancel_auction(
     return await auctions.cancel(user, auction_id)
 
 
-@router.post("/{auction_id}/images", status_code=201)
+_BINARY = {"schema": {"type": "string", "format": "binary"}}
+
+
+# the body is read as a stream, so FastAPI cannot infer it; declared so Swagger can upload a file
+@router.post(
+    "/{auction_id}/images",
+    status_code=201,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {t: _BINARY for t in ("image/jpeg", "image/png", "image/webp")},
+        }
+    },
+)
 async def add_image(
     auction_id: UUID,
     request: Request,
