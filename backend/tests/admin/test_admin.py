@@ -1,6 +1,7 @@
 """Administrator endpoints and the settlement read (FR-51, FR-63, FR-64, FR-75, FR-76, FR-80,
 BR-9, BR-10, BR-12, NFR-14), through the app in process against real Postgres and Redis."""
 
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -719,3 +720,85 @@ async def test_granting_a_role_keeps_sessions(
     assert await _sessions_open(db, user_id) == 1
     (row,) = await _audits(db, user_id, "role_granted")
     assert json.loads(row["after"]) == {"roles": ["bidder", "seller"]}
+
+
+# ------------------------------------------------------------------ admin lockout (FR-75)
+
+
+async def _only_active_admins(db: asyncpg.Connection, *keep: UUID) -> None:
+    """Earlier tests leave active admins behind; for a last-admin check only `keep` count."""
+    await db.execute(
+        "UPDATE users SET status = 'suspended' WHERE status = 'active' AND NOT (id = ANY($1)) "
+        "AND id IN (SELECT user_id FROM user_roles WHERE role = 'admin')",
+        list(keep),
+    )
+
+
+async def test_admin_cannot_suspend_or_demote_themselves(
+    api: AsyncClient, make_user: Any, db: asyncpg.Connection
+) -> None:
+    """FR-75: CANNOT_TARGET_SELF; nothing changes and the admin keeps working."""
+    admin_id, token = await make_user("admin")
+    url = f"/api/v1/admin/users/{admin_id}"
+    for method, path in (("POST", f"{url}/suspend"), ("DELETE", f"{url}/roles/admin")):
+        refused = await api.request(method, path, json=REASON, headers=bearer(token))
+        assert (refused.status_code, refused.json()["error"]["code"]) == (
+            409,
+            "CANNOT_TARGET_SELF",
+        )
+    assert await db.fetchval("SELECT status FROM users WHERE id = $1", admin_id) == "active"
+    roles = await db.fetch("SELECT role FROM user_roles WHERE user_id = $1", admin_id)
+    assert "admin" in {r["role"] for r in roles}
+    assert (await api.get("/api/v1/admin/users", headers=bearer(token))).status_code == 200
+    # removing one's own non-admin role is not a lockout risk
+    own_seller = await api.request(
+        "DELETE", f"{url}/roles/seller", json=REASON, headers=bearer(token)
+    )
+    assert own_seller.status_code == 200
+
+
+async def test_two_admins_suspending_each_other_keep_one(
+    make_user: Any, user_service: Any, db: asyncpg.Connection
+) -> None:
+    """FR-75: the only two active admins suspend each other at the same moment; the admin-set
+    lock decides them in turn, so one succeeds and the other is LAST_ADMIN."""
+    first, _ = await make_user("admin")
+    second, _ = await make_user("admin")
+    await _only_active_admins(db, first, second)
+    outcomes = await asyncio.gather(
+        user_service.suspend_user(first, second, "mutual"),
+        user_service.suspend_user(second, first, "mutual"),
+        return_exceptions=True,
+    )
+    errors = [o for o in outcomes if isinstance(o, Exception)]
+    assert len(errors) == 1 and getattr(errors[0], "code", None) == "LAST_ADMIN"
+    statuses = await db.fetch(
+        "SELECT status FROM users WHERE id = ANY($1::uuid[])", [first, second]
+    )
+    assert sorted(r["status"] for r in statuses) == ["active", "suspended"]
+
+
+async def test_last_active_admin_cannot_be_demoted(
+    api: AsyncClient, make_user: Any, user_service: Any, db: asyncpg.Connection
+) -> None:
+    """FR-75: with one active admin left, neither the operator nor anyone else can remove
+    that admin role or suspend that account."""
+    last, token = await make_user("admin")
+    await _only_active_admins(db, last)
+    for call in (
+        user_service.change_role(last, "admin", grant=False, reason="cli"),
+        user_service.suspend_user(uuid4(), last, "operator"),
+    ):
+        with pytest.raises(AppError) as info:
+            await call
+        assert info.value.code == "LAST_ADMIN"
+    assert (await api.get("/api/v1/admin/users", headers=bearer(token))).status_code == 200
+    # with a second active admin the first can be demoted again
+    other, other_token = await make_user("admin")
+    response = await api.request(
+        "DELETE",
+        f"/api/v1/admin/users/{last}/roles/admin",
+        json=REASON,
+        headers=bearer(other_token),
+    )
+    assert response.json()["roles"] == ["bidder"]

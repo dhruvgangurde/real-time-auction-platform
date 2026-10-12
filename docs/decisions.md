@@ -2,6 +2,9 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-13 The platform always keeps an active administrator (FR-75)
+An end-to-end test showed an admin could suspend their own account, which locked out the only admin. Now: an admin cannot suspend themselves or remove their own admin role (CANNOT_TARGET_SELF, 409), and nobody (admin API or operator CLI) can suspend or demote the last active administrator (LAST_ADMIN, 409). "Active administrator" means the admin role and status active. Every change that can remove one takes a transaction-scoped advisory lock first, so two admins suspending or demoting each other at the same moment are decided one after the other and one of them is kept. The operator CLI gains `reinstate <email> --reason` (actor NULL, reason prefixed `cli:`) as the recovery path when no active administrator is left.
+
 ## 2026-10-13 Phase 9 payments and notification delivery
 Decisions taken with the plan review:
 - **No payment window in Release 1.** The SRS gives no window and no non-payment consequence, and its settlement state machine (B.5) has no transition out of pending_payment except to paid. An unpaid settlement stays payable; recorded as a known issue.

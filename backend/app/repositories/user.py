@@ -7,6 +7,9 @@ from sqlalchemy.dialects.postgresql import insert
 from app.models import User, UserRole
 from app.repositories.base import BaseRepository
 
+# fixed advisory-lock key: serialises every change that can remove an active administrator
+ADMIN_SET_LOCK = 0x41444D494E5F5345  # "ADMIN_SE"
+
 
 class UserRepository(BaseRepository):
     async def get(self, user_id: UUID) -> User | None:
@@ -123,3 +126,19 @@ class UserRepository(BaseRepository):
     async def get_many(self, user_ids: list[UUID]) -> dict[UUID, User]:
         stmt = select(User).where(User.id.in_(user_ids))
         return {u.id: u for u in (await self.session.execute(stmt)).scalars()}
+
+    # ---------------------------------------------------------------- administrators (FR-75)
+
+    async def lock_admin_set(self) -> None:
+        """Held for the transaction: two administrators suspending or demoting each other at
+        once cannot both pass the last-admin check."""
+        await self.session.execute(select(func.pg_advisory_xact_lock(ADMIN_SET_LOCK)))
+
+    async def other_active_admins(self, user_id: UUID) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(User)
+            .join(UserRole, UserRole.user_id == User.id)
+            .where(UserRole.role == "admin", User.status == "active", User.id != user_id)
+        )
+        return (await self.session.execute(stmt)).scalar_one()

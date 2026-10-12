@@ -2,6 +2,7 @@
 
     python -m app.cli grant-role <email> <role>
     python -m app.cli revoke-role <email> <role>
+    python -m app.cli reinstate <email> --reason "<why>"   (recovery, e.g. no active admin)
     python -m app.cli seed-categories
 
 Every change is written to audit_log in the same transaction (actor NULL, reason 'cli'). A
@@ -36,7 +37,17 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("email")
         command.add_argument("role", choices=ROLES)
     commands.add_parser("seed-categories")
+    reinstate = commands.add_parser("reinstate")
+    reinstate.add_argument("email")
+    reinstate.add_argument("--reason", required=True, type=_reason)
     return parser
+
+
+def _reason(value: str) -> str:
+    """Every operator action states a reason (BR-12)."""
+    if not value.strip():
+        raise argparse.ArgumentTypeError("a reason is required")
+    return value.strip()
 
 
 async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> int:
@@ -53,6 +64,10 @@ async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> in
 
         # the same revocation path as the admin API: denylist with its fallbacks, sockets closed
         users = UserService(sessions, SystemClock(), Denylist(redis, enqueue), notify_revoked)
+        if args.command == "reinstate":
+            await users.reinstate_user(None, args.email, f"cli: {args.reason}")
+            print(f"reinstated {args.email}; they can log in again")
+            return 0
         grant = args.command == "grant-role"
         changed = await users.change_role(args.email, args.role, grant=grant)
         if not changed:

@@ -118,3 +118,60 @@ async def test_cli_revoke_role_revokes_every_session(
         "role": "seller",
         "sessions_revoked": 2,
     }
+
+
+async def test_cli_reinstate_recovers_a_suspended_account(
+    api: AsyncClient,
+    make_user,
+    user_service,
+    auth_service: AuthService,
+    db: asyncpg.Connection,
+    sessions: async_sessionmaker[AsyncSession],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """FR-76, BR-12: the operator's recovery path when no active admin is left. Audited with
+    actor NULL and the stated reason; the user can log in at once; NOT_SUSPENDED otherwise."""
+    user_id, _ = await make_user("admin")
+    email = await db.fetchval("SELECT email FROM users WHERE id = $1", user_id)
+    actor_id, _ = await make_user("admin")
+    await user_service.suspend_user(actor_id, user_id, "locked out during a test")
+
+    with pytest.raises(SystemExit):  # the reason is required
+        await cli.run(["reinstate", email], sessions)
+    with pytest.raises(SystemExit):
+        await cli.run(["reinstate", email, "--reason", "   "], sessions)
+    assert await cli.run(["reinstate", email, "--reason", "admin locked out"], sessions) == 0
+    assert "reinstated" in capsys.readouterr().out
+    assert await db.fetchval("SELECT status FROM users WHERE id = $1", user_id) == "active"
+    row = await db.fetchrow(
+        "SELECT actor_id, before, after, reason FROM audit_log WHERE entity_id = $1 "
+        "AND action = 'user_reinstated'",
+        str(user_id),
+    )
+    assert (row["actor_id"], row["reason"]) == (None, "cli: admin locked out")
+    assert json.loads(row["before"]) == {"status": "suspended"}
+    fresh = (await auth_service.login(email, PASSWORD, uuid4().hex)).access_token
+    me = await api.get("/api/v1/users/me", headers=bearer(fresh))
+    assert me.status_code == 200
+    assert await cli.run(["reinstate", email, "--reason", "again"], sessions) == 1
+    assert "NOT_SUSPENDED" in capsys.readouterr().err
+
+
+async def test_cli_cannot_demote_the_last_active_admin(
+    make_user,
+    db: asyncpg.Connection,
+    sessions: async_sessionmaker[AsyncSession],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """FR-75: the operator CLI obeys the last-admin rule too."""
+    user_id, _ = await make_user("admin")
+    await db.execute(
+        "UPDATE users SET status = 'suspended' WHERE status = 'active' AND id <> $1 "
+        "AND id IN (SELECT user_id FROM user_roles WHERE role = 'admin')",
+        user_id,
+    )
+    email = await db.fetchval("SELECT email FROM users WHERE id = $1", user_id)
+    assert await cli.run(["revoke-role", email, "admin"], sessions) == 1
+    assert "LAST_ADMIN" in capsys.readouterr().err
+    roles = await db.fetch("SELECT role FROM user_roles WHERE user_id = $1", user_id)
+    assert "admin" in {r["role"] for r in roles}

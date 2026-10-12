@@ -2,6 +2,7 @@
 BR-12, D6)."""
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.clock import Clock
 from app.core.errors import AppError
+from app.models import User
 from app.models.user import ROLES
 from app.repositories import AuditLogRepository, BidRepository, SessionRepository, UserRepository
 from app.services.auth import Profile, RevokeNotifier, normalise_email, profile_of
@@ -107,18 +109,20 @@ class UserService:
         is accepted and the user must log in again."""
         if role not in ROLES:
             raise AppError("VALIDATION_ERROR", f"unknown role {role!r}", 422)
+        demotes_admin = not grant and role == "admin"
         now = self._clock.now()
         sids: list[UUID] = []
         async with self._sessions() as session, session.begin():
             users = UserRepository(session)
-            if isinstance(user, UUID):
-                found = await users.get(user)
-            else:
-                found = await users.get_by_email(normalise_email(user))
-            if found is None:
-                raise AppError("NOT_FOUND", "user not found", 404)
+            if demotes_admin:
+                await users.lock_admin_set()
+            found = await self._find(users, user)
             user_id = found.id
             before = list(await users.roles(user_id))
+            if demotes_admin:
+                if actor_id == user_id:
+                    raise _self_target("remove their own admin role")
+                await _keep_an_admin(users, found, before)
             changed = await (users.add_role if grant else users.remove_role)(user_id, role)
             if changed:
                 after: dict[str, object] = {"roles": list(await users.roles(user_id))}
@@ -142,6 +146,17 @@ class UserService:
             )
         return changed
 
+    @staticmethod
+    async def _find(users: UserRepository, user: str | UUID) -> User:
+        """By id (admin API) or by email (operator CLI)."""
+        if isinstance(user, UUID):
+            found = await users.get(user)
+        else:
+            found = await users.get_by_email(normalise_email(user))
+        if found is None:
+            raise AppError("NOT_FOUND", "user not found", 404)
+        return found
+
     async def _deny(self, user_id: UUID, keys: list[str]) -> None:
         """After the Postgres commit: denylist the keys (retry, then the worker, then
         sync_denylist), then close the user's sockets on every instance (FR-6)."""
@@ -151,15 +166,21 @@ class UserService:
             await self._notify_revoked(user_id, None)
 
     async def suspend_user(self, admin_id: UUID, user_id: UUID, reason: str) -> None:
-        """Suspend, revoke every session and audit it in one transaction (FR-6, FR-78, BR-12)."""
+        """Suspend, revoke every session and audit it in one transaction (FR-6, FR-78, BR-12).
+        An administrator cannot suspend themselves, and the last active administrator cannot be
+        suspended (FR-75): the platform is never left without one."""
         if not reason.strip():
             raise AppError("VALIDATION_ERROR", "a reason is required", 422)
+        if admin_id == user_id:
+            raise _self_target("suspend their own account")
         now = self._clock.now()
         async with self._sessions() as session, session.begin():
             users = UserRepository(session)
+            await users.lock_admin_set()
             user = await users.get(user_id)
             if user is None:
                 raise AppError("NOT_FOUND", "user not found", 404)
+            await _keep_an_admin(users, user, await users.roles(user_id))
             before = user.status
             await users.set_status(user_id, "suspended")
             sids = await SessionRepository(session).revoke_all_for_user(user_id, now)
@@ -179,16 +200,17 @@ class UserService:
             extra={"fields": {"user_id": str(user_id), "actor_id": str(admin_id)}},
         )
 
-    async def reinstate_user(self, admin_id: UUID, user_id: UUID, reason: str) -> None:
+    async def reinstate_user(self, admin_id: UUID | None, user: UUID | str, reason: str) -> None:
         """Suspended -> active with its audit row (FR-76, BR-12), then the denylist entry goes
         (sync_denylist also removes it for anyone no longer suspended). Sessions revoked by the
-        suspension stay revoked: the user logs in again."""
+        suspension stay revoked: the user logs in again. From the admin API by user id, or from
+        the operator CLI by email (actor NULL), which is also the recovery path when no active
+        administrator is left."""
         async with self._sessions() as session, session.begin():
             users = UserRepository(session)
-            user = await users.get(user_id)
-            if user is None:
-                raise AppError("NOT_FOUND", "user not found", 404)
-            if user.status != "suspended":
+            found = await self._find(users, user)
+            user_id = found.id
+            if found.status != "suspended":
                 raise AppError("NOT_SUSPENDED", "the account is not suspended", 409)
             await users.set_status(user_id, "active")
             await AuditLogRepository(session).add(
@@ -204,4 +226,23 @@ class UserService:
         log.info(
             "user reinstated",
             extra={"fields": {"user_id": str(user_id), "actor_id": str(admin_id)}},
+        )
+
+
+def _self_target(action: str) -> AppError:
+    return AppError("CANNOT_TARGET_SELF", f"an administrator cannot {action}", 409)
+
+
+async def _keep_an_admin(users: UserRepository, user: User, roles: Sequence[str]) -> None:
+    """Never leave the platform without an active administrator (FR-75). Called under
+    lock_admin_set, so concurrent changes are decided one after another."""
+    if (
+        "admin" in roles
+        and user.status == "active"
+        and not await users.other_active_admins(user.id)
+    ):
+        raise AppError(
+            "LAST_ADMIN",
+            "the last active administrator cannot be suspended or lose the admin role",
+            409,
         )
