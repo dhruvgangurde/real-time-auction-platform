@@ -175,11 +175,11 @@ Lifecycle and discovery (Phase 7; `api/lifecycle.py`, `api/discovery.py`, servic
 | Endpoint | Who | Notes |
 |---|---|---|
 | `POST /api/v1/auctions` | seller (BR-1) | draft; FR-12 per-field errors; anti-snipe 60/120 default, bounded by config; 10 per hour per user (NFR-22) |
-| `PATCH /api/v1/auctions/{id}` | owner | rules by status in section 5; audit before/after |
-| `POST /api/v1/auctions/{id}/publish` | owner | draft to scheduled; at least one image (FR-13); FR-12 re-checked |
-| `POST /api/v1/auctions/{id}/cancel` | owner | draft or scheduled to cancelled (FR-18, BR-9) |
-| `POST /api/v1/auctions/{id}/images` | owner | the body is the image (any Content-Type); decoded JPEG/PNG/WebP only, at most 5 MB (streamed), pixel cap, re-encoded without metadata, random name, at most 8 (D10, NFR-24) |
-| `DELETE /api/v1/auctions/{id}/images/{image_id}` | owner | an auction that left draft keeps at least one image |
+| `PATCH /api/v1/auctions/{id}` | seller and owner (BR-1) | rules by status in section 5; audit before/after |
+| `POST /api/v1/auctions/{id}/publish` | seller and owner (BR-1) | draft to scheduled; at least one image (FR-13); FR-12 re-checked |
+| `POST /api/v1/auctions/{id}/cancel` | owner (a former seller can still withdraw) | draft or scheduled to cancelled (FR-18, BR-9) |
+| `POST /api/v1/auctions/{id}/images` | seller and owner (BR-1) | the body is the image (any Content-Type); decoded JPEG/PNG/WebP only, at most 5 MB (streamed), pixel cap, re-encoded without metadata, random name, at most 8 (D10, NFR-24) |
+| `DELETE /api/v1/auctions/{id}/images/{image_id}` | seller and owner (BR-1) | an auction that left draft keeps at least one image |
 | `GET /api/v1/auctions` | public | `q` (at most 200, websearch syntax, title ranked above description), `category` (descendants included), `status` (repeatable; default scheduled, live, closing; draft and cancelled refused), `min_price`/`max_price` on `coalesce(current_price, starting_price)`, `closing_before`, `page`, `page_size` (20, at most 50); `has_more` |
 | `GET /api/v1/auctions/{id}` | public (drafts: owner, admin) | FR-26 details (title, description, category, images, seller name) plus the `/live` fields; `has_reserve`, `reserve_met` for everyone; `reserve_price` for the owner only (BR-6) |
 | `GET /api/v1/auctions/{id}/bids?before=&limit=` | public | newest first, keyset on `sequence_no`, at most 100; unpersisted outbox bids merged for live and closing auctions; aliases; admins also get `bidder_id` (BR-10) |
@@ -198,7 +198,7 @@ draft, scheduled, live, closing, closed_sold, closed_no_sale, cancelled.
 | From | To | Who | How |
 |---|---|---|---|
 | (new) | draft | seller | `POST /api/v1/auctions` |
-| draft | scheduled | owner | publish (needs an image, FR-12 re-checked) |
+| draft | scheduled | seller and owner | publish (needs an image, FR-12 re-checked) |
 | draft, scheduled | cancelled | owner | cancel (FR-18, BR-9) |
 | scheduled | live | scheduler | start time passed (FR-16); live state installed after the commit (FR-15) |
 | live | closing | scheduler | `set_status.lua` sees Redis TIME >= `end_time_ms` (D9, FR-58) |

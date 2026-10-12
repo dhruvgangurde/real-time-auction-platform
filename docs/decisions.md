@@ -2,6 +2,9 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-12 Seller role on every seller write except cancel (BR-1)
+Editing, publishing and adding or removing images require the seller role as well as ownership; before this, only creation checked the role, so a user whose seller role was revoked (D6) could still edit their auctions and publish their drafts after logging in again. Cancel stays owner-only, so a former seller can still withdraw a draft or scheduled listing (FR-18, BR-9). The role is checked at the API boundary with `require_roles("seller")`, as creation already was; ownership stays in `AuctionService`. Found by a security review of the Phase 7 commit. The live-edit race in the same review is the accepted D8 window (currentstate known issues); unchanged.
+
 ## 2026-10-12 Phase 7 auction lifecycle and discovery
 - **D1: `original_end_time` follows `end_time` until go-live (FR-14, FR-55).** FR-14 says it is set once at creation; but a seller may edit a draft or scheduled auction's end time (FR-17), after which the creation value would no longer be the scheduled end. Migration 0008 lets the trigger allow a change only while the auction is `draft` or `scheduled`; the service keeps the two equal on every pre-live edit; from go-live the field is frozen, so `end_time - original_end_time` is exactly the total soft-close extension. A deviation from FR-14's wording that keeps its purpose (auditable extensions).
 - **D6: roles only through the operator CLI (FR-9, BR-1).** FR-9 forbids self-service role changes. `python -m app.cli grant-role|revoke-role <email> <role>` and `seed-categories`; each change and its `audit_log` row (actor NULL, reason `cli`, before/after roles) commit in one transaction. Roles travel in the access token, so the CLI tells the user to log in again. Admin role endpoints are Phase 8.

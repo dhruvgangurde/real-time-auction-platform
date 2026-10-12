@@ -17,8 +17,10 @@ from app.core.ratelimit import RateLimiter
 from app.core.redis import create_redis
 from app.core.storage import LocalStorage
 from app.services.auctions import AuctionService
-from app.services.auth import CurrentUser
-from tests.auth.conftest import FakeClock
+from app.services.auth import AuthService, CurrentUser
+from app.services.denylist import Denylist
+from app.services.users import UserService
+from tests.auth.conftest import PASSWORD, FakeClock
 from tests.lifecycle.conftest import auction_body, bearer, png
 
 
@@ -331,3 +333,37 @@ async def test_publish_needs_an_image_and_a_future_start(
     stale = await seeded(seller_id, "draft", images=1, start_in_s=-60)
     r = await api.post(f"/api/v1/auctions/{stale}/publish", headers=bearer(token))
     assert r.status_code == 422 and "start_time" in r.json()["error"]["fields"]
+
+
+async def test_revoked_seller_can_only_cancel(
+    api: AsyncClient,
+    make_user,
+    seeded,
+    auth_service: AuthService,
+    sessions: async_sessionmaker[AsyncSession],
+    clock: FakeClock,
+    redis: Redis,
+    db: asyncpg.Connection,
+) -> None:
+    """BR-1: edit, publish and image changes need the seller role as well as ownership; cancel
+    needs ownership only, so a former seller can still withdraw a listing."""
+    seller_id, _ = await make_user("seller")
+    draft = await seeded(seller_id, "draft", images=1)
+    scheduled = await seeded(seller_id, "scheduled", images=2)
+    address = await db.fetchval("SELECT email FROM users WHERE id = $1", seller_id)
+    users = UserService(sessions, clock, Denylist(redis, None))
+    assert await users.change_role(address, "seller", grant=False)  # what the CLI calls
+    token = (await auth_service.login(address, PASSWORD, "10.7.7.7")).access_token  # fresh roles
+    auth = bearer(token)
+
+    image_id = await db.fetchval("SELECT id FROM auction_images WHERE auction_id = $1", draft)
+    refused = [
+        await api.patch(f"/api/v1/auctions/{draft}", json={"title": "Mine"}, headers=auth),
+        await api.post(f"/api/v1/auctions/{draft}/publish", headers=auth),
+        await api.post(f"/api/v1/auctions/{draft}/images", content=png(), headers=auth),
+        await api.delete(f"/api/v1/auctions/{draft}/images/{image_id}", headers=auth),
+    ]
+    assert [(r.status_code, _code(r)) for r in refused] == [(403, "FORBIDDEN")] * 4
+    for auction_id in (draft, scheduled):
+        r = await api.post(f"/api/v1/auctions/{auction_id}/cancel", headers=auth)
+        assert r.status_code == 200 and r.json()["status"] == "cancelled"

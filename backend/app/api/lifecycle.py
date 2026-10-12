@@ -1,5 +1,9 @@
 """Seller endpoints: create, edit, publish, cancel, images (FR-11 to FR-18, BR-1, NFR-24).
-Routing only; the rules live in AuctionService."""
+Routing only; the rules live in AuctionService.
+
+Creating, editing, publishing and changing images need the seller role (BR-1) as well as, for
+an existing auction, ownership (checked by the service). Cancel needs ownership only, so a user
+whose seller role was revoked can still withdraw a draft or scheduled listing."""
 
 from typing import Any
 from uuid import UUID
@@ -27,7 +31,7 @@ async def create_auction(
 async def update_auction(
     auction_id: UUID,
     body: AuctionUpdate,
-    user: CurrentUser = Depends(current_user),
+    user: CurrentUser = Depends(require_roles("seller")),
     auctions: AuctionService = Depends(get_auction_service),
 ) -> dict[str, Any]:
     return await auctions.update(user, auction_id, body.model_dump(exclude_unset=True))
@@ -36,7 +40,7 @@ async def update_auction(
 @router.post("/{auction_id}/publish")
 async def publish_auction(
     auction_id: UUID,
-    user: CurrentUser = Depends(current_user),
+    user: CurrentUser = Depends(require_roles("seller")),
     auctions: AuctionService = Depends(get_auction_service),
 ) -> dict[str, Any]:
     return await auctions.publish(user, auction_id)
@@ -55,7 +59,7 @@ async def cancel_auction(
 async def add_image(
     auction_id: UUID,
     request: Request,
-    user: CurrentUser = Depends(current_user),
+    user: CurrentUser = Depends(require_roles("seller")),
     auctions: AuctionService = Depends(get_auction_service),
 ) -> dict[str, Any]:
     """The body is the image file itself; its type is decided by decoding it."""
@@ -66,7 +70,7 @@ async def add_image(
 async def remove_image(
     auction_id: UUID,
     image_id: int,
-    user: CurrentUser = Depends(current_user),
+    user: CurrentUser = Depends(require_roles("seller")),
     auctions: AuctionService = Depends(get_auction_service),
 ) -> Response:
     await auctions.remove_image(user, auction_id, image_id)
