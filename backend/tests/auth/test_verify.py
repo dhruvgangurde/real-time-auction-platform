@@ -61,3 +61,14 @@ async def test_resend_is_identical_for_unknown_and_known_and_new_token_works(
     # an active account gets no further verification mail
     active = await client.post("/api/v1/auth/resend-verification", json={"email": address})
     assert active.status_code == 202 and len(email.sent) == sent_before + 1
+
+
+async def test_verify_rate_limited_per_ip(client: AsyncClient, clock: FakeClock) -> None:
+    """NFR-22: 20 per hour per IP on the unauthenticated verification endpoint."""
+    clock.advance(3600 - clock.now().timestamp() % 3600)
+    for _ in range(20):
+        assert (await _verify(client, "D" * 43)).status_code == 400
+    limited = await _verify(client, "D" * 43)
+    assert limited.status_code == 429 and limited.json()["error"]["code"] == "RATE_LIMITED"
+    clock.advance(3600)
+    assert (await _verify(client, "D" * 43)).status_code == 400

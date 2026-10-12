@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     rate_limit_resend_email: str = "3/3600"
     rate_limit_forgot_ip: str = "5/3600"
     rate_limit_forgot_email: str = "3/3600"
+    # unauthenticated token endpoints: reset hashes a password (64 MiB argon2), so cap it
+    rate_limit_reset_ip: str = "10/3600"
+    rate_limit_verify_ip: str = "20/3600"
 
 
 settings = Settings()

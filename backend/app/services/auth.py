@@ -98,6 +98,8 @@ class AuthService:
                 "resend_email",
                 "forgot_ip",
                 "forgot_email",
+                "reset_ip",
+                "verify_ip",
             )
         }
 
@@ -130,7 +132,8 @@ class AuthService:
         log.info("user registered", extra={"fields": {"user_id": str(profile.id)}})
         return profile
 
-    async def verify_email(self, raw_token: str) -> None:
+    async def verify_email(self, raw_token: str, ip: str) -> None:
+        await self._limit("verify_ip", ip)
         now = self._clock.now()
         async with self._sessions() as session, session.begin():
             consumed = await TokenRepository(session, EmailVerificationToken).consume(
@@ -287,13 +290,21 @@ class AuthService:
             email, "Reset your password", f"Set a new password within 1 hour:\n{link}\n"
         )
 
-    async def reset_password(self, raw_token: str, password: str) -> None:
+    async def reset_password(self, raw_token: str, password: str, ip: str) -> None:
+        await self._limit("reset_ip", ip)
         now = self._clock.now()
+        digest = token_hash(raw_token)
+        # cheap SELECT first: an invalid token must never cost a 64 MiB argon2 hash
+        async with self._sessions() as session:
+            found = await TokenRepository(session, PasswordResetToken).find(digest)
+        if found is None or found[2] is not None:
+            raise AppError("INVALID_TOKEN", "reset token is invalid or used", 400)
+        if found[1] <= now:
+            raise AppError("TOKEN_EXPIRED", "reset token has expired", 400)
         password_hash = await asyncio.to_thread(hash_password, password)
+        # the atomic consume still decides: two concurrent resets cannot both succeed
         async with self._sessions() as session, session.begin():
-            consumed = await TokenRepository(session, PasswordResetToken).consume(
-                token_hash(raw_token), now
-            )
+            consumed = await TokenRepository(session, PasswordResetToken).consume(digest, now)
             if consumed is None:
                 raise AppError("INVALID_TOKEN", "reset token is invalid or used", 400)
             user_id, expires_at = consumed

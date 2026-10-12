@@ -48,9 +48,11 @@ async def register(
 
 @router.post("/verify-email")
 async def verify_email(
-    body: TokenRequest, auth: AuthService = Depends(get_auth_service)
+    body: TokenRequest,
+    ip: str = Depends(client_ip),
+    auth: AuthService = Depends(get_auth_service),
 ) -> dict[str, str]:
-    await auth.verify_email(body.token)
+    await auth.verify_email(body.token, ip)
     return {"status": "verified"}
 
 
@@ -111,7 +113,9 @@ async def forgot_password(
 
 @router.post("/reset-password")
 async def reset_password(
-    body: ResetPasswordRequest, auth: AuthService = Depends(get_auth_service)
+    body: ResetPasswordRequest,
+    ip: str = Depends(client_ip),
+    auth: AuthService = Depends(get_auth_service),
 ) -> dict[str, str]:
-    await auth.reset_password(body.token, body.password)
+    await auth.reset_password(body.token, body.password, ip)
     return {"status": "reset"}

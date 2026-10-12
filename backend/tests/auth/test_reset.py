@@ -1,9 +1,11 @@
 """Password reset (FR-8): no enumeration, single use, 1 h, revokes every session."""
 
 import asyncpg
+import pytest
 from httpx import AsyncClient
 from redis.asyncio import Redis
 
+from app.services import auth as auth_module
 from tests.auth.conftest import (
     PASSWORD,
     FakeClock,
@@ -100,3 +102,51 @@ async def test_forgot_rate_limited_per_email(
     assert (await _forgot(client, address)).status_code == 429
     clock.advance(3600)
     assert (await _forgot(client, address)).status_code == 202
+
+
+async def test_invalid_or_expired_reset_token_never_hashes(
+    client: AsyncClient, email: RecordingEmail, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bogus token must not cost a 64 MiB argon2 hash (resource exhaustion guard)."""
+    calls: list[str] = []
+    real = auth_module.hash_password
+    monkeypatch.setattr(auth_module, "hash_password", lambda pw: calls.append(pw) or real(pw))
+
+    unknown = await _reset(client, "B" * 43)
+    assert unknown.status_code == 400 and unknown.json()["error"]["code"] == "INVALID_TOKEN"
+
+    address = fresh_email()
+    await register_verified(client, email, address)
+    calls.clear()
+    await _forgot(client, address)
+    token = email.last_token(address)
+    clock.advance(3600 + 1)
+    expired = await _reset(client, token)
+    assert expired.json()["error"]["code"] == "TOKEN_EXPIRED"
+    assert calls == []
+
+
+async def test_used_reset_token_never_hashes_again(
+    client: AsyncClient, email: RecordingEmail, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    address = fresh_email()
+    await register_verified(client, email, address)
+    await _forgot(client, address)
+    token = email.last_token(address)
+    assert (await _reset(client, token)).status_code == 200
+    calls: list[str] = []
+    monkeypatch.setattr(auth_module, "hash_password", lambda pw: calls.append(pw) or "x")
+    reused = await _reset(client, token, "one more passphrase 99")
+    assert reused.json()["error"]["code"] == "INVALID_TOKEN" and calls == []
+
+
+async def test_reset_rate_limited_per_ip(client: AsyncClient, clock: FakeClock) -> None:
+    """NFR-22: 10 per hour per IP, then RATE_LIMITED; resets with the next window."""
+    clock.advance(3600 - clock.now().timestamp() % 3600)
+    for _ in range(10):
+        assert (await _reset(client, "C" * 43)).status_code == 400
+    limited = await _reset(client, "C" * 43)
+    assert limited.status_code == 429 and limited.json()["error"]["code"] == "RATE_LIMITED"
+    assert int(limited.headers["Retry-After"]) >= 1
+    clock.advance(3600)
+    assert (await _reset(client, "C" * 43)).status_code == 400
