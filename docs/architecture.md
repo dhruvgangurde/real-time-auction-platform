@@ -201,7 +201,7 @@ Administration (Phase 8; `api/admin.py`, `AdminService`, `UserService`). Every e
 | `POST /api/v1/admin/auctions/{id}/cancel` | draft, scheduled or live to cancelled, no settlement (BR-9); closing or terminal ALREADY_CLOSED |
 | `GET /api/v1/admin/users?q&role&status&page&page_size` | `q` matches email or name, case-insensitive, LIKE wildcards literal; page size at most 100; `has_more` (FR-76) |
 | `POST /api/v1/admin/users/{id}/suspend`, `/reinstate` | suspend revokes every session and writes the denylist (user and session keys); reinstate (NOT_SUSPENDED unless suspended) sets active and deletes the user key, so a fresh login works at once; old sessions stay revoked (FR-76) |
-| `PUT`/`DELETE /api/v1/admin/users/{id}/roles/{role}` | grant or revoke, audited with before/after roles; the user logs in again (roles travel in the token, D6) |
+| `PUT`/`DELETE /api/v1/admin/users/{id}/roles/{role}` | grant or revoke, audited with before/after roles. Roles travel in the token: a grant applies at the next login; a revoke (also through the CLI) revokes every session of the user like a suspension (denylist, `session_revoked`), so the old access and refresh tokens are dead at once and the audit row records the role and `sessions_revoked` |
 | `GET /api/v1/admin/audit?actor_id&entity_type&entity_id&from&to&before_id&limit` | newest first, keyset on id (`next_before_id`), at most 200 per page; each entry with before, after and reason (FR-80) |
 
 Live and closing items in lists, the watchlist and the dashboard take price, bid count and end time from Redis (one pipeline), falling back to `auctions.current_price`/`bid_count` (D7).

@@ -99,10 +99,16 @@ class UserService:
     ) -> bool:
         """Grant or revoke a role, from the operator CLI by email (D6, actor NULL, reason 'cli')
         or from the admin API by user id (actor and reason, FR-75). The change and its audit row
-        commit together (FR-77, FR-78). Returns False when nothing changed. Roles travel in the
-        access token, so the user must log in again."""
+        commit together (FR-77, FR-78). Returns False when nothing changed.
+
+        Roles travel in the access token. A grant takes effect at the user's next login. A
+        revocation takes effect at once: every session of the user is revoked in the same
+        transaction and denylisted, as on suspension (FR-6), so no token still carrying the role
+        is accepted and the user must log in again."""
         if role not in ROLES:
             raise AppError("VALIDATION_ERROR", f"unknown role {role!r}", 422)
+        now = self._clock.now()
+        sids: list[UUID] = []
         async with self._sessions() as session, session.begin():
             users = UserRepository(session)
             if isinstance(user, UUID):
@@ -111,19 +117,38 @@ class UserService:
                 found = await users.get_by_email(normalise_email(user))
             if found is None:
                 raise AppError("NOT_FOUND", "user not found", 404)
-            before = list(await users.roles(found.id))
-            changed = await (users.add_role if grant else users.remove_role)(found.id, role)
+            user_id = found.id
+            before = list(await users.roles(user_id))
+            changed = await (users.add_role if grant else users.remove_role)(user_id, role)
             if changed:
+                after: dict[str, object] = {"roles": list(await users.roles(user_id))}
+                if not grant:
+                    sids = await SessionRepository(session).revoke_all_for_user(user_id, now)
+                    after |= {"role": role, "sessions_revoked": len(sids)}
                 await AuditLogRepository(session).add(
                     actor_id=actor_id,
                     entity_type="user",
-                    entity_id=str(found.id),
+                    entity_id=str(user_id),
                     action="role_granted" if grant else "role_revoked",
                     before={"roles": before},
-                    after={"roles": list(await users.roles(found.id))},
+                    after=after,
                     reason=reason,
                 )
+        if changed and not grant:
+            await self._deny(user_id, [sid_key(s) for s in sids])
+            log.info(
+                "role revoked; sessions revoked",
+                extra={"fields": {"user_id": str(user_id), "role": role, "sessions": len(sids)}},
+            )
         return changed
+
+    async def _deny(self, user_id: UUID, keys: list[str]) -> None:
+        """After the Postgres commit: denylist the keys (retry, then the worker, then
+        sync_denylist), then close the user's sockets on every instance (FR-6)."""
+        if keys:
+            await self._denylist.revoke(keys)
+        if self._notify_revoked is not None:
+            await self._notify_revoked(user_id, None)
 
     async def suspend_user(self, admin_id: UUID, user_id: UUID, reason: str) -> None:
         """Suspend, revoke every session and audit it in one transaction (FR-6, FR-78, BR-12)."""
@@ -148,9 +173,7 @@ class UserService:
                 reason=reason.strip(),
             )
         # the sessions too, so a later reinstatement never revives an old access token (FR-76)
-        await self._denylist.revoke([user_key(user_id), *(sid_key(s) for s in sids)])
-        if self._notify_revoked is not None:
-            await self._notify_revoked(user_id, None)  # close live sockets on every instance
+        await self._deny(user_id, [user_key(user_id), *(sid_key(s) for s in sids)])
         log.info(
             "user suspended",
             extra={"fields": {"user_id": str(user_id), "actor_id": str(admin_id)}},

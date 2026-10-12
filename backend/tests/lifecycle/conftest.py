@@ -27,6 +27,7 @@ from app.services.bidding import BidService
 from app.services.catalog import CatalogService
 from app.services.closing import Closer
 from app.services.denylist import Denylist
+from app.services.live_events import publish_session_revoked
 from app.services.live_state import init_live_state, state_key
 from app.services.users import UserService
 from tests.auth.conftest import PASSWORD, FakeClock, RecordingEmail, fresh_email
@@ -104,7 +105,10 @@ def bid_service(redis: Redis, sessions: async_sessionmaker[AsyncSession]) -> Bid
 def user_service(
     sessions: async_sessionmaker[AsyncSession], clock: FakeClock, redis: Redis
 ) -> UserService:
-    return UserService(sessions, clock, Denylist(redis, None))
+    async def notify_revoked(user_id: UUID, sid: UUID | None) -> None:
+        await publish_session_revoked(redis, user_id, sid)
+
+    return UserService(sessions, clock, Denylist(redis, None), notify_revoked)
 
 
 @pytest.fixture

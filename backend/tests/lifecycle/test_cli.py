@@ -1,12 +1,28 @@
 """Operator CLI (D6, FR-9, FR-77, FR-78): roles only through it, every change audited."""
 
 import json
+from uuid import uuid4
 
 import asyncpg
 import pytest
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import cli
+from app.core.config import settings
+from app.core.errors import AppError
+from app.services.auth import AuthService
+from app.services.live_events import user_channel
+from tests.auth.conftest import PASSWORD
+from tests.closing.conftest import Room
+from tests.conftest import TEST_REDIS_URL
+from tests.lifecycle.conftest import bearer
+
+
+@pytest.fixture(autouse=True)
+def cli_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CLI builds its own Redis client: point it at the test database, not the dev one."""
+    monkeypatch.setattr(settings, "redis_url", TEST_REDIS_URL)
 
 
 async def _role_audits(db: asyncpg.Connection, user_id) -> list[asyncpg.Record]:
@@ -61,3 +77,44 @@ async def test_seed_categories_is_idempotent_and_audited(
         str(phones["id"]),
     )
     assert [(a["actor_id"], a["reason"]) for a in audits] == [(None, "cli")]
+
+
+async def test_cli_revoke_role_revokes_every_session(
+    api: AsyncClient,
+    make_user,
+    auth_service: AuthService,
+    db: asyncpg.Connection,
+    sessions: async_sessionmaker[AsyncSession],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """FR-6, D6: the CLI revoke takes the same path as the admin API. The old access token and
+    the refresh token are dead at once, sockets are told to close, and a fresh login carries
+    no seller role. A CLI grant revokes nothing."""
+    user_id, old = await make_user("seller")
+    email = await db.fetchval("SELECT email FROM users WHERE id = $1", user_id)
+    tokens = await auth_service.login(email, PASSWORD, uuid4().hex)
+
+    assert await cli.run(["grant-role", email, "admin"], sessions) == 0
+    assert (await api.get("/api/v1/users/me", headers=bearer(old))).status_code == 200
+
+    async with Room(channel=user_channel(user_id)) as sockets:
+        assert await cli.run(["revoke-role", email, "seller"], sessions) == 0
+    assert "every session was revoked" in capsys.readouterr().out
+    assert [e["type"] for e in sockets.events] == ["session_revoked"]
+    for token in (old, tokens.access_token):
+        refused = await api.get("/api/v1/users/me", headers=bearer(token))
+        assert (refused.status_code, refused.json()["error"]["code"]) == (401, "INVALID_TOKEN")
+    with pytest.raises(AppError) as info:
+        await auth_service.refresh(tokens.refresh_token)
+    assert info.value.code == "INVALID_TOKEN"
+
+    fresh = (await auth_service.login(email, PASSWORD, uuid4().hex)).access_token
+    me = await api.get("/api/v1/users/me", headers=bearer(fresh))
+    assert me.json()["roles"] == ["admin", "bidder"]
+    (row,) = [a for a in await _role_audits(db, user_id) if a["action"] == "role_revoked"]
+    assert (row["actor_id"], row["reason"]) == (None, "cli")
+    assert json.loads(row["after"]) == {
+        "roles": ["admin", "bidder"],
+        "role": "seller",
+        "sessions_revoked": 2,
+    }

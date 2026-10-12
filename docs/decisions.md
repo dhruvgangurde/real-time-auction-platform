@@ -2,6 +2,11 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-13 Revoking a role revokes every session (FR-6, FR-75, BR-1)
+Roles travel in the access token (15 minutes). Before this, revoking a role changed Postgres but left the user's tokens valid, so a demoted admin kept full admin access until expiry: enough to re-grant itself admin through `PUT /api/v1/admin/users/{id}/roles/admin`, or to suspend the admin who demoted it; a demoted seller could keep creating, editing and publishing. Found by a security review of the Phase 8 commit.
+
+Now every role removal, through the admin API or the CLI and for every role, revokes all of the user's sessions in the same transaction as the role change and its audit row, then uses the suspension mechanism: denylist keys for the sessions (retry, then the worker, then `sync_denylist`) and a `session_revoked` publish that closes open sockets with 4004. The old access token gets 401 `INVALID_TOKEN` on the next request, the refresh token is dead, and the user must log in again; the new token carries the remaining roles. The `role_revoked` audit row records actor, target, reason, before/after roles, the revoked `role` and `sessions_revoked`. The CLI now wires the same denylist fallback and socket notification as the API. A grant is unchanged: it takes effect at the next login and revokes nothing.
+
 ## 2026-10-13 Phase 8 closing, settlement and administration
 - **Lock: `pg_try_advisory_xact_lock` inside the settlement transaction (FR-57).** The key is the first 8 bytes of the auction id as a signed 64-bit integer: stable across instances and versions. One-key advisory locks live in a different key space from the two-key proxy locks, so they never collide; two auctions sharing a key would only serialise. Not acquired means another closer is working: exit cleanly (`LOCKED`). Released at commit or rollback, so there is no lease to expire and nothing to leak. `UNIQUE(settlements.auction_id)` is the backstop (OR-14).
 - **Drain first (FR-55, NFR-15).** Every close persists the auction's outbox with the ledger persister before deciding, so Postgres `end_time`, `extension_count` and the ledger are complete. If that fails the close is deferred and retried, never settled on a partial ledger.

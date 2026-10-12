@@ -13,15 +13,17 @@ from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.errors import AppError
 from app.services import admin as admin_module
 from app.services.bidding import BidService
 from app.services.closing import Closer, Outcome
 from app.services.denylist import resync
+from app.services.live_events import user_channel
 from app.services.live_state import from_ms, outbox_key, proxies_key, state_key
 from tests.auth.conftest import PASSWORD, FakeClock
 from tests.bidding.conftest import redis_now_ms
 from tests.closing.conftest import Ended, Room, settlement_rows, terminal_audits
-from tests.lifecycle.conftest import bearer
+from tests.lifecycle.conftest import auction_body, bearer
 
 REASON = {"reason": "Seller reported the item as damaged"}
 
@@ -603,3 +605,117 @@ async def test_admin_cancel_of_an_auction_that_went_live_meanwhile(
     assert not await redis.exists(state_key(auction_id))
     (row,) = await _audits(db, auction_id, "status_changed")
     assert json.loads(row["before"])["status"] == "live"
+
+
+# ------------------------------------------------------------------ role revocation (FR-6, FR-75)
+
+
+async def _login(auth_service: Any, db: asyncpg.Connection, user_id: UUID) -> Any:
+    """A fresh session: access token plus the refresh token the cookie would carry."""
+    email = await db.fetchval("SELECT email FROM users WHERE id = $1", user_id)
+    return await auth_service.login(email, PASSWORD, uuid4().hex)
+
+
+async def _sessions_open(db: asyncpg.Connection, user_id: UUID) -> int:
+    return await db.fetchval(
+        "SELECT count(*) FROM sessions WHERE user_id = $1 AND revoked_at IS NULL", user_id
+    )
+
+
+async def test_demoted_admin_is_locked_out_at_once(
+    api: AsyncClient, make_user: Any, db: asyncpg.Connection, auth_service: Any
+) -> None:
+    """FR-6, FR-75: revoking a role revokes every session of the user. The old access token
+    gets 401 everywhere, so a demoted admin can neither re-grant itself admin nor suspend the
+    admin who demoted it; the refresh token is dead too; a fresh login carries no admin role;
+    open sockets are told to close (session_revoked)."""
+    boss_id, boss = await make_user("admin")
+    demoted_id, _ = await make_user("admin")
+    tokens = await _login(auth_service, db, demoted_id)
+    old = bearer(tokens.access_token)
+    assert (await api.get("/api/v1/admin/users", headers=old)).status_code == 200
+
+    async with Room(channel=user_channel(demoted_id)) as sockets:
+        response = await api.request(
+            "DELETE",
+            f"/api/v1/admin/users/{demoted_id}/roles/admin",
+            json=REASON,
+            headers=bearer(boss),
+        )
+    assert response.status_code == 200 and response.json()["roles"] == ["bidder"]
+    assert [(e["type"], e["sid"]) for e in sockets.events] == [("session_revoked", None)]
+
+    for method, path in (
+        ("GET", "/api/v1/admin/users"),
+        ("PUT", f"/api/v1/admin/users/{demoted_id}/roles/admin"),
+        ("POST", f"/api/v1/admin/users/{boss_id}/suspend"),
+    ):
+        refused = await api.request(method, path, json=REASON, headers=old)
+        assert (refused.status_code, refused.json()["error"]["code"]) == (401, "INVALID_TOKEN")
+    roles = await db.fetch("SELECT role FROM user_roles WHERE user_id = $1", demoted_id)
+    assert [r["role"] for r in roles] == ["bidder"]
+    assert await db.fetchval("SELECT status FROM users WHERE id = $1", boss_id) == "active"
+
+    with pytest.raises(AppError) as info:
+        await auth_service.refresh(tokens.refresh_token)
+    assert info.value.code == "INVALID_TOKEN"
+    fresh = bearer((await _login(auth_service, db, demoted_id)).access_token)
+    assert (await api.get("/api/v1/users/me", headers=fresh)).json()["roles"] == ["bidder"]
+    again = await api.get("/api/v1/admin/users", headers=fresh)
+    assert (again.status_code, again.json()["error"]["code"]) == (403, "FORBIDDEN")
+
+    (row,) = await _audits(db, demoted_id, "role_revoked")
+    assert (row["actor_id"], row["reason"]) == (boss_id, REASON["reason"])
+    assert json.loads(row["after"]) == {"roles": ["bidder"], "role": "admin", "sessions_revoked": 2}
+
+
+async def test_revoked_seller_must_log_in_again(
+    api: AsyncClient,
+    make_user: Any,
+    db: asyncpg.Connection,
+    auth_service: Any,
+    category: Any,
+    clock: FakeClock,
+) -> None:
+    """BR-1, FR-6: a stale seller token cannot keep creating, editing or publishing."""
+    _, admin = await make_user("admin")
+    seller_id, old = await make_user("seller")
+    body = auction_body(clock, await category())
+    created = await api.post("/api/v1/auctions", json=body, headers=bearer(old))
+    assert created.status_code == 201
+    auction_id = created.json()["id"]
+
+    response = await api.request(
+        "DELETE",
+        f"/api/v1/admin/users/{seller_id}/roles/seller",
+        json=REASON,
+        headers=bearer(admin),
+    )
+    assert response.json()["roles"] == ["bidder"]
+    assert await _sessions_open(db, seller_id) == 0
+    for refused in (
+        await api.post("/api/v1/auctions", json=body, headers=bearer(old)),
+        await api.patch(f"/api/v1/auctions/{auction_id}", json={"title": "x"}, headers=bearer(old)),
+        await api.post(f"/api/v1/auctions/{auction_id}/publish", headers=bearer(old)),
+    ):
+        assert (refused.status_code, refused.json()["error"]["code"]) == (401, "INVALID_TOKEN")
+    fresh = bearer((await _login(auth_service, db, seller_id)).access_token)
+    refused = await api.post("/api/v1/auctions", json=body, headers=fresh)
+    assert (refused.status_code, refused.json()["error"]["code"]) == (403, "FORBIDDEN")
+
+
+async def test_granting_a_role_keeps_sessions(
+    api: AsyncClient, make_user: Any, db: asyncpg.Connection
+) -> None:
+    """A grant revokes nothing: the role arrives with the next login (D6)."""
+    _, admin = await make_user("admin")
+    user_id, token = await make_user()
+    response = await api.put(
+        f"/api/v1/admin/users/{user_id}/roles/seller", json=REASON, headers=bearer(admin)
+    )
+    assert response.json()["roles"] == ["bidder", "seller"]
+    me = await api.get("/api/v1/users/me", headers=bearer(token))
+    assert me.status_code == 200
+    assert await _sessions_open(db, user_id) == 1
+    (row,) = await _audits(db, user_id, "role_granted")
+    assert json.loads(row["after"]) == {"roles": ["bidder", "seller"]}

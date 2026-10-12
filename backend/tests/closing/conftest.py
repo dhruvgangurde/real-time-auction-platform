@@ -84,10 +84,11 @@ def ended(
 
 
 class Room:
-    """Records every event published to an auction's room channel (pub/sub ignores the db)."""
+    """Records every event published to an auction's room channel, or to `channel` (pub/sub
+    ignores the db)."""
 
-    def __init__(self, auction_id: UUID) -> None:
-        self._channel = room_channel(auction_id)
+    def __init__(self, auction_id: UUID | None = None, *, channel: str | None = None) -> None:
+        self._channel = channel or room_channel(auction_id)
         self._client = Redis.from_url(TEST_REDIS_URL, decode_responses=True)  # no read timeout
         self._pubsub = self._client.pubsub()
         self.events: list[dict[str, Any]] = []
