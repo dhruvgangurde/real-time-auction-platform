@@ -64,6 +64,65 @@ def runs(draw: st.DrawFn) -> tuple[int, int, list[tuple[str, str, int]]]:
     return inc, start, [(kind, who, start + k * inc + off) for kind, who, k, off in ops]
 
 
+def _money_values(node: object) -> list[int]:
+    """Every amount-like value in a script result, whatever its nesting."""
+    out: list[int] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in ("amount", "max_amount"):
+                out.append(int(value))
+            else:
+                out.extend(_money_values(value))
+    elif isinstance(node, list):
+        for item in node:
+            out.extend(_money_values(item))
+    return out
+
+
+def _check_invariants(
+    r: redis_sync.Redis,
+    auction_id: UUID,
+    requester: str,
+    result: dict,
+    max_before: dict[str, int],
+    step: str,
+) -> None:
+    """Model-independent invariants, read straight from Redis state and the outbox."""
+    live = r.hgetall(state_key(auction_id))
+    highest, leader = int(live["highest_amount"]), live["highest_bidder"]
+    active = {b: int(v.split("|")[0]) for b, v in r.hgetall(proxies_key(auction_id)).items()}
+    bids = sorted(
+        (int(f["sequence_no"]), int(f["amount"]), f["bidder_id"], f["bid_type"])
+        for _, f in r.xrange(outbox_key(auction_id))
+        if f.get("kind", "bid") == "bid"
+    )
+
+    # 1. gapless sequence numbers, amounts strictly increasing (NFR-28, NFR-29)
+    assert [s for s, _, _, _ in bids] == list(range(1, int(live["sequence"]) + 1)), step
+    amounts = [a for _, a, _, _ in bids]
+    assert all(x < y for x, y in zip(amounts, amounts[1:], strict=False)), step
+
+    # 2. a remaining maximum belongs to the leader or still exceeds the highest bid (FR-48)
+    for owner, max_amount in active.items():
+        assert owner == leader or max_amount > highest, step
+
+    # 3. an automatic bid never carries the leader above its own maximum (FR-48, FR-49).
+    #    A manual bid by the leader above their own armed maximum is allowed and keeps the
+    #    maximum armed, so the check applies when the highest bid is automatic.
+    if leader in active and bids and bids[-1][3] == "automatic":
+        assert highest <= active[leader], step
+
+    # 4. no automatic bid exceeds its owner's maximum at the time it was placed (FR-48)
+    for auto in result.get("automatic_bids", []):
+        assert int(auto["amount"]) <= max_before[auto["bidder_id"]], step
+
+    # 5. a leading maximum that has not been bid at is disclosed to nobody else (FR-51, BR-7)
+    if active:
+        top_owner, top_max = max(active.items(), key=lambda kv: kv[1])
+        if top_owner != requester and top_max > highest:
+            assert top_max not in _money_values(result), step
+
+
 @settings(
     max_examples=200,
     deadline=None,
@@ -105,6 +164,12 @@ def test_scripts_match_reference_model(run: tuple[int, int, list[tuple[str, str,
             else:
                 req = proxy_request_key(auction_id, bidder, f"p{i}")
                 expected = model.set_proxy(who, amount)
+            # maxima as they stand when this op's automatic bids are placed (invariant 4)
+            max_before = {
+                b: int(v.split("|")[0]) for b, v in r.hgetall(proxies_key(auction_id)).items()
+            }
+            if kind == "proxy":
+                max_before[str(bidder)] = amount
             raw = _scripts[kind](
                 keys=[state_key(auction_id), outbox_key(auction_id), req, proxies_key(auction_id)],
                 args=[str(auction_id), str(bidder), str(amount), 600_000],
@@ -126,6 +191,7 @@ def test_scripts_match_reference_model(run: tuple[int, int, list[tuple[str, str,
                 for b, v in r.hgetall(proxies_key(auction_id)).items()
             }
             assert armed == model.proxies, step
+            _check_invariants(r, auction_id, str(bidder), got, max_before, step)
     finally:
         keys = r.keys(f"auction:{{{auction_id}}}:*")
         if keys:
