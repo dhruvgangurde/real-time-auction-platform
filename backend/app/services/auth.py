@@ -7,6 +7,7 @@ Passwords and raw tokens are never logged.
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID
@@ -37,6 +38,9 @@ from app.services.email import EmailSender
 
 log = logging.getLogger("auth")
 
+# closes the user's live sockets on every instance (session id, or None for all)
+RevokeNotifier = Callable[[UUID, UUID | None], Awaitable[None]]
+
 DEFAULT_ROLES = ("bidder",)  # the SRS is silent; sellers and admins are granted later
 
 
@@ -62,6 +66,7 @@ class CurrentUser:
     id: UUID
     roles: tuple[str, ...]
     sid: UUID
+    expires_at: int = 0  # access token exp (epoch seconds), for the WebSocket expiry watch
 
 
 def normalise_email(email: str) -> str:
@@ -81,7 +86,9 @@ class AuthService:
         email: EmailSender,
         limiter: RateLimiter,
         denylist: Denylist,
+        notify_revoked: RevokeNotifier | None = None,
     ) -> None:
+        self._notify_revoked = notify_revoked
         self._sessions = sessions
         self._redis = redis
         self._clock = clock
@@ -203,6 +210,10 @@ class AuthService:
             issue_access_token(user.id, roles, sid, now), raw, settings.access_token_ttl_s
         )
 
+    async def _notify(self, user_id: UUID, sid: UUID | None) -> None:
+        if self._notify_revoked is not None:
+            await self._notify_revoked(user_id, sid)
+
     @staticmethod
     def _require_active(status: str) -> None:
         if status == "pending_verification":
@@ -241,6 +252,7 @@ class AuthService:
         async with self._sessions() as session, session.begin():
             await SessionRepository(session).revoke(user.sid, now)
         await self._denylist.revoke([sid_key(user.sid)])
+        await self._notify(user.id, user.sid)
         log.info("logout", extra={"fields": {"user_id": str(user.id), "sid": str(user.sid)}})
 
     async def authenticate(self, access_token: str) -> CurrentUser:
@@ -257,7 +269,7 @@ class AuthService:
             raise AppError("ACCOUNT_SUSPENDED", "this account is suspended", 403)
         if denied == "sid":
             raise AppError("INVALID_TOKEN", "session revoked", 401)
-        return CurrentUser(claims.user_id, claims.roles, claims.sid)
+        return CurrentUser(claims.user_id, claims.roles, claims.sid, claims.expires_at)
 
     async def _denied_in_db(self, sid: UUID, user_id: UUID) -> str | None:
         now = self._clock.now()
@@ -315,6 +327,7 @@ class AuthService:
         # per session, never per user: the next login must work immediately
         if sids:
             await self._denylist.revoke([sid_key(s) for s in sids])
+            await self._notify(user_id, None)
         log.info(
             "password reset", extra={"fields": {"user_id": str(user_id), "sessions": len(sids)}}
         )

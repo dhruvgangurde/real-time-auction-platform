@@ -75,6 +75,8 @@ def check_startup_config() -> None:
         return
     if len(settings.jwt_secret.encode()) < 32:
         raise RuntimeError("JWT_SECRET must be at least 32 bytes outside APP_ENV=local")
+    if len(settings.alias_secret.encode()) < 32:
+        raise RuntimeError("ALIAS_SECRET must be at least 32 bytes outside APP_ENV=local")
     if settings.email_backend == "console":
         raise RuntimeError("EMAIL_BACKEND=console is dev-only; configure a real sender (TBD-1)")
 

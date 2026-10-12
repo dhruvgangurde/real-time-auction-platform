@@ -59,6 +59,16 @@ class BidRepository(BaseRepository):
         )
         return list((await self.session.execute(stmt, {"upto": upto, "a": auction_id})).scalars())
 
+    async def recent(self, auction_id: UUID, limit: int) -> list[Bid]:
+        """The auction's latest ledger rows, highest sequence first (live snapshot, FR-26)."""
+        stmt = (
+            select(Bid)
+            .where(Bid.auction_id == auction_id)
+            .order_by(Bid.sequence_no.desc())
+            .limit(limit)
+        )
+        return list((await self.session.execute(stmt)).scalars())
+
     async def list_for_bidder(
         self, bidder_id: UUID, limit: int, before: tuple[datetime, int] | None
     ) -> list[Bid]:

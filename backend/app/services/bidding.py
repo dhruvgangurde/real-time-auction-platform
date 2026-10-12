@@ -74,6 +74,9 @@ class BidResult:
     current_highest: int | None = None  # BID_TOO_LOW only, for the submitter alone
     min_next: int | None = None  # BID_TOO_LOW only
     automatic_bids: tuple[AutomaticBid, ...] = ()  # proxy responses, in sequence order
+    # internal only, for outbid notices; never serialised to a client (FR-51)
+    previous_leader: UUID | None = None
+    exhausted: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,9 @@ class ProxyResult:
     active: bool = False  # False when the maximum was exhausted by its own resolution
     min_next: int | None = None  # BELOW_CURRENT_PRICE only
     automatic_bids: tuple[AutomaticBid, ...] = ()
+    # internal only, for outbid notices; never serialised to a client (FR-51)
+    previous_leader: UUID | None = None
+    exhausted: tuple[UUID, ...] = ()
 
 
 def _rejected(code: str) -> dict[str, Any]:
@@ -105,6 +111,15 @@ def _autos(raw: dict[str, Any]) -> tuple[AutomaticBid, ...]:
     )
 
 
+def _internal(raw: dict[str, Any]) -> dict[str, Any]:
+    data = raw.get("_internal") or {}
+    previous = data.get("previous_leader")
+    return {
+        "previous_leader": UUID(previous) if previous else None,
+        "exhausted": tuple(UUID(b) for b in data.get("exhausted", ())),
+    }
+
+
 def _opt(raw: dict[str, Any], key: str) -> int | None:
     return int(raw[key]) if key in raw else None
 
@@ -119,6 +134,7 @@ def _to_bid_result(raw: dict[str, Any]) -> BidResult:
             extended=bool(raw["extended"]),
             extension_count=int(raw["extension_count"]),
             automatic_bids=_autos(raw),
+            **_internal(raw),
         )
     return BidResult(
         accepted=False,
@@ -136,6 +152,7 @@ def _to_proxy_result(raw: dict[str, Any]) -> ProxyResult:
             arm_seq=int(raw["arm_seq"]),
             active=bool(raw["active"]),
             automatic_bids=_autos(raw),
+            **_internal(raw),
         )
     return ProxyResult(armed=False, code=raw["code"], min_next=_opt(raw, "min_next"))
 

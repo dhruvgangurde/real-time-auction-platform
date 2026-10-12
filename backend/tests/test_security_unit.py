@@ -107,6 +107,10 @@ def test_startup_refuses_dev_secret_outside_local(monkeypatch: pytest.MonkeyPatc
     with pytest.raises(RuntimeError):
         security.check_startup_config()
     monkeypatch.setattr(settings, "jwt_secret", "x" * 32)
+    monkeypatch.setattr(settings, "alias_secret", "short")  # NFR-27 pseudonym secret
+    with pytest.raises(RuntimeError):
+        security.check_startup_config()
+    monkeypatch.setattr(settings, "alias_secret", "y" * 32)
     monkeypatch.setattr(settings, "email_backend", "console")
     with pytest.raises(RuntimeError):
         security.check_startup_config()

@@ -43,6 +43,25 @@ class Settings(BaseSettings):
     # unauthenticated token endpoints: reset hashes a password (64 MiB argon2), so cap it
     rate_limit_reset_ip: str = "10/3600"
     rate_limit_verify_ip: str = "20/3600"
+    # real-time layer (FR-28 to FR-32, CI-3 to CI-7, NFR-27)
+    allowed_origins: str = "http://localhost:5173"  # comma separated; WebSocket Origin allowlist
+    alias_secret: str = ""  # >= 32 bytes required outside APP_ENV=local (NFR-27 pseudonyms)
+    ws_auth_timeout_s: float = 5.0
+    ws_max_message_bytes: int = 4096
+    ws_max_subscriptions: int = 20
+    ws_max_connections_per_user: int = 5
+    ws_send_queue_size: int = 256
+    ws_idle_timeout_s: float = 60.0
+    ws_watch_interval_s: float = 1.0
+    ws_max_strikes: int = 5
+    ws_presence_interval_s: float = 5.0
+    rate_limit_ws_place_bid: str = "10/1"  # FR-44 default: 10 bid submissions per second
+    rate_limit_ws_set_proxy: str = "5/1"
+    rate_limit_ws_subscribe: str = "20/10"
+
+    @property
+    def origin_allowlist(self) -> frozenset[str]:
+        return frozenset(o.strip() for o in self.allowed_origins.split(",") if o.strip())
 
 
 settings = Settings()

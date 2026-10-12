@@ -81,6 +81,7 @@ local result = {
 if #autos > 0 then
   result.automatic_bids = autos
 end
+result._internal = internal()
 local encoded = cjson.encode(result)
 redis.call('SET', req, encoded, 'PX', req_ttl)
 return encoded

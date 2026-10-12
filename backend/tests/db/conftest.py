@@ -71,10 +71,18 @@ def drop_database(database: str) -> None:
     asyncio.run(_recreate(database, drop_only=True))
 
 
+_created: list[str] = []
+
+
 @pytest.fixture(scope="session")
 def test_db() -> str:
-    recreate_database(TEST_DB)
-    run_alembic(TEST_DB, "upgrade", "head")
+    # Registered both here and (re-exported) in tests/conftest.py, so pytest may resolve it
+    # twice per session. Create once: a second DROP ... WITH (FORCE) would kill the session's
+    # open connections.
+    if not _created:
+        recreate_database(TEST_DB)
+        run_alembic(TEST_DB, "upgrade", "head")
+        _created.append(TEST_DB)
     return TEST_DB
 
 

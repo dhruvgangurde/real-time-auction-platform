@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.clock import Clock
 from app.core.errors import AppError
 from app.repositories import AuditLogRepository, BidRepository, SessionRepository, UserRepository
-from app.services.auth import Profile, profile_of
+from app.services.auth import Profile, RevokeNotifier, profile_of
 from app.services.denylist import SUSPENDED_ACTION, Denylist, user_key
 from app.services.live_state import from_ms, to_ms
 
@@ -44,8 +44,13 @@ def parse_cursor(cursor: str) -> tuple[datetime, int]:
 
 class UserService:
     def __init__(
-        self, sessions: async_sessionmaker[AsyncSession], clock: Clock, denylist: Denylist
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        clock: Clock,
+        denylist: Denylist,
+        notify_revoked: RevokeNotifier | None = None,
     ) -> None:
+        self._notify_revoked = notify_revoked
         self._sessions = sessions
         self._clock = clock
         self._denylist = denylist
@@ -104,6 +109,8 @@ class UserService:
                 reason=reason.strip(),
             )
         await self._denylist.revoke([user_key(user_id)])
+        if self._notify_revoked is not None:
+            await self._notify_revoked(user_id, None)  # close live sockets on every instance
         log.info(
             "user suspended",
             extra={"fields": {"user_id": str(user_id), "actor_id": str(admin_id)}},

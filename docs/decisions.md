@@ -2,6 +2,22 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-12 Phase 6 real-time layer choices
+- **One hub per instance, reference-counted pub/sub.** An instance subscribes to a room or user channel only while it has a local socket there, so fan-out cost follows local interest (NFR-30). Each socket has a bounded queue; overflow closes it with 4008 instead of slowing the hub (NFR-5).
+- **Acknowledge, then publish.** The ack goes on the submitter's own FIFO queue before any publish, so the submitter sees its ack before its own `bid_placed` (FR-40, NFR-3). The REST fallback publishes in a background task after the response.
+- **Sequence numbers on every room event, at-most-once delivery accepted.** Pub/sub can lose or reorder events across instances; clients order by `sequence_no`, drop duplicates, and refetch `/live` on a gap, on `presence.sequence_no` ahead of them, or after recovery from degraded mode. Retries republish on purpose: a retry after a timeout publishes what the first attempt never did.
+- **Presence carries `sequence_no` and `end_time_ms`** so a quiet room detects a lost `bid_placed` within one presence interval (FR-32).
+- **Degraded mode** is per instance: lost pub/sub means `system_status {degraded: true}`, bids rejected with `SERVICE_UNAVAILABLE`, and `degraded: false` only after every referenced channel is resubscribed. The pub/sub client has no transparent retries so a dropped connection surfaces.
+- **Outbid recipients** are the previous leader, every exhausted maximum, and every bidder whose bid in the same trigger was immediately exceeded (e.g. a manual bid answered by a proxy), minus the new leader, each once. The last group extends the agreed rule; without it a bidder outbid by a proxy response gets no notice (UC-01 post-condition).
+- **Lua returns `previous_leader` and `exhausted`** under `_internal` for addressing notices only; the service strips them and payloads are built field by field. No decision, sequence or outbox entry changed.
+- **Pseudonyms** are `Bidder-` + 4 hex of HMAC-SHA256 with `ALIAS_SECRET` (NFR-27); collisions within one auction are possible (65,536 values) and accepted as display-only.
+- **Origin allowlist** applies when an Origin is present; a missing Origin (non-browser client) is allowed because a token is still required.
+- **Room membership is required for WS bids** (FR-34, `NOT_SUBSCRIBED`); the REST fallback cannot hold a subscription and skips only that check. Both require the bidder role (FR-7).
+- **Session revocation reaches sockets two ways:** `session_revoked` on the user channel closes them on every instance, and every bid re-runs the denylist check, so a lost broadcast still denies the next action (FR-6).
+- **`/live` falls back to Postgres** with `degraded: true` when Redis is unreachable, so viewing stays available read-only (NFR-13); its end time may then lag (see the FR-58 note).
+- **Tests run two real uvicorn servers inside pytest** with independent hubs on one Redis, driven by real WebSocket clients; `create_app()` gained a lifespan and dependencies come from overridable providers.
+- **`auction_test` is created once per pytest session.** The `test_db` fixture is registered in two conftests; recreating it twice killed earlier connections.
+
 ## 2026-10-12 Identity before WebSockets (roadmap phases 5 and 6 swapped)
 The WebSocket layer authenticates its first message with the access token (CI-4, FR-5) and needs `current_user`, the denylist check and the session model, so Identity is built first. Roadmap Phase 5 is now Identity and Phase 6 the real-time layer.
 

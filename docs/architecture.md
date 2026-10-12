@@ -31,9 +31,9 @@ Design reference. The SRS governs if anything here conflicts with it.
    Rejections write nothing. After step h, `resolve()` lets armed maxima respond inside the same script (see Proxy maxima below).
 4. API acknowledges the submitter right away with sequence, amount, request_id, end time and extension count (FR-40), then enqueues `persist_bids(auction_id)` without awaiting the broker.
 5. Proxy resolution has already run inside the script; the acceptance lists any automatic bids in `automatic_bids`, each with its own sequence number and end time.
-6. API publishes the event to `auction:{id}`; every instance fans it out to its subscribers (Phase 5).
+6. API publishes `bid_placed` (one per bid, automatic included), `timer_extended` and `outbid_notice` after the acknowledgement; every instance's hub fans them out to its local subscribers (section 4).
 7. The worker's `persist_bids` task drains the outbox into the `bids` table with `ON CONFLICT (auction_id, sequence_no) DO NOTHING`, applies any extension to `auctions.end_time` and `extension_count` (never decreasing) with an audit entry in the same transaction, then XDELs the persisted entries. Retries with backoff; after 5 retries it raises the `LEDGER_WRITE_FAILED` alert and the entries stay in the outbox. A beat sweeper (`sweep_outboxes`, every 5 s) persists every non-empty outbox as a safety net.
-8. The displaced bidder is notified through `user:{id}` (Phase 5/9).
+8. Displaced bidders get `outbid_notice` on `user:{id}:events` (email notifications are Phase 9).
 
 Rejected bids go back to the submitter only. Nothing is written to the ledger.
 
@@ -100,10 +100,63 @@ Worked example, increment 10, start price 1000: Bob bids 1000. Dave arms 3000 (a
 | `SEQUENCE_COLLISION` | persister found an outbox entry whose sequence exists in the ledger with different data; the entry is kept in `audit_log` and the dead-letter stream |
 | `LEDGER_WRITE_FAILED` | persist task exhausted its retries; entries remain in the outbox |
 
-## 4. Channels
+## 4. Channels and real-time layer
 
-- `auction:{id}`: room events (bid_accepted, price_update, timer_extended, auction_closed)
-- `user:{id}`: personal events (outbid_notice, notifications)
+Redis pub/sub, one hub per API instance (`app/services/fanout.py`):
+
+- `auction:{id}:events`: room events (`bid_placed`, `timer_extended`; `auction_closed` in Phase 8). Subscribed only while a local socket is in that room (reference counted).
+- `user:{id}:events`: personal events (`outbid_notice`, `session_revoked`). Subscribed only while the user has a local socket.
+
+Each socket has a bounded send queue drained by its own writer; a full queue closes that socket with 4008 so a slow client never stalls the hub. If the hub loses Redis it sends `system_status {degraded: true}` to its sockets, reconnects with backoff, resubscribes every referenced channel and only then sends `degraded: false`; while degraded it rejects bids with `SERVICE_UNAVAILABLE`. Presence (FR-32): every 5 s each instance refreshes `auction:{id}:presence` (sorted set of connection ids with expiry) and sends `presence` to its local sockets in the room. Per-user connection limit across instances: `ws:user:{id}:conns`.
+
+### WebSocket endpoint `/api/v1/ws`
+
+1. A present `Origin` must be in `ALLOWED_ORIGINS` (checked before accept, HTTP 403). A missing Origin (non-browser client) is allowed; a token is still required.
+2. The first message must be `authenticate {token}` within 5 s. Tokens are never read from the URL (CI-4). A later `authenticate` with a fresh token for the same user extends the connection.
+3. Messages are validated (pydantic discriminated union, `extra=forbid`, DC-11), limited to 4 KB (uvicorn caps frames at 64 KB), and rate limited per user in Redis (`place_bid` 10/s per FR-44, `set_proxy` 5/s, `subscribe` 20/10 s), shared with the REST fallback. Invalid or over-limit messages get `error`; 5 strikes close 4009.
+4. `place_bid`/`set_proxy` re-check the denylist (FR-6), require the bidder role and a subscription to the room (FR-34), then call `BidService`. The acknowledgement is queued first, then events are published (FR-40). The socket queue is FIFO, so a submitter always sees its ack before its own `bid_placed`.
+5. Logging: connection correlation id (the request id), per-message `bid_request_id`; connect, auth, subscribe and close with code and reason. Never tokens or maxima.
+
+### Message catalogue
+
+Every outbound event carries `server_time_ms`. Clients derive countdowns from `end_time_ms` and server time only (UI-4).
+
+| Direction | Type | Fields |
+|---|---|---|
+| client | `authenticate` | `token` |
+| client | `subscribe` / `unsubscribe` | `auction_id` |
+| client | `place_bid` | `auction_id`, `amount`, `request_id` |
+| client | `set_proxy` | `auction_id`, `max_amount`, `request_id` |
+| client | `ping` | |
+| submitter | `authenticated` | `user_id`, `expires_at_ms` |
+| submitter | `subscribed` | `auction_id`, `your_alias`, `snapshot` (same shape as `/live`) |
+| submitter | `unsubscribed`, `pong` | |
+| submitter | `bid_accepted` | `request_id`, `auction_id`, `sequence_no`, `amount`, `end_time_ms`, `extended`, `extension_count` |
+| submitter | `bid_rejected` | `request_id`, `auction_id`, `code`, `message`, `current_highest?`, `min_next?` |
+| submitter | `proxy_armed` | `request_id`, `auction_id`, `max_amount` (own only, FR-51), `active` |
+| submitter | `proxy_rejected` | `request_id`, `auction_id`, `code`, `message`, `min_next?` |
+| submitter | `error` | `code`, `message`, `request_id?` |
+| room | `bid_placed` | `auction_id`, `sequence_no`, `amount`, `bidder_alias`, `bid_type`, `end_time_ms`, `extended`, `extension_count` (one per accepted bid, automatic bids included) |
+| room | `timer_extended` | `auction_id`, `sequence_no`, `end_time_ms`, `extension_count`, `final` (true at the 10th extension, FR-54) |
+| room (local) | `presence` | `auction_id`, `participants`, `sequence_no`, `end_time_ms` |
+| user | `outbid_notice` | `auction_id`, `current_price`, `sequence_no` |
+| user (internal) | `session_revoked` | `sid` or null: the instance closes the matching sockets with 4004 |
+| local | `system_status` | `degraded` |
+
+**Outbid recipients:** the leader before the trigger, every maximum the trigger exhausted, and every bidder whose bid in the trigger was immediately exceeded, minus the new leader; each once. Retries republish, so Phase 9's notification `dedupe_key` must include (auction_id, user_id, sequence_no).
+
+### Client ordering rule (Phase 10 must implement)
+
+Pub/sub is at-most-once and events from different instances can arrive out of order. Apply room events in `sequence_no` order; drop anything at or below the last applied sequence (retries republish); on a gap, wait briefly, then refetch `GET /api/v1/auctions/{id}/live`. Also refetch `/live` when a `presence.sequence_no` is above the last applied sequence (a lost event in a quiet room), and after `system_status {degraded: false}`. On `bid_rejected`/`proxy_rejected` with `SERVICE_UNAVAILABLE`, retry with the same `request_id`.
+
+### Pseudonyms (NFR-27)
+
+`Bidder-` + first 4 hex characters of `HMAC-SHA256(ALIAS_SECRET, "{auction_id}:{bidder_id}")`. Stable within an auction, not linkable across auctions without the secret. Room events and snapshots never carry user ids. `subscribed.your_alias` tells each user their own alias.
+
+### REST
+
+- `GET /api/v1/auctions/{id}/live` (public; drafts only for their seller or an admin, FR-30): status, current price, leader alias, sequence, bid count, min next, end time, extension count, participants, last 20 bids (ledger merged with unpersisted outbox entries) and `server_time_ms`, read from Redis live state and rebuilt when missing (FR-26). With Redis unreachable it is served from Postgres with `degraded: true` (NFR-13).
+- `POST /api/v1/auctions/{id}/bids` and `/proxy` (bidder role): the REST fallback (DC-9, UC-01 2a). Same service, same `request_id` contract, same per-user rate limit; the response is the acknowledgement and events are published after it is sent. Rejections: 409 with the arbitration code, 422, 429, 503.
 
 ## 5. Auction status
 
@@ -159,13 +212,28 @@ Auth: EMAIL_TAKEN, INVALID_TOKEN, TOKEN_EXPIRED, INVALID_CREDENTIALS, EMAIL_NOT_
 Auctions: AUCTION_ALREADY_LIVE, CATEGORY_NOT_FOUND, NOT_WATCHING, ALREADY_CLOSED.
 Bidding: AUCTION_CLOSED, AUCTION_NOT_STARTED, BID_TOO_LOW, BID_ABOVE_LIMIT, SELF_OUTBID_NOT_ALLOWED, BELOW_CURRENT_PRICE, PROXY_CANNOT_DECREASE (lower or equal maximum, FR-46), SERVICE_UNAVAILABLE.
 Payment: NOT_WINNER, ALREADY_PAID, INVALID_SIGNATURE.
+Real-time: NOT_SUBSCRIBED, TOO_MANY_SUBSCRIPTIONS, MESSAGE_TOO_LARGE, UNKNOWN_TYPE.
 General: VALIDATION_ERROR (also returned by the bid service for a malformed amount or request_id), INTERNAL_ERROR, SERVICE_UNAVAILABLE (readiness with a dependency down; bid path when Redis is unreachable or live state cannot be established, see the client contract in section 2).
 Internal only, never sent to clients: NOT_INITIALISED (script result meaning live state is absent; the service rebuilds or maps it).
 Framework HTTP errors not listed above use `HTTP_<status>` (for example HTTP_405); 404 maps to NOT_FOUND.
 
 ## 10. WebSocket close codes
 
-Define in phase 5 and record here.
+| Code | Meaning |
+|---|---|
+| 1000 | normal close |
+| 1001 | server going away |
+| 1008 | Origin refused (sent before accept, surfaces as HTTP 403) |
+| 1009 | frame above the 64 KB protocol cap |
+| 1011 | internal error |
+| 4001 | authentication required: no `authenticate` as the first message within the timeout |
+| 4002 | authentication failed, or re-authentication as a different user |
+| 4003 | access token expired without a fresh `authenticate` |
+| 4004 | session revoked (logout, password reset, suspension, or denylist hit on a bid) |
+| 4008 | slow consumer: send queue overflowed |
+| 4009 | policy violation: too many invalid or over-limit messages |
+| 4010 | too many connections for this user across instances |
+| 4011 | idle timeout: no client message for 60 s |
 
 ## 11. Pseudonyms
 

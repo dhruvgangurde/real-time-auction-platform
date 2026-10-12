@@ -25,6 +25,9 @@ end
 
 -- live state, filled by load_state() and kept current by accept()
 local now, status, start_time, end_time, highest, highest_bidder, seq
+-- addressing data for outbid notices (internal; stripped by the service)
+local previous_leader
+local exhausted = {}
 local start_price, min_increment, extension_count, threshold, extension, self_outbid
 
 -- returns false when the state is missing or a rebuild is still unverified
@@ -43,6 +46,7 @@ local function load_state()
   end_time = tonumber(f[3])
   highest = tonumber(f[4])
   highest_bidder = f[5]
+  previous_leader = highest_bidder
   seq = tonumber(f[6])
   start_price = tonumber(f[7])
   min_increment = tonumber(f[8])
@@ -137,6 +141,7 @@ local function deactivate_exhausted(list)
   for _, p in ipairs(list) do
     if p.owner ~= highest_bidder and p.max <= highest then
       redis.call('HDEL', proxies, p.owner)
+      exhausted[#exhausted + 1] = p.owner
       redis.call('XADD', outbox, '*',
         'kind', 'proxy_deactivated',
         'auction_id', auction_id,
@@ -156,6 +161,21 @@ end
 --           capped at its own maximum (FR-48, FR-49)
 -- The runner-up's bid at its own maximum is recorded first when it is a valid bid below
 -- the target; with equal maxima it is not, and the price settles at the common value.
+-- who to tell they were outbid; never sent to a client as-is (FR-51)
+local function internal()
+  local r = {}
+  if previous_leader and previous_leader ~= '' then
+    r.previous_leader = previous_leader
+  end
+  if #exhausted > 0 then
+    r.exhausted = exhausted
+  end
+  if next(r) then
+    return r
+  end
+  return nil
+end
+
 local function resolve()
   local autos = {}
   local list = active_proxies()
