@@ -13,7 +13,8 @@ from tests.db.conftest import NOW, make_auction, make_category, make_user
     ("overrides", "constraint"),
     [
         ({"end_time": NOW, "original_end_time": NOW}, "ck_auctions_end_after_start"),
-        ({"starting_price": -1}, "ck_auctions_starting_price_nonneg"),
+        ({"starting_price": -1}, "ck_auctions_starting_price_pos"),
+        ({"starting_price": 0}, "ck_auctions_starting_price_pos"),
         ({"min_increment": 0}, "ck_auctions_min_increment_pos"),
         ({"reserve_price": 9_999}, "ck_auctions_reserve_ge_start"),
         ({"extension_count": 11}, "ck_auctions_extension_count_range"),

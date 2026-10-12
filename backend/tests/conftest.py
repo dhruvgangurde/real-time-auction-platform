@@ -4,6 +4,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
 
 from app.main import app as _app
+from tests.db.conftest import test_db  # noqa: F401  shared session fixture for DB tests
 
 
 class ValidateBody(BaseModel):

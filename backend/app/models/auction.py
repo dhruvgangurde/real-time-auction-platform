@@ -46,7 +46,7 @@ class Auction(Base):
             name="status",
         ),
         CheckConstraint("end_time > start_time", name="end_after_start"),
-        CheckConstraint("starting_price >= 0", name="starting_price_nonneg"),
+        CheckConstraint("starting_price > 0", name="starting_price_pos"),  # FR-37 100x limit
         CheckConstraint("min_increment > 0", name="min_increment_pos"),
         CheckConstraint(
             "reserve_price IS NULL OR reserve_price >= starting_price", name="reserve_ge_start"

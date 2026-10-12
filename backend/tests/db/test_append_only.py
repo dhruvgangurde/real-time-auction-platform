@@ -8,10 +8,12 @@ import json
 
 import asyncpg
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from asyncpg.exceptions import InsufficientPrivilegeError
 
 from app.core.config import settings
-from tests.db.conftest import expect_error, make_auction, make_bid, make_user
+from tests.db.conftest import BACKEND_DIR, expect_error, make_auction, make_bid, make_user
 
 
 async def test_app_role_is_not_the_owner(app: asyncpg.Connection) -> None:
@@ -79,7 +81,8 @@ async def test_ordinary_table_update_allowed(app: asyncpg.Connection) -> None:
 
 async def test_migration_state_read_only(app: asyncpg.Connection) -> None:
     """The app role can read alembic_version but never change it."""
-    assert await app.fetchval("SELECT version_num FROM alembic_version") == "0005"
+    head = ScriptDirectory.from_config(Config(str(BACKEND_DIR / "alembic.ini"))).get_current_head()
+    assert await app.fetchval("SELECT version_num FROM alembic_version") == head
     await expect_error(
         app, InsufficientPrivilegeError, "UPDATE alembic_version SET version_num = 'x'"
     )

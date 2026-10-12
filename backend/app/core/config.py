@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     app_db_user: str = "auction_app"
     app_db_password: str = "auction_app"
     redis_url: str = "redis://redis:6379/0"
+    redis_timeout_s: float = 0.5
+    # bidding (Phase 3)
+    self_outbid_policy_enabled: bool = True  # FR-38: platform-wide, copied into each live state
+    bid_request_ttl_s: int = 600  # how long a request_id result is kept for idempotent retries
     celery_broker_url: str = "redis://redis:6379/1"
 
 
