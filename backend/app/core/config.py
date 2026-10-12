@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     image_max_bytes: int = 5 * 1024 * 1024  # FR-13
     image_max_pixels: int = 40_000_000  # decompression-bomb guard (NFR-24)
     images_per_auction: int = 8
+    # closing and settlement (Phase 8: FR-57 to FR-62, NFR-12)
+    close_grace_s: int = 300  # past end_time + this without a terminal status: UNRESOLVED_CLOSE
 
     @property
     def origin_allowlist(self) -> frozenset[str]:

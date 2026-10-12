@@ -7,8 +7,8 @@ Design reference. The SRS governs if anything here conflicts with it.
 | Component | Role |
 |---|---|
 | API (FastAPI) | REST and one WebSocket endpoint, stateless apart from connections |
-| Worker (Celery) | Durable bid writes, settlement, notifications, reconciliation |
-| Beat | Scheduler: activate auctions and move them to closing (`run_scheduler`, 5 s), outbox sweep, reconciliation, denylist resync; ending-soon in Phase 9 |
+| Worker (Celery) | Durable bid writes, settlement (`close_auction`), notifications, reconciliation |
+| Beat | Scheduler: activate auctions and move them to closing (`run_scheduler`, 5 s), close repair sweep and unresolved-close alert (`sweep_closing`, 30 s), outbox sweep, reconciliation, denylist resync; ending-soon in Phase 9 |
 | PostgreSQL | Source of truth |
 | Redis | Live auction state, Lua arbitration, pub/sub, rate limits, task queue |
 
@@ -32,7 +32,7 @@ Design reference. The SRS governs if anything here conflicts with it.
 4. API acknowledges the submitter right away with sequence, amount, request_id, end time and extension count (FR-40), then enqueues `persist_bids(auction_id)` without awaiting the broker.
 5. Proxy resolution has already run inside the script; the acceptance lists any automatic bids in `automatic_bids`, each with its own sequence number and end time.
 6. API publishes `bid_placed` (one per bid, automatic included), `timer_extended` and `outbid_notice` after the acknowledgement; every instance's hub fans them out to its local subscribers (section 4).
-7. The worker's `persist_bids` task drains the outbox into the `bids` table with `ON CONFLICT (auction_id, sequence_no) DO NOTHING`, applies any extension to `auctions.end_time` and `extension_count` (never decreasing) with an audit entry in the same transaction, then XDELs the persisted entries. Retries with backoff; after 5 retries it raises the `LEDGER_WRITE_FAILED` alert and the entries stay in the outbox. A beat sweeper (`sweep_outboxes`, every 5 s) persists every non-empty outbox as a safety net.
+7. The worker's `persist_bids` task drains the outbox into the `bids` table with `ON CONFLICT (auction_id, sequence_no) DO NOTHING`, applies the extension of every bid it inserts to `auctions.end_time` and `extension_count` (never decreasing; a replayed row's extension is not applied again, so a replay cannot undo a force-close) with an audit entry in the same transaction, then XDELs the persisted entries. Retries with backoff; after 5 retries it raises the `LEDGER_WRITE_FAILED` alert and the entries stay in the outbox. A beat sweeper (`sweep_outboxes`, every 5 s) persists every non-empty outbox as a safety net.
 8. Displaced bidders get `outbid_notice` on `user:{id}:events` (email notifications are Phase 9).
 
 Rejected bids go back to the submitter only. Nothing is written to the ledger.
@@ -43,7 +43,7 @@ Rejected bids go back to the submitter only. Nothing is written to the ledger.
 
 ### Postgres end_time lags Redis
 
-Soft-close extensions reach `auctions.end_time` only through the persister, so Postgres can lag Redis by up to the sweep interval (5 s) plus retries. Redis `end_time_ms` is the authoritative end time while an auction is live. The Phase 7 scheduler and the Phase 8 close task must decide "end time passed" from Redis `end_time_ms` (or drain the outbox first), never from Postgres alone (FR-58).
+Soft-close extensions reach `auctions.end_time` only through the persister, so Postgres can lag Redis by up to the sweep interval (5 s) plus retries. Redis `end_time_ms` is the authoritative end time while an auction is live. The scheduler decides "end time passed" from Redis (`set_status.lua`, D9); the close task drains the outbox first and re-checks Redis (section 7), never Postgres alone (FR-58).
 
 ## 3. Redis live state (per auction)
 
@@ -102,12 +102,13 @@ Worked example, increment 10, start price 1000: Bob bids 1000. Dave arms 3000 (a
 | `SEQUENCE_COLLISION` | persister found an outbox entry whose sequence exists in the ledger with different data; the entry is kept in `audit_log` and the dead-letter stream |
 | `LEDGER_WRITE_FAILED` | persist task exhausted its retries; entries remain in the outbox |
 | `RECONCILE_FAILED` | reconciliation of one auction raised an error (logged with its traceback); the other auctions were still checked |
+| `UNRESOLVED_CLOSE` | an auction is past `end_time` + `close_grace_s` (300 s) without a terminal status (NFR-12); raised by `sweep_closing`, see section 7 |
 
 ## 4. Channels and real-time layer
 
 Redis pub/sub, one hub per API instance (`app/services/fanout.py`):
 
-- `auction:{id}:events`: room events (`bid_placed`, `timer_extended`; `auction_closed` in Phase 8). Subscribed only while a local socket is in that room (reference counted).
+- `auction:{id}:events`: room events (`bid_placed`, `timer_extended`, `auction_closed`). Subscribed only while a local socket is in that room (reference counted).
 - `user:{id}:events`: personal events (`outbid_notice`, `session_revoked`, `session_replaced`). Subscribed only while the user has a local socket.
 
 Each socket has a bounded send queue drained by its own writer; a full queue closes that socket with 4008 so a slow client never stalls the hub. If the hub loses Redis it sends `system_status {degraded: true}` to its sockets, reconnects with backoff, resubscribes until no referenced channel is missing (including any referenced while SUBSCRIBE was in flight) and only then sends `degraded: false`; while degraded it rejects bids with `SERVICE_UNAVAILABLE`. Presence (FR-32): every 5 s each instance refreshes `auction:{id}:presence` (sorted set of server-generated connection ids with expiry) and sends `presence` to its local sockets in the room.
@@ -145,6 +146,7 @@ Every outbound event carries `server_time_ms`. Clients derive countdowns from `e
 | submitter | `error` | `code`, `message`, `request_id?` |
 | room | `bid_placed` | `auction_id`, `sequence_no`, `amount`, `bidder_alias`, `bid_type`, `end_time_ms`, `extended`, `extension_count` (one per accepted bid, automatic bids included) |
 | room | `timer_extended` | `auction_id`, `sequence_no`, `end_time_ms`, `extension_count`, `final` (true at the 10th extension, FR-54) |
+| room | `auction_closed` | `auction_id`, `outcome` (`closed_sold`, `closed_no_sale` or `cancelled`), `final_price` (null unless sold), `reserve_met` (null without a reserve and on cancel; never the reserve itself, BR-6), `final_sequence_no` (the last bid's sequence; 0 without bids). Sent once per auction (FR-62) |
 | room (local) | `presence` | `auction_id`, `participants`, `sequence_no`, `end_time_ms` |
 | user | `outbid_notice` | `auction_id`, `current_price`, `sequence_no` |
 | user (internal) | `session_revoked` | `sid` or null: the instance closes the matching sockets with 4004 |
@@ -159,6 +161,7 @@ Pub/sub is at-most-once and events from different instances can arrive out of or
 
 - **Buffer before `subscribed`.** Room events for an auction can arrive before its `subscribed` frame (the hub joins the room before reading the snapshot). Buffer them, then apply only those above `snapshot.sequence_no`.
 - **Reconnect.** Reconnect with exponential backoff, re-authenticate, resubscribe and refetch (CI-6), but never automatically after 4002 (authentication failed), 4004 (session revoked) or 4012 (replaced by a newer socket of the same session, e.g. another tab). On 4003 refresh the access token first. Keep one socket per session.
+- **`auction_closed` is always applied, never dropped by the sequence rule.** Its `final_sequence_no` equals the last bid's sequence, which the client has usually applied already. Apply buffered bid events up to `final_sequence_no` first (refetch `/live` on a gap), then show the outcome; no room events follow it. If it is lost (pub/sub is at-most-once), `/live` shows the terminal status from Postgres.
 - **No heartbeat needed.** There is no idle timeout; the browser answers the protocol keepalive by itself. `ping` exists for clients that want an application-level round trip.
 
 ### Pseudonyms (NFR-27)
@@ -188,6 +191,18 @@ Lifecycle and discovery (Phase 7; `api/lifecycle.py`, `api/discovery.py`, servic
 | `PUT`/`DELETE /api/v1/watchlist/{auction_id}`, `GET /api/v1/watchlist` | authenticated | add is idempotent; cancelled refused; view with price, end time and `server_time_ms` (FR-24, FR-25) |
 | `GET /api/v1/seller/auctions` | seller | own auctions including drafts, with price, bid count, times and outcome (FR-19) |
 | `/media/...` | public | re-encoded images, read-only (named volume `media`) |
+| `GET /api/v1/auctions/{id}/settlement` | winner, seller, admin | FR-64, BR-10: status, final price, winner `{id, full_name}` (null for a no-sale), times; anyone else FORBIDDEN; NOT_FOUND before settlement; never the reserve |
+
+Administration (Phase 8; `api/admin.py`, `AdminService`, `UserService`). Every endpoint needs the admin role (FORBIDDEN otherwise, FR-75, FR-80). Every state change takes `{"reason": "..."}` (1 to 500 characters, VALIDATION_ERROR otherwise) and writes an audit row with the administrator and the reason in the same transaction (BR-12, NFR-14).
+
+| Endpoint | Notes |
+|---|---|
+| `POST /api/v1/admin/auctions/{id}/force-close` | live: ended now, then settled by the close path (section 7); closing: runs the close path; draft or scheduled AUCTION_NOT_LIVE; terminal ALREADY_CLOSED (FR-63). Returns `status`, `outcome`, `settlement` |
+| `POST /api/v1/admin/auctions/{id}/cancel` | draft, scheduled or live to cancelled, no settlement (BR-9); closing or terminal ALREADY_CLOSED |
+| `GET /api/v1/admin/users?q&role&status&page&page_size` | `q` matches email or name, case-insensitive, LIKE wildcards literal; page size at most 100; `has_more` (FR-76) |
+| `POST /api/v1/admin/users/{id}/suspend`, `/reinstate` | suspend revokes every session and writes the denylist (user and session keys); reinstate (NOT_SUSPENDED unless suspended) sets active and deletes the user key, so a fresh login works at once; old sessions stay revoked (FR-76) |
+| `PUT`/`DELETE /api/v1/admin/users/{id}/roles/{role}` | grant or revoke, audited with before/after roles; the user logs in again (roles travel in the token, D6) |
+| `GET /api/v1/admin/audit?actor_id&entity_type&entity_id&from&to&before_id&limit` | newest first, keyset on id (`next_before_id`), at most 200 per page; each entry with before, after and reason (FR-80) |
 
 Live and closing items in lists, the watchlist and the dashboard take price, bid count and end time from Redis (one pipeline), falling back to `auctions.current_price`/`bid_count` (D7).
 
@@ -202,10 +217,11 @@ draft, scheduled, live, closing, closed_sold, closed_no_sale, cancelled.
 | draft, scheduled | cancelled | owner | cancel (FR-18, BR-9) |
 | scheduled | live | scheduler | start time passed (FR-16); live state installed after the commit (FR-15) |
 | live | closing | scheduler | `set_status.lua` sees Redis TIME >= `end_time_ms` (D9, FR-58) |
-| live | cancelled | administrator | Phase 8 (force-cancel with a reason) |
-| closing | closed_sold, closed_no_sale | settlement | Phase 8 |
+| live | closing | administrator | force-close with a reason: `set_status.lua` mode `end_now` ends it at Redis TIME (FR-63) |
+| draft, scheduled, live | cancelled | administrator | cancel with a reason; a live auction is flipped in Redis first (BR-9) |
+| closing | closed_sold, closed_no_sale | close task | settlement (section 7) |
 
-Every transition is a conditional UPDATE (`AuctionRepository.transition`) with an `audit_log` row (`status_changed`, before and after) in the same transaction (FR-77, FR-78); the scheduler's rows have a NULL actor.
+Every transition is a conditional UPDATE (`AuctionRepository.transition`) with an `audit_log` row (`status_changed`, before and after) in the same transaction (FR-77, FR-78); the scheduler's and the close task's rows have a NULL actor; an administrator's carry the actor and the reason (a force-close writes `auction_force_closed`).
 
 Editing by status (FR-17, BR-4): draft and scheduled, any field, re-validated, `original_end_time` follows `end_time` (D1); live, title, description and images only while Redis `sequence == 0` (D8; Redis unavailable means `SERVICE_UNAVAILABLE`), otherwise `AUCTION_ALREADY_LIVE`; closing and terminal, `ALREADY_CLOSED`.
 
@@ -213,7 +229,7 @@ Editing by status (FR-17, BR-4): draft and scheduled, any field, re-validated, `
 
 1. **Activate:** scheduled auctions with `start_time <= now()`, claimed `FOR UPDATE SKIP LOCKED`; conditional UPDATE to live plus audit, one transaction; a start more than two intervals late logs a warning (FR-16). After the commit: `cleanup_state.lua` removes any stale non-live hash, then `init_live_state`. Bids in between find no state and are rebuilt lazily by the bid path.
 2. **Repair:** live auctions without Redis state get it built.
-3. **Close:** live auctions with Postgres `end_time <= now()` are candidates (Postgres lags Redis, never leads it). `set_status.lua` flips Redis live to closing only once Redis TIME has reached `end_time_ms`; then a conditional UPDATE live to closing plus audit, and `on_closing` (logs only until Phase 8). Missing state is rebuilt first; a pending outbox defers to the next run; Redis closing with Postgres live is completed.
+3. **Close:** live auctions with Postgres `end_time <= now()` are candidates (Postgres lags Redis, never leads it). `set_status.lua` flips Redis live to closing only once Redis TIME has reached `end_time_ms`; then a conditional UPDATE live to closing plus audit, and `on_closing`, which enqueues `close_auction` (a failed enqueue is logged; `sweep_closing` repairs it). Missing state is rebuilt first; a pending outbox defers to the next run; Redis closing with Postgres live is completed.
 
 ## 6. Settlement status
 
@@ -221,17 +237,39 @@ pending_payment, paid, no_sale. A failed payment attempt leaves pending_payment 
 
 ## 7. Close and settlement flow
 
-1. Scheduler finds live auctions past end time, moves them to closing, enqueues a close task.
-2. Worker takes the per-auction lock; if it cannot, it exits cleanly.
-3. Worker re-checks the end time now. If a soft-close pushed it into the future, release the lock and leave the auction live.
-4. Winner is the highest amount, ties broken by lowest sequence number.
-5. Reserve met or no reserve: closed_sold plus one settlement (pending_payment). Otherwise closed_no_sale and no payable settlement.
-6. Audit entry in the same transaction. Notifications once. `auction_closed` broadcast. Release the lock.
-7. Backstop: UNIQUE(auction_id) on settlements.
+`services/closing.py` (`Closer.close`), run by the Celery task `close_auction(auction_id)` (`acks_late`, up to 8 retries, backoff 1 s to 60 s). Any number of runs, concurrent, retried or after a crash at any point, give one settlement, one terminal transition and one notification set (NFR-11, OR-14).
+
+1. **Drain.** Persist the auction's outbox with the ledger persister, so Postgres holds every accepted bid, `end_time` and `extension_count` (FR-55, NFR-15). If Redis or Postgres fails: `DEFERRED` (retried).
+2. **One transaction:**
+   1. **Lock (FR-57):** `pg_try_advisory_xact_lock(key)`, key = the first 8 bytes of the auction id as a signed 64-bit integer (stable across instances and versions; one-key locks never collide with the two-key proxy locks). Not acquired: `LOCKED`, exit cleanly. Released at commit or rollback, so there is no lease to expire.
+   2. Already `closed_sold`/`closed_no_sale`, or a settlement exists: `ALREADY_CLOSED`. Any status but closing: `NOT_CLOSING`.
+   3. **Re-check at execution (FR-58):** the outbox is still empty (else `DEFERRED`); Redis status is `closing` and Redis TIME >= `end_time_ms`, or there is no Redis state and Postgres `end_time` has passed (else `NOT_ENDED`, nothing written); `rebuilding` defers; the Redis `sequence` is not above the ledger maximum (else `DEFERRED`: never settle on a ledger missing an accepted bid). With D9 the end-time guard never fires.
+   4. **Winner (FR-59):** highest amount, equal amounts by lowest `sequence_no`. Sold when there is a winner and either no reserve or `amount >= reserve` (FR-60, BR-5).
+   5. **Settlement first:** `pending_payment` with winner and final price, or `no_sale` with both NULL (never payable); `idempotency_key = settle:{auction_id}`. With the lock bypassed, `UNIQUE(settlements.auction_id)` stops a second closer here: its IntegrityError on `uq_settlements_*` is treated as `ALREADY_CLOSED`, rolled back and logged, and no second notification set is written (OR-14).
+   6. Conditional UPDATE closing to `closed_sold`/`closed_no_sale` with its audit row (actor NULL, before/after with winner and price) and a `settlement_created` audit row (FR-64); every active maximum deactivated (FR-51); notification rows (FR-62) with `dedupe_key = close:{auction_id}:{type}:{user_id}`: winner `payment_due`, seller `auction_sold` or `auction_no_sale`, every other participant (distinct bidders from `bids` union maximum holders from `proxy_bids`) `auction_lost`. Payload: auction id, title, outcome, final price, `reserve_met` (never the reserve, BR-6).
+3. **After the commit:** `set_status.lua` closing to the terminal status; `auction_closed` is published only by the caller whose flip returned `OK`, or, when there is no live state at all (`MISSING`), by the caller that settled, so it goes out once; then `cleanup_state.lua` removes the live state. A Redis failure here leaves the rest to the repair sweep.
+
+**Repair sweep and alert (`sweep_closing`, beat every 30 s, NFR-12).** Re-enqueues closing auctions without a settlement and settled auctions whose Redis state still says closing (a crash after the commit). Any auction in scheduled, live or closing past `end_time + close_grace_s` raises `UNRESOLVED_CLOSE` (a CRITICAL log line with `alert`).
+
+**Force-close (FR-63).** For a live auction:
+1. `set_status.lua` live to closing in mode `end_now`, which moves `end_time_ms` back to Redis TIME when later and has no end-time condition. Missing state is rebuilt first.
+2. Drain.
+3. One transaction with the row locked: conditional live to closing, `end_time` set to the forced instant (`original_end_time` untouched), `auction_force_closed` audit row with actor, reason and before/after.
+4. `Closer.close`. `DEFERRED` or `LOCKED` hands the auction to `close_auction`.
+
+A Redis status already `closing` at step 1 counts as flipped, so the call can be repeated after a failure between the flip and the commit. A closing auction skips steps 1 and 3's transition but still gets the audit row.
+
+**Admin cancel (BR-9).** For a live auction: `set_status.lua` live to cancelled (bids refused from then on), drain, then one transaction: conditional live to cancelled, maxima deactivated, audit with actor and reason; after the commit `auction_closed {outcome: cancelled}` and the live state is removed. A Redis status already `cancelled` counts as flipped (retry after a failure). Draft or scheduled: the transition and audit only; an auction that went live meanwhile is handled as live.
+
+**Operator procedure: Redis sequence ahead of the ledger.** The close defers on every run and `UNRESOLVED_CLOSE` fires after the grace period (`SEQUENCE_GAP` usually fired earlier). Such an auction is never settled automatically. The operator:
+1. Takes the auction id from the alert; checks the outbox and dead-letter streams (`XLEN`/`XRANGE auction:{<id>}:bids` and `:bids:dead`) and the gap: Redis `sequence` against `SELECT max(sequence_no) FROM bids WHERE auction_id = ...`.
+2. If outbox entries are pending, lets `persist_bids`/`sweep_outboxes` drain them, first fixing whatever `LEDGER_WRITE_FAILED` reported. The next sweep then settles normally.
+3. If bids are really lost (no outbox entries, a true gap), establishes the facts from the logs: every accepted bid has an FR-44 log line with its sequence number, amount and bidder. Restoring the missing ledger rows is a reviewed, recorded administrative act run as the owner role (the app role cannot alter the ledger), with an `audit_log` entry stating the reason.
+4. Only once the ledger is complete does the auction settle, through the normal path (`close_auction`, or a force-close).
 
 ## 8. Data model (tables)
 
-Migrations `0001` to `0008` in `backend/alembic/versions/`. Money is BIGINT paise, every timestamp is `timestamptz`, every FK is `ON DELETE RESTRICT`. Constraint names follow the naming convention in `app/models/base.py` (`pk_`, `uq_`, `ck_`, `fk_`, `ix_`).
+Migrations `0001` to `0009` in `backend/alembic/versions/`. Money is BIGINT paise, every timestamp is `timestamptz`, every FK is `ON DELETE RESTRICT`. Constraint names follow the naming convention in `app/models/base.py` (`pk_`, `uq_`, `ck_`, `fk_`, `ix_`).
 
 | Table | PK | Key constraints and indexes |
 |---|---|---|
@@ -247,7 +285,7 @@ Migrations `0001` to `0008` in `backend/alembic/versions/`. Money is BIGINT pais
 | watchlist | (user_id, auction_id) | index on auction_id (watchers of an auction, FR-25) |
 | settlements | uuid | UNIQUE auction_id; UNIQUE idempotency_key; CHECK no_sale iff winner_id and final_price are NULL |
 | payments | uuid | UNIQUE gateway_ref; UNIQUE idempotency_key; partial UNIQUE settlement_id WHERE status = 'succeeded' (failed attempts can be retried) |
-| notifications | bigint | UNIQUE dedupe_key; type CHECK; partial index (user_id, created_at DESC) WHERE read_at IS NULL |
+| notifications | bigint | UNIQUE dedupe_key; type CHECK (outbid, ending_soon, auction_won, auction_lost, payment_due, payment_received, and from migration 0009 auction_sold and auction_no_sale for the seller, FR-62); partial index (user_id, created_at DESC) WHERE read_at IS NULL |
 | notification_preferences | (user_id, type) | type CHECK |
 | audit_log (append-only) | bigint | `actor_id` NULL for system actions. Indexes: (entity_type, entity_id), (actor_id, created_at), created_at |
 
@@ -261,9 +299,10 @@ Migrations `0001` to `0008` in `backend/alembic/versions/`. Money is BIGINT pais
 ## 9. Error codes (add new ones here)
 
 Auth: EMAIL_TAKEN, INVALID_TOKEN, TOKEN_EXPIRED, INVALID_CREDENTIALS, EMAIL_NOT_VERIFIED, ACCOUNT_SUSPENDED, RATE_LIMITED, FORBIDDEN, NOT_FOUND.
-Auctions: AUCTION_ALREADY_LIVE (409), CATEGORY_NOT_FOUND (422), NOT_WATCHING (404), ALREADY_CLOSED (409), NOT_DRAFT (409, publish of a scheduled auction), UNSUPPORTED_IMAGE (422), IMAGE_TOO_LARGE (413), TOO_MANY_IMAGES (409), CATEGORY_IN_USE (409), CATEGORY_CYCLE (422), SLUG_TAKEN (409).
+Auctions: AUCTION_ALREADY_LIVE (409), AUCTION_NOT_LIVE (409, force-close of a draft or scheduled auction), CATEGORY_NOT_FOUND (422), NOT_WATCHING (404), ALREADY_CLOSED (409), NOT_DRAFT (409, publish of a scheduled auction), UNSUPPORTED_IMAGE (422), IMAGE_TOO_LARGE (413), TOO_MANY_IMAGES (409), CATEGORY_IN_USE (409), CATEGORY_CYCLE (422), SLUG_TAKEN (409).
 Validation errors carry an optional `fields` object of per-field messages (FR-12).
 Bidding: AUCTION_CLOSED, AUCTION_NOT_STARTED, BID_TOO_LOW, BID_ABOVE_LIMIT, SELF_OUTBID_NOT_ALLOWED, BELOW_CURRENT_PRICE, PROXY_CANNOT_DECREASE (lower or equal maximum, FR-46), SERVICE_UNAVAILABLE.
+Administration: NOT_SUSPENDED (409, reinstating an account that is not suspended); FORBIDDEN for anyone without the admin role; ALREADY_CLOSED for a force-close of a terminal auction or a cancel of a closing or terminal one.
 Payment: NOT_WINNER, ALREADY_PAID, INVALID_SIGNATURE.
 Real-time: NOT_SUBSCRIBED, TOO_MANY_SUBSCRIPTIONS, MESSAGE_TOO_LARGE, UNKNOWN_TYPE (RATE_LIMITED, SERVICE_UNAVAILABLE and INTERNAL_ERROR are also sent as `error` frames).
 General: VALIDATION_ERROR (also returned by the bid service for a malformed amount or request_id), INTERNAL_ERROR, SERVICE_UNAVAILABLE (readiness with a dependency down; bid path when Redis is unreachable or live state cannot be established, see the client contract in section 2).

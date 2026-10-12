@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.repositories import AuctionRepository
+from app.services import ledger
 from app.services.bidding import BidService
 from app.services.ledger import persist_all_pending, persist_outbox
 from app.services.live_state import dead_letter_key, from_ms, outbox_key, to_ms
@@ -224,3 +225,30 @@ async def test_sequence_collision_keeps_the_bid(
     # the original ledger row is untouched
     original = await db.fetchrow("SELECT bidder_id, amount FROM bids WHERE auction_id = $1", a)
     assert (original["bidder_id"], original["amount"]) == (alice, 10_000)
+
+
+async def test_replayed_extension_is_not_applied_again(
+    service: BidService,
+    auction: AuctionFactory,
+    new_user,
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+    db: asyncpg.Connection,
+) -> None:
+    """FR-55, FR-63: an extension is applied with the insert of its bid only. A batch replayed
+    after an administrator ended the auction earlier (end_time moved back) leaves it there."""
+    a = await auction(ends_in_ms=59_000, threshold_s=600, extension_s=60)
+    assert (await service.place_bid(a, await new_user(), 10_000, "late")).extended
+    entries = [ledger.OutboxEntry.parse(sid, f) for sid, f in await redis.xrange(outbox_key(a))]
+    await persist_outbox(a, redis, sessions)
+    forced = from_ms(to_ms(await db.fetchval("SELECT now()")))
+    await db.execute("UPDATE auctions SET end_time = $2 WHERE id = $1", a, forced)
+
+    inserted, collisions = await ledger._write_batch(a, entries, sessions)  # the replay
+    assert (inserted, collisions) == (0, [])
+    assert await db.fetchval("SELECT end_time FROM auctions WHERE id = $1", a) == forced
+    extensions = await db.fetchval(
+        "SELECT count(*) FROM audit_log WHERE entity_id = $1 AND action = 'soft_close_extended'",
+        str(a),
+    )
+    assert extensions == 1

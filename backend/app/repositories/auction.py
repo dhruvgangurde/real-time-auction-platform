@@ -1,12 +1,19 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import case, cast, func, literal, select, update
+from sqlalchemy import case, cast, exists, func, literal, select, update
 from sqlalchemy.dialects.postgresql import REGCONFIG
 
-from app.models import Auction
+from app.models import Auction, Settlement
 from app.repositories.base import BaseRepository
+
+
+def settlement_lock_key(auction_id: UUID) -> int:
+    """Stable 64-bit advisory-lock key: the first 8 bytes of the auction id, signed. Same id,
+    same key, on every instance and version. One-key locks never collide with the two-key
+    proxy locks (separate key spaces); two auctions sharing a key would only serialise."""
+    return int.from_bytes(auction_id.bytes[:8], "big", signed=True)
 
 
 class AuctionRepository(BaseRepository):
@@ -77,6 +84,47 @@ class AuctionRepository(BaseRepository):
             .limit(limit)
         )
         return list((await self.session.execute(stmt)).scalars())
+
+    # ---------------------------------------------------------------- closing (FR-57, NFR-12)
+
+    async def try_settlement_lock(self, auction_id: UUID) -> bool:
+        """FR-57: exclusive per-auction settlement lock for this transaction, released at
+        commit or rollback, so there is no lease to expire and no lock to leak."""
+        stmt = select(func.pg_try_advisory_xact_lock(settlement_lock_key(auction_id)))
+        return bool((await self.session.execute(stmt)).scalar_one())
+
+    async def set_end_time(self, auction_id: UUID, end_time: datetime) -> None:
+        """Administrator force-close: the auction ended at this instant (FR-63).
+        original_end_time is untouched (FR-14)."""
+        await self.session.execute(
+            update(Auction)
+            .where(Auction.id == auction_id)
+            .values(end_time=end_time, updated_at=func.now())
+        )
+
+    async def closing_without_settlement(self, limit: int) -> list[UUID]:
+        """Closing auctions no close task has settled yet (repair sweep)."""
+        settled = exists().where(Settlement.auction_id == Auction.id)
+        stmt = (
+            select(Auction.id)
+            .where(Auction.status == "closing", ~settled)
+            .order_by(Auction.end_time)
+            .limit(limit)
+        )
+        return list((await self.session.execute(stmt)).scalars())
+
+    async def unresolved(self, grace_s: int, limit: int) -> list[tuple[UUID, str, datetime]]:
+        """Auctions past end_time + grace without a terminal status (NFR-12)."""
+        stmt = (
+            select(Auction.id, Auction.status, Auction.end_time)
+            .where(
+                Auction.status.in_(("scheduled", "live", "closing")),
+                Auction.end_time < func.now() - timedelta(seconds=grace_s),
+            )
+            .order_by(Auction.end_time)
+            .limit(limit)
+        )
+        return [(r.id, r.status, r.end_time) for r in (await self.session.execute(stmt)).all()]
 
     # ---------------------------------------------------------------- persister (D7)
 

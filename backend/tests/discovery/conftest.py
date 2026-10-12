@@ -1,4 +1,5 @@
 from tests.lifecycle.conftest import (  # noqa: F401  shared fixtures
+    admin_service,
     api,
     auction_service,
     auth_service,
@@ -6,9 +7,11 @@ from tests.lifecycle.conftest import (  # noqa: F401  shared fixtures
     catalog_service,
     category,
     clock,
+    close_queue,
     email,
     limiter,
     make_user,
     seeded,
     storage,
+    user_service,
 )

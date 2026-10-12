@@ -63,3 +63,28 @@ async def test_sold_settlement_without_winner_rejected(owner: asyncpg.Connection
                 auction,
             )
     assert info.value.constraint_name == "ck_settlements_winner_matches_status"
+
+
+@pytest.mark.parametrize("kind", ["auction_sold", "auction_no_sale", "payment_due"])
+async def test_notification_close_types_accepted(owner: asyncpg.Connection, kind: str) -> None:
+    """FR-62, migration 0009: the seller's close outcome has its own types."""
+    user = await make_user(owner)
+    await owner.execute(
+        "INSERT INTO notifications (user_id, type, payload, dedupe_key) "
+        "VALUES ($1, $2, '{}'::jsonb, $3)",
+        user,
+        kind,
+        f"{kind}:{user}",
+    )
+
+
+async def test_notification_unknown_type_rejected(owner: asyncpg.Connection) -> None:
+    user = await make_user(owner)
+    with pytest.raises(CheckViolationError) as info:
+        async with owner.transaction():
+            await owner.execute(
+                "INSERT INTO notifications (user_id, type, payload, dedupe_key) "
+                "VALUES ($1, 'auction_sold_twice', '{}'::jsonb, 'x')",
+                user,
+            )
+    assert info.value.constraint_name == "ck_notifications_type"

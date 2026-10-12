@@ -46,7 +46,7 @@ OnClosing = Callable[[UUID], Awaitable[None]]
 
 
 async def log_closing(auction_id: UUID) -> None:
-    """Phase 8 replaces this with the hand-off to settlement."""
+    """Default hook; the worker passes one that enqueues close_auction (Phase 8)."""
     log.info("auction closing", extra={"fields": {"auction_id": str(auction_id)}})
 
 

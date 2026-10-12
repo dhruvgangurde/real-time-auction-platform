@@ -13,6 +13,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import (
+    current_user,
     get_bid_service,
     get_limiter,
     get_redis,
@@ -24,7 +25,7 @@ from app.core.config import settings
 from app.core.errors import AppError
 from app.core.ratelimit import RateLimit, RateLimiter
 from app.schemas.ws import REQUEST_ID, rejection_text
-from app.services import live_events
+from app.services import closing, live_events
 from app.services.auth import CurrentUser
 from app.services.bidding import (
     MAX_AMOUNT,
@@ -141,3 +142,13 @@ def _proxy_ack(auction_id: UUID, request_id: str, r: ProxyResult) -> dict[str, A
         max_amount=r.max_amount,  # the caller's own maximum (FR-51)
         active=r.active,
     )
+
+
+@router.get("/{auction_id}/settlement")
+async def settlement(
+    auction_id: UUID,
+    viewer: CurrentUser = Depends(current_user),
+    sessions: async_sessionmaker[AsyncSession] = Depends(get_sessions),
+) -> dict[str, Any]:
+    """The winner, the seller and administrators only (FR-64, BR-10)."""
+    return await closing.settlement_view(sessions, viewer, auction_id)

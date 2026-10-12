@@ -97,3 +97,12 @@ class ProxyBidRepository(BaseRepository):
             )
             .values(is_active=False, updated_at=func.now())
         )
+
+    async def deactivate_all(self, auction_id: UUID) -> int:
+        """Every maximum of an auction that reached a terminal status (FR-51)."""
+        result = await self.session.execute(
+            update(ProxyBid)
+            .where(ProxyBid.auction_id == auction_id, ProxyBid.is_active.is_(True))
+            .values(is_active=False, updated_at=func.now())
+        )
+        return result.rowcount

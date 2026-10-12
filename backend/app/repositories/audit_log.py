@@ -43,3 +43,31 @@ class AuditLogRepository(BaseRepository):
             AuditLog.action == action, AuditLog.created_at >= since
         )
         return [UUID(e) for e in (await self.session.execute(stmt)).scalars()]
+
+    async def query(
+        self,
+        *,
+        actor_id: UUID | None,
+        entity_type: str | None,
+        entity_id: str | None,
+        since: datetime | None,
+        until: datetime | None,
+        before_id: int | None,
+        limit: int,
+    ) -> list[AuditLog]:
+        """Administrator audit search (FR-80), newest first, keyset on id."""
+        stmt = select(AuditLog)
+        if actor_id is not None:
+            stmt = stmt.where(AuditLog.actor_id == actor_id)
+        if entity_type is not None:
+            stmt = stmt.where(AuditLog.entity_type == entity_type)
+        if entity_id is not None:
+            stmt = stmt.where(AuditLog.entity_id == entity_id)
+        if since is not None:
+            stmt = stmt.where(AuditLog.created_at >= since)
+        if until is not None:
+            stmt = stmt.where(AuditLog.created_at < until)
+        if before_id is not None:
+            stmt = stmt.where(AuditLog.id < before_id)
+        stmt = stmt.order_by(AuditLog.id.desc()).limit(limit)
+        return list((await self.session.execute(stmt)).scalars())

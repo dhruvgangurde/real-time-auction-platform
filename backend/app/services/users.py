@@ -13,7 +13,7 @@ from app.core.errors import AppError
 from app.models.user import ROLES
 from app.repositories import AuditLogRepository, BidRepository, SessionRepository, UserRepository
 from app.services.auth import Profile, RevokeNotifier, normalise_email, profile_of
-from app.services.denylist import SUSPENDED_ACTION, Denylist, user_key
+from app.services.denylist import SUSPENDED_ACTION, Denylist, sid_key, user_key
 from app.services.live_state import from_ms, to_ms
 
 log = logging.getLogger("users")
@@ -88,27 +88,40 @@ class UserService:
         next_cursor = _cursor(page[-1].created_at, page[-1].id) if len(rows) > limit else None
         return BidHistoryPage(items, next_cursor)
 
-    async def change_role(self, email: str, role: str, *, grant: bool) -> bool:
-        """Grant or revoke a role from the operator CLI (D6). The change and its audit row
-        (actor NULL, reason 'cli') commit together (FR-77, FR-78). Returns False when nothing
-        changed. Roles travel in the access token, so the user must log in again."""
+    async def change_role(
+        self,
+        user: str | UUID,
+        role: str,
+        *,
+        grant: bool,
+        actor_id: UUID | None = None,
+        reason: str = "cli",
+    ) -> bool:
+        """Grant or revoke a role, from the operator CLI by email (D6, actor NULL, reason 'cli')
+        or from the admin API by user id (actor and reason, FR-75). The change and its audit row
+        commit together (FR-77, FR-78). Returns False when nothing changed. Roles travel in the
+        access token, so the user must log in again."""
         if role not in ROLES:
             raise AppError("VALIDATION_ERROR", f"unknown role {role!r}", 422)
         async with self._sessions() as session, session.begin():
             users = UserRepository(session)
-            user = await users.get_by_email(normalise_email(email))
-            if user is None:
+            if isinstance(user, UUID):
+                found = await users.get(user)
+            else:
+                found = await users.get_by_email(normalise_email(user))
+            if found is None:
                 raise AppError("NOT_FOUND", "user not found", 404)
-            before = list(await users.roles(user.id))
-            changed = await (users.add_role if grant else users.remove_role)(user.id, role)
+            before = list(await users.roles(found.id))
+            changed = await (users.add_role if grant else users.remove_role)(found.id, role)
             if changed:
                 await AuditLogRepository(session).add(
+                    actor_id=actor_id,
                     entity_type="user",
-                    entity_id=str(user.id),
+                    entity_id=str(found.id),
                     action="role_granted" if grant else "role_revoked",
                     before={"roles": before},
-                    after={"roles": list(await users.roles(user.id))},
-                    reason="cli",
+                    after={"roles": list(await users.roles(found.id))},
+                    reason=reason,
                 )
         return changed
 
@@ -134,10 +147,38 @@ class UserService:
                 after={"status": "suspended", "sessions_revoked": len(sids)},
                 reason=reason.strip(),
             )
-        await self._denylist.revoke([user_key(user_id)])
+        # the sessions too, so a later reinstatement never revives an old access token (FR-76)
+        await self._denylist.revoke([user_key(user_id), *(sid_key(s) for s in sids)])
         if self._notify_revoked is not None:
             await self._notify_revoked(user_id, None)  # close live sockets on every instance
         log.info(
             "user suspended",
+            extra={"fields": {"user_id": str(user_id), "actor_id": str(admin_id)}},
+        )
+
+    async def reinstate_user(self, admin_id: UUID, user_id: UUID, reason: str) -> None:
+        """Suspended -> active with its audit row (FR-76, BR-12), then the denylist entry goes
+        (sync_denylist also removes it for anyone no longer suspended). Sessions revoked by the
+        suspension stay revoked: the user logs in again."""
+        async with self._sessions() as session, session.begin():
+            users = UserRepository(session)
+            user = await users.get(user_id)
+            if user is None:
+                raise AppError("NOT_FOUND", "user not found", 404)
+            if user.status != "suspended":
+                raise AppError("NOT_SUSPENDED", "the account is not suspended", 409)
+            await users.set_status(user_id, "active")
+            await AuditLogRepository(session).add(
+                actor_id=admin_id,
+                entity_type="user",
+                entity_id=str(user_id),
+                action="user_reinstated",
+                before={"status": "suspended"},
+                after={"status": "active"},
+                reason=reason,
+            )
+        await self._denylist.clear_user(user_id)
+        log.info(
+            "user reinstated",
             extra={"fields": {"user_id": str(user_id), "actor_id": str(admin_id)}},
         )

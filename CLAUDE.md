@@ -121,6 +121,8 @@ docker compose exec api pytest tests/bidding/test_latency.py -s   # NFR-1 p50/p9
 docker compose exec api pytest tests/bidding/test_proxy_property.py --hypothesis-show-statistics   # OR-13 property test
 docker compose exec api pytest tests/auth tests/test_security_unit.py   # identity tests (fake clock, no sleeps)
 docker compose exec api pytest tests/realtime  # WebSocket tests on two in-process uvicorn instances
+docker compose exec api pytest tests/closing   # close task: lock, backstop, re-check, outcomes, sweep
+docker compose exec api pytest tests/admin     # admin endpoints and settlement read
 docker compose exec api pytest tests/lifecycle tests/scheduler tests/discovery   # Phase 7 tests
 docker compose exec api pytest tests/discovery/test_nfr6.py -s   # NFR-6 p50/p95 with 2,000 auctions, query plans
 docker compose exec api python -m app.cli grant-role <email> seller   # roles only via CLI (D6); revoke-role too

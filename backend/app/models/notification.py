@@ -26,11 +26,10 @@ NOTIFICATION_TYPES = (
     "auction_lost",
     "payment_due",
     "payment_received",
+    "auction_sold",  # the seller's close outcome (FR-62, migration 0009)
+    "auction_no_sale",
 )
-_TYPE_CHECK = (
-    "type IN ('outbid', 'ending_soon', 'auction_won', 'auction_lost', "
-    "'payment_due', 'payment_received')"
-)
+_TYPE_CHECK = "type IN (" + ", ".join(f"'{t}'" for t in NOTIFICATION_TYPES) + ")"
 
 
 class Notification(Base):

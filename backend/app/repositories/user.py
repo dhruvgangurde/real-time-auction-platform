@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.models import User, UserRole
@@ -77,3 +77,45 @@ class UserRepository(BaseRepository):
             values["avatar_url"] = avatar_url
         if values:
             await self.session.execute(update(User).where(User.id == user_id).values(**values))
+
+    # ---------------------------------------------------------------- administration (FR-76)
+
+    async def search(
+        self, *, query: str | None, role: str | None, status: str | None, limit: int, offset: int
+    ) -> list[User]:
+        """Free text over email and name (LIKE wildcards in the text match literally), role and
+        status filters; newest first."""
+        stmt = select(User)
+        if query:
+            escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{escaped}%"
+            stmt = stmt.where(
+                or_(
+                    User.email.ilike(pattern, escape="\\"),
+                    User.full_name.ilike(pattern, escape="\\"),
+                )
+            )
+        if role is not None:
+            stmt = stmt.where(exists().where(UserRole.user_id == User.id, UserRole.role == role))
+        if status is not None:
+            stmt = stmt.where(User.status == status)
+        stmt = stmt.order_by(User.created_at.desc(), User.id.desc()).limit(limit).offset(offset)
+        return list((await self.session.execute(stmt)).scalars())
+
+    async def roles_for(self, user_ids: list[UUID]) -> dict[UUID, list[str]]:
+        stmt = (
+            select(UserRole.user_id, UserRole.role)
+            .where(UserRole.user_id.in_(user_ids))
+            .order_by(UserRole.role)
+        )
+        roles: dict[UUID, list[str]] = {u: [] for u in user_ids}
+        for r in (await self.session.execute(stmt)).all():
+            roles[r.user_id].append(r.role)
+        return roles
+
+    async def suspended_ids(self, user_ids: list[UUID]) -> list[UUID]:
+        """Those of these users who are suspended now (denylist resync)."""
+        if not user_ids:
+            return []
+        stmt = select(User.id).where(User.id.in_(user_ids), User.status == "suspended")
+        return list((await self.session.execute(stmt)).scalars())

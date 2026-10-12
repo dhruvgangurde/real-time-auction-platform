@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from starlette.staticfiles import StaticFiles
 
 from app.api import discovery
+from app.api.admin import router as admin_router
 from app.api.auctions import router as auctions_router
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
@@ -48,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(discovery.categories)
     app.include_router(discovery.watchlist)
     app.include_router(discovery.seller)
+    app.include_router(admin_router)
     app.include_router(ws_router)
     # re-encoded auction images, read-only (GET/HEAD only), never user-chosen names (NFR-24)
     app.mount(

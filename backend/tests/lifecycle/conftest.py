@@ -20,12 +20,15 @@ from app.api import deps
 from app.core.config import settings
 from app.core.ratelimit import RateLimiter
 from app.core.storage import LocalStorage
+from app.services.admin import AdminService
 from app.services.auctions import AuctionService
 from app.services.auth import AuthService
 from app.services.bidding import BidService
 from app.services.catalog import CatalogService
+from app.services.closing import Closer
 from app.services.denylist import Denylist
 from app.services.live_state import init_live_state, state_key
+from app.services.users import UserService
 from tests.auth.conftest import PASSWORD, FakeClock, RecordingEmail, fresh_email
 from tests.bidding.conftest import PersistRecorder
 from tests.db.conftest import make_auction
@@ -97,6 +100,26 @@ def bid_service(redis: Redis, sessions: async_sessionmaker[AsyncSession]) -> Bid
     return BidService(redis, sessions, PersistRecorder())
 
 
+@pytest.fixture
+def user_service(
+    sessions: async_sessionmaker[AsyncSession], clock: FakeClock, redis: Redis
+) -> UserService:
+    return UserService(sessions, clock, Denylist(redis, None))
+
+
+@pytest.fixture
+def close_queue() -> list[UUID]:
+    """Auctions the admin service handed to the close task."""
+    return []
+
+
+@pytest.fixture
+def admin_service(
+    sessions: async_sessionmaker[AsyncSession], redis: Redis, close_queue: list[UUID]
+) -> AdminService:
+    return AdminService(sessions, redis, Closer(redis, sessions), close_queue.append)
+
+
 def _provide(value: Any) -> Callable[[], Any]:
     return lambda: value  # no parameters: FastAPI would read them as request parameters
 
@@ -109,6 +132,8 @@ async def api(
     auction_service: AuctionService,
     catalog_service: CatalogService,
     bid_service: BidService,
+    user_service: UserService,
+    admin_service: AdminService,
     redis: Redis,
     sessions: async_sessionmaker[AsyncSession],
     clock: FakeClock,
@@ -122,6 +147,8 @@ async def api(
         deps.get_auction_service: auction_service,
         deps.get_catalog_service: catalog_service,
         deps.get_bid_service: bid_service,
+        deps.get_user_service: user_service,
+        deps.get_admin_service: admin_service,
         deps.get_storage: storage,
         deps.get_redis: redis,
         deps.get_sessions: sessions,

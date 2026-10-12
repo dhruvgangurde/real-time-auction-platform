@@ -2,10 +2,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select, text, tuple_
+from sqlalchemy import func, select, text, tuple_, union
 from sqlalchemy.dialects.postgresql import insert
 
-from app.models import Bid
+from app.models import Bid, ProxyBid
 from app.repositories.base import BaseRepository
 
 
@@ -19,6 +19,24 @@ class BidRepository(BaseRepository):
             .limit(1)
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def winning_bid(self, auction_id: UUID) -> Bid | None:
+        """FR-59: the highest amount, equal amounts resolved by the lowest sequence number."""
+        stmt = (
+            select(Bid)
+            .where(Bid.auction_id == auction_id)
+            .order_by(Bid.amount.desc(), Bid.sequence_no)
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def participant_ids(self, auction_id: UUID) -> set[UUID]:
+        """Everyone who bid or armed a maximum on the auction (FR-62)."""
+        stmt = union(
+            select(Bid.bidder_id).where(Bid.auction_id == auction_id),
+            select(ProxyBid.bidder_id).where(ProxyBid.auction_id == auction_id),
+        )
+        return set((await self.session.execute(stmt)).scalars())
 
     async def max_sequence(self, auction_id: UUID) -> int:
         stmt = select(func.coalesce(func.max(Bid.sequence_no), 0)).where(

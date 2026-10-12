@@ -17,10 +17,12 @@ from app.core.config import settings
 from app.core.errors import AppError
 from app.core.ratelimit import RateLimiter
 from app.core.storage import LocalStorage
+from app.services.admin import AdminService
 from app.services.auctions import AuctionService
 from app.services.auth import AuthService, CurrentUser
 from app.services.bidding import BidService
 from app.services.catalog import CatalogService
+from app.services.closing import Closer
 from app.services.denylist import Denylist
 from app.services.email import ConsoleEmailSender
 from app.services.users import UserService
@@ -99,6 +101,18 @@ def get_auction_service() -> AuctionService:
 @cache
 def get_catalog_service() -> CatalogService:
     return CatalogService(get_sessions(), get_redis(), get_storage())
+
+
+@cache
+def get_admin_service() -> AdminService:
+    from app.workers.dispatch import enqueue
+
+    return AdminService(
+        get_sessions(),
+        get_redis(),
+        Closer(get_redis(), get_sessions()),
+        lambda auction_id: enqueue("close_auction", [str(auction_id)]),
+    )
 
 
 def client_ip(request: Request) -> str:

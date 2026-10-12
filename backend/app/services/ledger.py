@@ -7,9 +7,10 @@ Proxy changes (kind=proxy_set, kind=proxy_deactivated) travel through the same s
 applied in stream order inside the same transaction as the bids of their batch.
 
 Idempotent and safe to run concurrently: the bid insert skips existing (auction_id, sequence_no)
-pairs, extensions only ever move end_time forward, proxy rows are raised only by a newer arm_seq
-and deactivated only for their own arm_seq, and stream entries are deleted only after the
-commit. A crash between commit and delete just replays the batch.
+pairs, extensions are applied only with the insert of their bid and only ever move end_time
+forward, proxy rows are raised only by a newer arm_seq and deactivated only for their own
+arm_seq, and stream entries are deleted only after the commit. A crash between commit and
+delete just replays the batch.
 
 Proxy maxima never reach audit_log or log lines (FR-51, BR-7).
 """
@@ -151,7 +152,11 @@ async def _write_batch(
             assert top.amount is not None and top.sequence_no is not None
             await auctions.apply_bids(auction_id, top.amount, top.sequence_no)
 
-        extended = [e for e in bid_entries if e.end_time_after is not None]
+        # only bids this transaction inserted: a replayed row's extension was applied when it
+        # was inserted, and re-applying it could move a force-closed end time back out (FR-63)
+        extended = [
+            e for e in bid_entries if e.end_time_after is not None and e.sequence_no in inserted
+        ]
         if extended:
             end_time, count = await auctions.extension_state(auction_id)  # row locked
             before = {"end_time_ms": to_ms(end_time), "extension_count": count}
@@ -160,26 +165,25 @@ async def _write_batch(
                 max(e.end_time_after for e in extended if e.end_time_after),
                 max(e.extension_count or 0 for e in extended),
             )
-            # audit each new extension once, not on replays, chained in sequence order so each
-            # row's before is the previous row's after (FR-77)
+            # audit each new extension once, chained in sequence order so each row's before is
+            # the previous row's after (FR-77)
             for e in sorted(extended, key=lambda e: e.sequence_no or 0):
-                if e.sequence_no in inserted:
-                    after = {
-                        "sequence_no": e.sequence_no,
-                        "end_time_after": e.raw["end_time_after"],
-                        "extension_count": e.extension_count,
-                    }
-                    await audit.add(
-                        entity_type="auction",
-                        entity_id=str(auction_id),
-                        action="soft_close_extended",
-                        before=before,
-                        after=after,
-                    )
-                    before = {
-                        "end_time_ms": int(e.raw["end_time_after"]),
-                        "extension_count": e.extension_count,
-                    }
+                after = {
+                    "sequence_no": e.sequence_no,
+                    "end_time_after": e.raw["end_time_after"],
+                    "extension_count": e.extension_count,
+                }
+                await audit.add(
+                    entity_type="auction",
+                    entity_id=str(auction_id),
+                    action="soft_close_extended",
+                    before=before,
+                    after=after,
+                )
+                before = {
+                    "end_time_ms": int(e.raw["end_time_after"]),
+                    "extension_count": e.extension_count,
+                }
 
         # proxy changes in stream order; each is idempotent on replay
         proxy_repo = ProxyBidRepository(session)

@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.clock import Clock
 from app.core.config import settings
-from app.repositories import AuditLogRepository, SessionRepository
+from app.repositories import AuditLogRepository, SessionRepository, UserRepository
 
 log = logging.getLogger("denylist")
 
@@ -74,6 +74,17 @@ class Denylist:
                 },
             )
 
+    async def clear_user(self, user_id: UUID) -> None:
+        """A reinstated user (FR-76). If Redis cannot be reached now, sync_denylist removes the
+        key within 30 s; until then the user is still refused (fail closed)."""
+        try:
+            await self._redis.delete(f"revoked:{user_key(user_id)}")
+        except RedisError as exc:
+            log.warning(
+                "denylist key not removed; sync_denylist will",
+                extra={"fields": {"user_id": str(user_id), "error": repr(exc)}},
+            )
+
     async def check(self, sid: UUID, user_id: UUID) -> str | None:
         """'user' if the account is denied, 'sid' if the session is, else None.
 
@@ -91,13 +102,17 @@ class Denylist:
 
 
 async def resync(redis: Redis, sessions: async_sessionmaker[AsyncSession], clock: Clock) -> int:
-    """Rewrite denylist keys for everything revoked within the access-token lifetime."""
+    """Rewrite denylist keys for everything revoked within the access-token lifetime. A user
+    suspended in that window but reinstated since gets the key removed instead (FR-76)."""
     ttl = settings.access_token_ttl_s
     since = clock.now() - timedelta(seconds=ttl)
     async with sessions() as session:
         sids = await SessionRepository(session).revoked_since(since)
-        users = await AuditLogRepository(session).entity_ids_for_action(SUSPENDED_ACTION, since)
-    keys = [sid_key(s) for s in sids] + [f"user:{u}" for u in users]
+        audited = await AuditLogRepository(session).entity_ids_for_action(SUSPENDED_ACTION, since)
+        users = await UserRepository(session).suspended_ids(audited)
+    keys = [sid_key(s) for s in sids] + [user_key(u) for u in users]
     if keys:
         await write_keys(redis, keys, ttl)
+    if reinstated := set(audited) - set(users):
+        await redis.delete(*[f"revoked:{user_key(u)}" for u in reinstated])
     return len(keys)

@@ -21,6 +21,9 @@ Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, m
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 Slug = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=100)]
 
+Role = Literal["bidder", "seller", "admin"]
+UserStatus = Literal["pending_verification", "active", "suspended"]
+
 # statuses a listing may ask for: drafts and cancelled auctions are never listed (FR-30)
 ListedStatus = Literal["scheduled", "live", "closing", "closed_sold", "closed_no_sale"]
 

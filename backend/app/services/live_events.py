@@ -167,3 +167,33 @@ async def publish_session_revoked(redis: Redis, user_id: UUID, sid: UUID | None)
             "session_revoked publish failed",
             extra={"fields": {"user_id": str(user_id), "error": repr(exc)}},
         )
+
+
+async def publish_auction_closed(
+    redis: Redis,
+    auction_id: UUID,
+    *,
+    outcome: str,
+    final_price: int | None,
+    reserve_met: bool | None,
+    final_sequence_no: int,
+) -> None:
+    """The room's last event (FR-62): outcome, final price and whether a reserve was met, never
+    the reserve itself (BR-6). final_sequence_no equals the last bid's sequence, so clients
+    apply it regardless of the sequence rule."""
+    payload = event(
+        "auction_closed",
+        auction_id=str(auction_id),
+        outcome=outcome,
+        final_price=final_price,
+        reserve_met=reserve_met,
+        final_sequence_no=final_sequence_no,
+    )
+    try:
+        await redis.publish(room_channel(auction_id), json.dumps(payload))
+    except RedisError as exc:
+        # at-most-once: clients see the outcome from /live, served from Postgres once terminal
+        log.warning(
+            "auction_closed publish failed",
+            extra={"fields": {"auction_id": str(auction_id), "error": repr(exc)}},
+        )
