@@ -15,13 +15,11 @@ class PaymentRepository(BaseRepository):
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def insert_ignore(self, **values: Any) -> bool:
-        """One row per settlement: a concurrent or retried start finds the first one (FR-66)."""
-        stmt = (
-            insert(Payment)
-            .values(**values)
-            .on_conflict_do_nothing(index_elements=["idempotency_key"])
-            .returning(Payment.id)
-        )
+        """One row per settlement: a concurrent or retried start finds the first one (FR-66).
+        No conflict target: concurrent starts that adopted the same gateway order collide on
+        gateway_order_id as well as idempotency_key, and Postgres only turns a conflict on the
+        named target into DO NOTHING; on any other unique index it raises."""
+        stmt = insert(Payment).values(**values).on_conflict_do_nothing().returning(Payment.id)
         return (await self.session.execute(stmt)).scalar_one_or_none() is not None
 
     async def touch(self, payment_id: UUID) -> None:

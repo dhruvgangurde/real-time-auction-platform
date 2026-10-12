@@ -176,3 +176,36 @@ async def test_gateway_rejecting_the_order_is_unavailable(
 async def test_redis_for_limits_only(redis: Redis) -> None:
     """The payment path never stores anything in Redis but rate-limit counters (DC-1)."""
     assert await redis.dbsize() == 0
+
+
+async def test_insert_ignores_a_conflict_on_any_unique_key(
+    sold, sessions, db: asyncpg.Connection
+) -> None:
+    """FR-66, DC-5: the losing concurrent start may meet the winner's row on gateway_order_id
+    before it meets it on idempotency_key; that is 'already there', never an error."""
+    from app.repositories import PaymentRepository
+
+    first, second = await sold(), await sold()
+    async with sessions() as session, session.begin():
+        repo = PaymentRepository(session)
+        assert await repo.insert_ignore(
+            settlement_id=first.settlement_id,
+            amount=10_500,
+            status="created",
+            gateway_order_id="order_sharedRace1",
+            idempotency_key=f"order:{first.settlement_id}",
+        )
+    async with sessions() as session, session.begin():
+        assert not await PaymentRepository(session).insert_ignore(
+            settlement_id=second.settlement_id,
+            amount=10_500,
+            status="created",
+            gateway_order_id="order_sharedRace1",  # same order, another key
+            idempotency_key=f"order:{second.settlement_id}",
+        )
+    assert (
+        await db.fetchval(
+            "SELECT count(*) FROM payments WHERE gateway_order_id = 'order_sharedRace1'"
+        )
+        == 1
+    )
