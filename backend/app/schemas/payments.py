@@ -4,6 +4,13 @@ no amount and nothing card-related is accepted."""
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class PaymentStart(BaseModel):
+    """Starting a payment takes no input: the amount is always the settlement's. Declared so a
+    body with any field (an amount above all) is refused, not silently ignored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class PaymentConfirm(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

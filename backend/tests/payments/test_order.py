@@ -63,7 +63,10 @@ async def test_order_carries_the_settlement_amount_and_is_reused(
     assert await start(api, sale) == first
     assert gateway.calls.count("create_order") == 1
     tampered = await api.post(sale.payment_url, json={"amount": 1}, headers=sale.winner)
-    assert tampered.status_code == 200 and tampered.json()["amount"] == 10_500  # body ignored
+    assert (tampered.status_code, tampered.json()["error"]["code"]) == (422, "VALIDATION_ERROR")
+    empty = await api.post(sale.payment_url, json={}, headers=sale.winner)  # DC-11: {} is no input
+    assert empty.status_code == 200 and empty.json()["amount"] == 10_500
+    assert gateway.calls.count("create_order") == 1
 
     row = await db.fetchrow(
         "SELECT actor_id, after FROM audit_log WHERE entity_type = 'payment' "

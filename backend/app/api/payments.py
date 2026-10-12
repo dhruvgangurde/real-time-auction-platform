@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from app.api.deps import client_ip, current_user, get_payment_service
 from app.core.config import settings
-from app.schemas.payments import PaymentConfirm
+from app.schemas.payments import PaymentConfirm, PaymentStart
 from app.services.auth import CurrentUser
 from app.services.images import read_capped
 from app.services.payments import PaymentService
@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api/v1", tags=["payments"])
 @router.post("/auctions/{auction_id}/payment")
 async def start_payment(
     auction_id: UUID,
+    _: PaymentStart | None = None,  # no body, or {}; any field is VALIDATION_ERROR (DC-11)
     user: CurrentUser = Depends(current_user),
     payments: PaymentService = Depends(get_payment_service),
 ) -> dict[str, Any]:

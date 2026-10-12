@@ -365,7 +365,7 @@ Razorpay in test mode only: a key id that is not `rzp_test_…` is refused at st
 
 | Endpoint | Who | Notes |
 |---|---|---|
-| `POST /api/v1/auctions/{id}/payment` | the winner | FR-65: NOT_WINNER for anyone else (a no-sale has no winner), ALREADY_PAID, AMOUNT_BELOW_GATEWAY_MINIMUM. Returns `{payment_id, settlement_id, status, amount, currency, gateway, key_id, order_id}` for the checkout. The amount is the settlement's; no body is read. 10 per minute per user |
+| `POST /api/v1/auctions/{id}/payment` | the winner | FR-65: NOT_WINNER for anyone else (a no-sale has no winner), ALREADY_PAID, AMOUNT_BELOW_GATEWAY_MINIMUM. Returns `{payment_id, settlement_id, status, amount, currency, gateway, key_id, order_id}` for the checkout. The amount is the settlement's: send no body or `{}`; a body with any field (an amount, say) is VALIDATION_ERROR (422, DC-11). 10 per minute per user |
 | `POST /api/v1/auctions/{id}/payment/confirm` | the winner | Body: the three ids the checkout returns (`razorpay_order_id`, `razorpay_payment_id`, `razorpay_signature`, strict patterns, nothing else). 200 `{status: paid|failed}`, 202 `{status: pending}` while the gateway cannot be read, 400 INVALID_SIGNATURE, 409 PAYMENT_MISMATCH. 20 per minute per user |
 | `POST /api/v1/payments/razorpay/webhook` | the gateway | No session; admitted only by `X-Razorpay-Signature` over the raw body. 200 once processed or deliberately ignored, 400 INVALID_SIGNATURE, 413 above 64 KB, 5xx on a database or limiter failure so the gateway redelivers. 600 per minute per address |
 | `GET /api/v1/auctions/{id}/settlement` | winner, seller, admin | now includes `payment {id, status, amount, currency, order_id, payment_id, updated_at_ms}` (FR-69) |
