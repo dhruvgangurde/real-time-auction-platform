@@ -1,8 +1,10 @@
-"""Outbox persister: exactly-once ledger rows, extensions, collisions (FR-41, FR-55, NFR-10)."""
+"""Outbox persister and sweeper: exactly-once ledger rows, extensions, collisions
+(FR-41, FR-55, FR-77, NFR-10)."""
 
 import asyncio
 import json
 import logging
+from uuid import uuid4
 
 import asyncpg
 import pytest
@@ -10,8 +12,8 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services.bidding import BidService
-from app.services.ledger import persist_outbox
-from app.services.live_state import dead_letter_key, from_ms, outbox_key
+from app.services.ledger import persist_all_pending, persist_outbox
+from app.services.live_state import dead_letter_key, from_ms, outbox_key, to_ms
 from tests.bidding.conftest import AuctionFactory
 
 
@@ -86,26 +88,69 @@ async def test_extension_reaches_auction_row_with_audit(
     sessions: async_sessionmaker[AsyncSession],
     db: asyncpg.Connection,
 ) -> None:
-    """FR-55: the new end time is persisted with the bid that caused it; FR-14 untouched."""
-    a = await auction(ends_in_ms=59_000)
+    """FR-55: the new end time is persisted with the bid that caused it; FR-14 untouched.
+    FR-77: each extension's audit row has the state before and after, chained in order."""
+    a = await auction(ends_in_ms=59_000, threshold_s=600, extension_s=60)
     original = await db.fetchval("SELECT original_end_time FROM auctions WHERE id = $1", a)
-    r = await service.place_bid(a, await new_user(), 10_000, "late")
-    assert r.extended
-    await persist_outbox(a, redis, sessions)
+    first = await service.place_bid(a, await new_user(), 10_000, "late1")
+    second = await service.place_bid(a, await new_user(), 10_500, "late2")
+    assert first.extended and second.extended
+    await persist_outbox(a, redis, sessions)  # both extensions in one batch
 
     row = await db.fetchrow(
         "SELECT end_time, extension_count, original_end_time FROM auctions WHERE id = $1", a
     )
-    assert row["end_time"] == from_ms(r.end_time_ms)
-    assert row["extension_count"] == 1
+    assert row["end_time"] == from_ms(second.end_time_ms)
+    assert row["extension_count"] == 2
     assert row["original_end_time"] == original
     bid = await db.fetchrow("SELECT end_time_after FROM bids WHERE auction_id = $1", a)
-    assert bid["end_time_after"] == from_ms(r.end_time_ms)
+    assert bid["end_time_after"] == from_ms(first.end_time_ms)
     audits = await db.fetch(
-        "SELECT action, after FROM audit_log WHERE entity_type = 'auction' AND entity_id = $1",
+        "SELECT action, before, after FROM audit_log "
+        "WHERE entity_type = 'auction' AND entity_id = $1 ORDER BY id",
         str(a),
     )
-    assert [x["action"] for x in audits] == ["soft_close_extended"]
+    assert [x["action"] for x in audits] == ["soft_close_extended"] * 2
+    assert [json.loads(x["before"]) for x in audits] == [
+        {"end_time_ms": to_ms(original), "extension_count": 0},
+        {"end_time_ms": first.end_time_ms, "extension_count": 1},
+    ]
+    assert json.loads(audits[1]["after"])["extension_count"] == 2
+
+
+async def test_sweeper_drains_every_outbox_and_survives_a_failing_one(
+    service: BidService,
+    auction: AuctionFactory,
+    new_user,
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+    db: asyncpg.Connection,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """NFR-10: the beat safety net persists every non-empty outbox; an auction whose batch
+    fails is logged, keeps its entries, and never stops the others."""
+    a, b = await auction(), await auction()
+    bidders = [await new_user(), await new_user()]
+    await _place(service, a, bidders, 10_000, 2)
+    await _place(service, b, bidders, 10_000, 3)
+    ghost = uuid4()  # an outbox for an auction Postgres does not have: the insert hits the FK
+    await redis.xadd(
+        outbox_key(ghost),
+        {
+            "kind": "bid",
+            "bidder_id": str(bidders[0]),
+            "amount": "10000",
+            "sequence_no": "1",
+            "bid_type": "manual",
+            "accepted_at_ms": "0",
+        },
+    )
+    with caplog.at_level(logging.ERROR, logger="ledger"):
+        assert await persist_all_pending(redis, sessions) == 5
+    assert await _ledger(db, a) == [1, 2]
+    assert await _ledger(db, b) == [1, 2, 3]
+    assert await redis.xlen(outbox_key(ghost)) == 1  # kept for the next run, never dropped
+    assert [r.getMessage() for r in caplog.records if r.name == "ledger"] == ["sweep failed"]
 
 
 async def test_sequence_collision_keeps_the_bid(

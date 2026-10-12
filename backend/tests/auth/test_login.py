@@ -4,6 +4,9 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import settings
+from app.core.errors import AppError
+from app.core.ratelimit import RateLimit, RateLimiter
+from app.core.redis import create_redis
 from app.services import auth as auth_module
 from tests.auth.conftest import (
     PASSWORD,
@@ -17,6 +20,17 @@ from tests.auth.conftest import (
 
 async def _login(client: AsyncClient, email: str, password: str):
     return await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+
+
+async def test_rate_limiter_fails_closed_without_redis(clock: FakeClock) -> None:
+    """NFR-22: a limiter that cannot count refuses (SERVICE_UNAVAILABLE), never lets through."""
+    dead = create_redis("redis://redis:6399/15")
+    try:
+        with pytest.raises(AppError) as info:
+            await RateLimiter(dead, clock).hit("login_ip", "10.0.0.1", RateLimit(5, 60))
+        assert info.value.code == "SERVICE_UNAVAILABLE" and info.value.status == 503
+    finally:
+        await dead.aclose()
 
 
 async def test_unknown_email_and_wrong_password_are_indistinguishable(

@@ -35,6 +35,7 @@ from app.repositories import AuctionRepository
 from app.services import live_state
 from app.services.live_state import (
     AuctionNotFound,
+    AuctionNotLive,
     LiveStateUnavailable,
     outbox_key,
     proxies_key,
@@ -157,6 +158,47 @@ def _to_proxy_result(raw: dict[str, Any]) -> ProxyResult:
     return ProxyResult(armed=False, code=raw["code"], min_next=_opt(raw, "min_next"))
 
 
+def log_bid(
+    auction_id: UUID, bidder_id: UUID, amount: int, request_id: str, result: BidResult
+) -> None:
+    """One line per bid submission, whoever decided it: arbitration here, or a check before it
+    in the WebSocket gate or the REST limiter (FR-44, NFR-32). The correlation id is added by
+    the formatter; automatic bids are traceable by their sequence numbers."""
+    log.info(
+        "bid",
+        extra={
+            "fields": {
+                "auction_id": str(auction_id),
+                "bidder_id": str(bidder_id),
+                "amount": amount,
+                "bid_request_id": request_id,
+                "decision": "accepted" if result.accepted else "rejected",
+                "code": result.code,
+                "sequence_no": result.sequence_no,
+                "automatic_sequence_nos": [a.sequence_no for a in result.automatic_bids],
+            }
+        },
+    )
+
+
+def log_proxy(auction_id: UUID, bidder_id: UUID, request_id: str, result: ProxyResult) -> None:
+    """One line per maximum submission. The maximum itself is never logged (FR-51)."""
+    log.info(
+        "proxy",
+        extra={
+            "fields": {
+                "auction_id": str(auction_id),
+                "bidder_id": str(bidder_id),
+                "bid_request_id": request_id,
+                "decision": "armed" if result.armed else "rejected",
+                "code": result.code,
+                "active": result.active,
+                "automatic_sequence_nos": [a.sequence_no for a in result.automatic_bids],
+            }
+        },
+    )
+
+
 def _valid(auction_id: UUID, bidder_id: UUID, amount: int, request_id: str) -> bool:
     return (
         isinstance(auction_id, UUID)
@@ -199,22 +241,7 @@ class BidService:
         raw = await self._decide(auction_id, bidder_id, amount, request_id, arbitrate)
         result = _to_bid_result(raw)
         self._after(auction_id, result.accepted or bool(result.automatic_bids))
-        # one line per submission (FR-44, NFR-32); the correlation id is added by the formatter
-        log.info(
-            "bid",
-            extra={
-                "fields": {
-                    "auction_id": str(auction_id),
-                    "bidder_id": str(bidder_id),
-                    "amount": amount,
-                    "bid_request_id": request_id,
-                    "decision": "accepted" if result.accepted else "rejected",
-                    "code": result.code,
-                    "sequence_no": result.sequence_no,
-                    "automatic_bids": len(result.automatic_bids),
-                }
-            },
-        )
+        log_bid(auction_id, bidder_id, amount, request_id, result)
         return result
 
     async def set_proxy(
@@ -234,20 +261,7 @@ class BidService:
         raw = await self._decide(auction_id, bidder_id, max_amount, request_id, arbitrate)
         result = _to_proxy_result(raw)
         self._after(auction_id, result.armed)
-        log.info(
-            "proxy",
-            extra={
-                "fields": {
-                    "auction_id": str(auction_id),
-                    "bidder_id": str(bidder_id),
-                    "bid_request_id": request_id,
-                    "decision": "armed" if result.armed else "rejected",
-                    "code": result.code,
-                    "active": result.active,
-                    "automatic_bids": len(result.automatic_bids),
-                }
-            },
-        )
+        log_proxy(auction_id, bidder_id, request_id, result)
         return result
 
     def _after(self, auction_id: UUID, wrote_outbox: bool) -> None:
@@ -285,6 +299,9 @@ class BidService:
         except AuctionNotFound:
             # the auction vanished between the existence check and the rebuild
             return _rejected("NOT_FOUND")
+        except AuctionNotLive:
+            # the auction left live status between the status check and the rebuild
+            return _rejected("AUCTION_CLOSED")
         except (RedisError, LiveStateUnavailable, SQLAlchemyError, OSError) as exc:
             # fail closed: nothing is accepted whose ordering cannot be established (FR-42)
             log.warning(

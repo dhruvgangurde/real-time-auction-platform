@@ -1,4 +1,5 @@
-"""WebSocket message schemas (CI-3, CI-5, DC-11) and application close codes (CI-4).
+"""WebSocket message schemas (CI-3, CI-5, DC-11), application close codes (CI-4) and the
+rejection texts shared by the WebSocket and the REST fallback.
 
 Every client message has an explicit `type`; anything else, any extra field, or any value out
 of range is rejected before it reaches business logic.
@@ -14,6 +15,29 @@ from app.services.bidding import MAX_AMOUNT
 
 REQUEST_ID = r"^[A-Za-z0-9_-]{1,64}$"
 
+REJECTION_TEXT = {
+    "BID_TOO_LOW": "bid is below the minimum next bid",
+    "BID_ABOVE_LIMIT": "amount is more than 100 times the starting price",
+    "SELF_OUTBID_NOT_ALLOWED": "you already hold the highest bid",
+    "AUCTION_CLOSED": "auction is not open for bids",
+    "AUCTION_NOT_STARTED": "auction has not started",
+    "BELOW_CURRENT_PRICE": "maximum is below the minimum next bid",
+    "PROXY_CANNOT_DECREASE": "a maximum can only be raised",
+    "SERVICE_UNAVAILABLE": "bidding is temporarily unavailable; retry with the same request_id",
+    "RATE_LIMITED": "too many submissions",
+    "NOT_SUBSCRIBED": "subscribe to the auction first",
+    "FORBIDDEN": "bidder role required",
+    "NOT_FOUND": "auction not found",
+    "VALIDATION_ERROR": "invalid request",
+    "INVALID_TOKEN": "session is no longer valid",
+    "TOKEN_EXPIRED": "access token expired",
+    "ACCOUNT_SUSPENDED": "this account is suspended",
+}
+
+
+def rejection_text(code: str) -> str:
+    return REJECTION_TEXT.get(code, code.lower().replace("_", " "))
+
 
 class CloseCode(IntEnum):
     """Close codes; docs/architecture.md section 10 is the reference."""
@@ -22,15 +46,15 @@ class CloseCode(IntEnum):
     GOING_AWAY = 1001
     POLICY = 1008  # Origin refused (sent before accept, surfaces as HTTP 403)
     TOO_BIG = 1009  # frame above the protocol cap (uvicorn --ws-max-size)
-    INTERNAL = 1011
+    INTERNAL = 1011  # unexpected server error in a connection task
     AUTH_REQUIRED = 4001  # no authenticate as the first message within the timeout
-    AUTH_FAILED = 4002  # token invalid, or re-authentication as a different user
+    AUTH_FAILED = 4002  # token invalid, or re-authentication with another session's token
     TOKEN_EXPIRED = 4003  # access token expired without a fresh authenticate
     SESSION_REVOKED = 4004  # logout, password reset or suspension
     SLOW_CONSUMER = 4008  # send queue overflowed
-    POLICY_VIOLATION = 4009  # repeated invalid or over-limit messages
-    TOO_MANY_CONNECTIONS = 4010  # per-user connection limit across instances
-    IDLE_TIMEOUT = 4011  # no client message within the idle timeout
+    POLICY_VIOLATION = 4009  # too many strikes (invalid, over-limit or refused messages)
+    TOO_MANY_SESSIONS = 4010  # the user already holds the maximum number of sessions
+    SESSION_REPLACED = 4012  # a newer socket of the same session took over (CI-3)
 
 
 class _Message(BaseModel):

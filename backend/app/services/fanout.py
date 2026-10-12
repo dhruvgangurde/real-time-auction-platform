@@ -1,18 +1,23 @@
 """Per-instance fan-out of Redis pub/sub events to local WebSocket connections
-(FR-29, FR-31, FR-32, CI-7, NFR-5, NFR-13).
+(FR-29, FR-31, FR-32, CI-3, CI-7, NFR-5, NFR-13).
 
 One `Hub` per API instance holds one pub/sub connection. It subscribes to a room channel only
 while a local socket is in that room and to a user channel only while that user has a local
 socket (reference counted), and dispatches each message to the matching local connections.
+
+One socket per session (CI-3): registering claims the session's slot with a new generation
+(ws_claim.lua). Older sockets of the same session are closed with SESSION_REPLACED, locally at
+once and on other instances through `session_replaced` on the user channel; the higher
+generation always wins. A user holds at most ws_max_sessions_per_user sessions.
 
 Each `Connection` has a bounded send queue drained by its own writer task. `offer()` never
 blocks: a full queue closes that socket with SLOW_CONSUMER, so one slow client never stalls the
 hub or anyone else.
 
 If Redis is lost, the hub tells every local socket `system_status {degraded: true}`, keeps
-retrying with backoff, resubscribes every reference-counted channel, and only then sends
-`degraded: false` (clients refetch /live on recovery). While degraded, the WebSocket handler
-rejects bids with SERVICE_UNAVAILABLE.
+retrying with backoff, resubscribes every reference-counted channel (including any referenced
+while the resubscribe was in flight), and only then sends `degraded: false` (clients refetch
+/live on recovery). While degraded, the WebSocket handler rejects bids with SERVICE_UNAVAILABLE.
 
 Presence (FR-32): every interval the hub refreshes its connections in each room's presence set
 and sends `presence {participants, sequence_no, end_time_ms}` to its local sockets in that
@@ -34,6 +39,7 @@ from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
 from starlette.websockets import WebSocket
 
+from app import lua
 from app.core.config import settings
 from app.schemas.ws import CloseCode
 from app.services.auth import CurrentUser
@@ -42,13 +48,19 @@ from app.services.live_state import auction_id_from_key, state_key
 
 log = logging.getLogger("fanout")
 
+CONN_SEQ_KEY = "ws:conn_seq"  # global generation counter for session ownership
+
 
 def presence_key(auction_id: UUID) -> str:
     return f"auction:{{{auction_id}}}:presence"
 
 
-def user_conns_key(user_id: UUID) -> str:
-    return f"ws:user:{user_id}:conns"
+def user_sessions_key(user_id: UUID) -> str:
+    return f"ws:user:{user_id}:sessions"
+
+
+def session_owner_key(sid: UUID) -> str:
+    return f"ws:sid:{sid}"
 
 
 def _now_ms() -> int:
@@ -64,16 +76,15 @@ class Connection:
 
     def __init__(self, websocket: WebSocket, conn_id: str, user: CurrentUser, token: str) -> None:
         self.ws = websocket
-        self.id = conn_id
+        self.id = conn_id  # server generated, never taken from the client
         self.user = user
         self.token = token
+        self.gen = 0  # session ownership generation; 0 when Redis was unreachable at register
         self.rooms: set[UUID] = set()
         self.queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(settings.ws_send_queue_size)
         self.closing = asyncio.Event()
         self.close_code: int | None = None
         self.close_reason = ""
-        self.last_seen = time.monotonic()
-        self.strikes = 0
 
     def offer(self, message: dict[str, Any]) -> bool:
         """Queue a message without ever blocking the caller (NFR-5)."""
@@ -107,10 +118,13 @@ class Connection:
 class Hub:
     def __init__(self, redis_url: str, redis: Redis) -> None:
         self._url = redis_url
-        self._redis = redis  # commands: presence and per-user connection sets
+        self._redis = redis  # commands: presence and session ownership
+        self._claim = redis.register_script(lua.source("ws_claim"))
+        self._release = redis.register_script(lua.source("ws_release"))
         self._client: Redis | None = None
         self._pubsub: PubSub | None = None
         self._refs: dict[str, int] = {}
+        self._subscribed: set[str] = set()  # channels the current pub/sub connection holds
         self._rooms: dict[UUID, set[Connection]] = {}
         self._users: dict[UUID, set[Connection]] = {}
         self._conns: set[Connection] = set()
@@ -139,23 +153,31 @@ class Hub:
     # ---------------------------------------------------------------- connections
 
     async def register(self, conn: Connection) -> bool:
-        """Track a new socket. False when the user already has too many (across instances)."""
-        key, now = user_conns_key(conn.user.id), _now_ms()
+        """Track a new socket and make it its session's only socket (CI-3). False when the
+        user already holds the maximum number of other sessions."""
+        user_id, sid = conn.user.id, conn.user.sid
+        cap = settings.ws_max_sessions_per_user
         try:
-            async with self._redis.pipeline(transaction=False) as pipe:
-                pipe.zremrangebyscore(key, "-inf", now)
-                pipe.zadd(key, {conn.id: now + _presence_ttl_ms()})
-                pipe.zcard(key)
-                pipe.pexpire(key, _presence_ttl_ms())
-                _, _, count, _ = await pipe.execute()
-            if count > settings.ws_max_connections_per_user:
-                await self._redis.zrem(key, conn.id)
+            gen = int(
+                await self._claim(
+                    keys=[user_sessions_key(user_id), session_owner_key(sid), CONN_SEQ_KEY],
+                    args=[str(sid), _now_ms(), _presence_ttl_ms(), cap],
+                )
+            )
+            if not gen:
                 return False
+            conn.gen = gen
         except RedisError:
-            self._set_degraded(True)  # the limit is best effort; the socket still works
+            # best effort: the socket works, and generation 0 loses to any later socket
+            self._set_degraded(True)
+        self._replace(user_id, str(sid), conn.gen)  # older sockets of this session here
         self._conns.add(conn)
-        self._users.setdefault(conn.user.id, set()).add(conn)
-        await self._ref(user_channel(conn.user.id))
+        self._users.setdefault(user_id, set()).add(conn)
+        await self._ref(user_channel(user_id))
+        if conn.gen:
+            message = event("session_replaced", sid=str(sid), gen=conn.gen)
+            with contextlib.suppress(RedisError):  # at-most-once, like session_revoked
+                await self._redis.publish(user_channel(user_id), json.dumps(message))
         if self.degraded:
             conn.offer(event("system_status", degraded=True))
         return True
@@ -170,8 +192,18 @@ class Hub:
             if not peers:
                 del self._users[conn.user.id]
         await self._unref(user_channel(conn.user.id))
-        with contextlib.suppress(RedisError):
-            await self._redis.zrem(user_conns_key(conn.user.id), conn.id)
+        if conn.gen:
+            with contextlib.suppress(RedisError):
+                await self._release(
+                    keys=[user_sessions_key(conn.user.id), session_owner_key(conn.user.sid)],
+                    args=[str(conn.user.sid), conn.gen],
+                )
+
+    def _replace(self, user_id: UUID, sid: str, gen: int) -> None:
+        """Close local sockets of this session that are older than generation `gen`."""
+        for conn in list(self._users.get(user_id, ())):
+            if str(conn.user.sid) == sid and conn.gen < gen:
+                conn.close(CloseCode.SESSION_REPLACED, "replaced by a newer connection")
 
     async def join(self, conn: Connection, auction_id: UUID) -> None:
         conn.rooms.add(auction_id)
@@ -200,6 +232,7 @@ class Hub:
         if self._refs[channel] == 1 and not self.degraded:
             try:
                 await self._ensure_pubsub().subscribe(channel)
+                self._subscribed.add(channel)
             except (RedisError, OSError):
                 self._set_degraded(True)  # the reconnect resubscribes every referenced channel
 
@@ -209,6 +242,7 @@ class Hub:
             self._refs[channel] = count
             return
         self._refs.pop(channel, None)
+        self._subscribed.discard(channel)
         if self._pubsub is not None and not self.degraded:
             with contextlib.suppress(RedisError, OSError):
                 await self._pubsub.unsubscribe(channel)
@@ -228,6 +262,7 @@ class Hub:
     async def _close_pubsub(self) -> None:
         pubsub, client = self._pubsub, self._client
         self._pubsub, self._client = None, None
+        self._subscribed = set()
         if pubsub is not None:
             with contextlib.suppress(Exception):
                 await pubsub.aclose()
@@ -242,12 +277,16 @@ class Hub:
             pubsub = self._ensure_pubsub()
             assert self._client is not None
             await self._client.ping()
-            if self._refs:
-                await pubsub.subscribe(*self._refs)
+            # a socket may join a room while SUBSCRIBE is in flight (its _ref skips subscribing
+            # while degraded): repeat until nothing referenced is missing, then report recovery
+            # with no await in between
+            while missing := set(self._refs) - self._subscribed:
+                await pubsub.subscribe(*missing)
+                self._subscribed |= missing
         except (RedisError, OSError):
             await self._close_pubsub()
             return False
-        self._set_degraded(False)  # only after resubscribing
+        self._set_degraded(False)
         return True
 
     def _set_degraded(self, value: bool) -> None:
@@ -294,8 +333,12 @@ class Hub:
             return
         if channel.startswith("user:"):
             user_id = UUID(channel.split(":", 2)[1])
+            kind = message.get("type")
+            if kind == "session_replaced":
+                self._replace(user_id, str(message.get("sid")), int(message.get("gen") or 0))
+                return
             for conn in list(self._users.get(user_id, ())):
-                if message.get("type") == "session_revoked":
+                if kind == "session_revoked":
                     sid = message.get("sid")
                     if sid is None or sid == str(conn.user.sid):
                         conn.close(CloseCode.SESSION_REVOKED, "session revoked")
@@ -325,9 +368,10 @@ class Hub:
                 pipe.pexpire(key, ttl)
                 pipe.zcard(key)
                 pipe.hmget(state_key(auction_id), "sequence", "end_time_ms")
-            for conn in self._conns:
-                pipe.zadd(user_conns_key(conn.user.id), {conn.id: now + ttl})
-                pipe.pexpire(user_conns_key(conn.user.id), ttl)
+            for conn in self._conns:  # keep this instance's sessions counted (CI-3)
+                pipe.zadd(user_sessions_key(conn.user.id), {str(conn.user.sid): now + ttl})
+                pipe.pexpire(user_sessions_key(conn.user.id), ttl)
+                pipe.pexpire(session_owner_key(conn.user.sid), ttl)
             results = await pipe.execute()
         for i, (auction_id, conns) in enumerate(rooms.items()):
             participants, (sequence, end_ms) = results[i * 5 + 3], results[i * 5 + 4]

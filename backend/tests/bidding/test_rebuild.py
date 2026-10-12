@@ -1,4 +1,4 @@
-"""Rebuild live state from Postgres (FR-43, DC-1)."""
+"""Rebuild live state from Postgres (FR-43, DC-1, D2)."""
 
 import asyncio
 import logging
@@ -12,7 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.services import live_state
 from app.services.bidding import BidService
 from app.services.ledger import persist_outbox
-from app.services.live_state import LiveStateUnavailable, init_live_state, state_key
+from app.services.live_state import (
+    AuctionNotLive,
+    LiveStateUnavailable,
+    init_live_state,
+    state_key,
+)
 from tests.bidding.conftest import AuctionFactory
 
 COMPARED = ("highest_amount", "highest_bidder", "sequence", "end_time_ms", "extension_count")
@@ -78,6 +83,20 @@ async def test_service_rebuilds_missing_state_then_accepts(
     a = await auction(init=False)
     r = await service.place_bid(a, await new_user(), 10_000, "x")
     assert r.accepted and r.sequence_no == 1
+
+
+@pytest.mark.parametrize("status", ["draft", "scheduled", "cancelled", "closed_no_sale"])
+async def test_init_refuses_auctions_that_are_not_live(
+    auction: AuctionFactory,
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+    status: str,
+) -> None:
+    """D2: only live and closing auctions ever get Redis state."""
+    a = await auction(status=status)
+    with pytest.raises(AuctionNotLive):
+        await init_live_state(a, redis, sessions)
+    assert await redis.exists(state_key(a)) == 0
 
 
 async def test_service_missing_state_scheduled_or_unknown(

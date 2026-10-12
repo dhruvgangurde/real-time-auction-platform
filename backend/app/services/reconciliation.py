@@ -1,7 +1,8 @@
 """Periodic reconciliation of Redis sequence counters against the bid ledger (FR-43, NFR-10).
 
-Never touches the bid path; it only reads and raises operator alerts (CRITICAL log lines with an
-`alert` field).
+Never touches the bid path; it reads and raises operator alerts (CRITICAL log lines with an
+`alert` field). Each run ends by dropping Redis state left for auctions that are no longer live
+or closing (D2).
 """
 
 import logging
@@ -11,7 +12,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.repositories import AuctionRepository, BidRepository
-from app.services.live_state import outbox_key, state_key
+from app.services.live_state import outbox_key, remove_stale_state, state_key
 
 log = logging.getLogger("reconciliation")
 
@@ -41,7 +42,11 @@ async def reconcile_auction(
         )
         return None
     redis_seq = int(raw_seq)
-    pending = {int(f["sequence_no"]) for _, f in await redis.xrange(outbox_key(auction_id))}
+    pending = {
+        int(f["sequence_no"])
+        for _, f in await redis.xrange(outbox_key(auction_id))
+        if f.get("kind", "bid") == "bid"  # proxy entries carry no sequence number
+    }
     async with sessions() as session:
         bids = BidRepository(session)
         ledger_max = await bids.max_sequence(auction_id)
@@ -81,12 +86,25 @@ async def reconcile_auction(
 
 
 async def reconcile(redis: Redis, sessions: async_sessionmaker[AsyncSession]) -> dict[str, str]:
-    """Reconcile every live auction. Returns {auction_id: alert_code} for alerts raised."""
+    """Reconcile every live auction, then drop stale live state (D2).
+
+    Returns {auction_id: alert_code} for alerts raised.
+    """
     async with sessions() as session:
         live = await AuctionRepository(session).list_live_ids()
     alerts: dict[str, str] = {}
     for auction_id in live:
-        code = await reconcile_auction(auction_id, redis, sessions)
+        try:
+            code = await reconcile_auction(auction_id, redis, sessions)
+        except Exception:
+            # one broken auction must never hide the other auctions' gaps
+            log.critical(
+                "reconciliation failed for an auction",
+                exc_info=True,
+                extra={"fields": {"alert": "RECONCILE_FAILED", "auction_id": str(auction_id)}},
+            )
+            code = "RECONCILE_FAILED"
         if code:
             alerts[str(auction_id)] = code
+    await remove_stale_state(redis, sessions)
     return alerts

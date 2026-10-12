@@ -17,7 +17,8 @@ from app import main as app_main
 from app.api import deps
 from app.core.config import settings
 from app.core.ratelimit import RateLimiter
-from app.services.auth import AuthService
+from app.core.redis import create_redis
+from app.services.auth import AuthService, Tokens
 from app.services.bidding import BidService
 from app.services.denylist import Denylist
 from app.services.live_events import publish_session_revoked
@@ -26,22 +27,23 @@ from tests.auth.conftest import PASSWORD, FakeClock, RecordingEmail, fresh_email
 from tests.bidding.conftest import PersistRecorder, auction, new_user  # noqa: F401  fixtures
 from tests.conftest import TEST_REDIS_URL
 
+MESSAGE_KINDS = ("place_bid", "set_proxy", "subscribe", "unsubscribe", "authenticate", "ping")
+DEAD_REDIS_URL = "redis://redis:6399/15"  # nothing listens on this port
+
 
 @pytest.fixture(autouse=True)
 def tuned(monkeypatch: pytest.MonkeyPatch) -> None:
     """Short timeouts and generous rate limits; individual tests tighten what they test."""
     for name, value in {
         "ws_auth_timeout_s": 0.5,
-        "ws_idle_timeout_s": 30.0,
         "ws_watch_interval_s": 0.05,
         "ws_presence_interval_s": 0.3,
         "ws_send_queue_size": 16,
         "ws_max_subscriptions": 3,
-        "ws_max_connections_per_user": 3,
+        "ws_max_sessions_per_user": 3,
         "ws_max_strikes": 3,
-        "rate_limit_ws_place_bid": "10000/1",
-        "rate_limit_ws_set_proxy": "10000/1",
-        "rate_limit_ws_subscribe": "10000/10",
+        "ws_max_messages_per_s": 100_000,
+        **{f"rate_limit_ws_{kind}": "10000/1" for kind in MESSAGE_KINDS},
         "allowed_origins": "http://localhost:5173",
     }.items():
         monkeypatch.setattr(settings, name, value)
@@ -121,6 +123,11 @@ class Instance:
 StartInstance = Callable[..., Awaitable[Instance]]
 
 
+def _provide(value: Any) -> Callable[[], Any]:
+    # no parameters: FastAPI would read any as a request parameter
+    return lambda: value
+
+
 @pytest.fixture
 async def start_instance(
     auth_service: AuthService,
@@ -133,19 +140,28 @@ async def start_instance(
 ) -> AsyncIterator[StartInstance]:
     started: list[Instance] = []
 
-    async def start(redis_url: str = TEST_REDIS_URL) -> Instance:
+    async def start(
+        redis_url: str = TEST_REDIS_URL,
+        overrides: dict[Callable[..., Any], Any] | None = None,
+        ws_ping_interval: float | None = None,
+    ) -> Instance:
+        """One uvicorn server. `overrides` replaces dependency providers (values are the
+        instances to serve); `ws_ping_interval` turns on the protocol keepalive (the timeout
+        equals the interval), which production runs at 20 s."""
         app = app_main.create_app()
         app.state.redis_url = redis_url
+        services: dict[Callable[..., Any], Any] = {
+            deps.get_auth_service: auth_service,
+            deps.get_user_service: user_service,
+            deps.get_bid_service: bid_service,
+            deps.get_redis: redis,
+            deps.get_sessions: sessions,
+            deps.get_limiter: limiter,
+            deps.get_clock: clock,
+            **(overrides or {}),
+        }
         app.dependency_overrides.update(
-            {
-                deps.get_auth_service: lambda: auth_service,
-                deps.get_user_service: lambda: user_service,
-                deps.get_bid_service: lambda: bid_service,
-                deps.get_redis: lambda: redis,
-                deps.get_sessions: lambda: sessions,
-                deps.get_limiter: lambda: limiter,
-                deps.get_clock: lambda: clock,
-            }
+            {provider: _provide(value) for provider, value in services.items()}
         )
         config = uvicorn.Config(
             app,
@@ -154,7 +170,8 @@ async def start_instance(
             lifespan="on",
             log_level="warning",
             ws_max_size=65536,
-            ws_ping_interval=None,
+            ws_ping_interval=ws_ping_interval,
+            ws_ping_timeout=ws_ping_interval,
         )
         server = uvicorn.Server(config)
         task = asyncio.create_task(server.serve())
@@ -194,3 +211,28 @@ def make_bidder(
         return profile.id, tokens.access_token
 
     return make
+
+
+@pytest.fixture
+def new_session(auth_service: AuthService, db: Any) -> Callable[[UUID], Awaitable[Tokens]]:
+    """Log an existing user in again: a second session, with its own sid and refresh token."""
+
+    async def login(user_id: UUID) -> Tokens:
+        address = await db.fetchval("SELECT email FROM users WHERE id = $1", user_id)
+        return await auth_service.login(address, PASSWORD, uuid4().hex)
+
+    return login
+
+
+def dead_redis_services(sessions: async_sessionmaker[AsyncSession], clock: FakeClock) -> dict:
+    """Providers for an instance whose every Redis use (commands, limiter, denylist, bids,
+    snapshot) points at a dead Redis while Postgres stays up."""
+    dead = create_redis(DEAD_REDIS_URL)
+    limiter = RateLimiter(dead, clock)
+    auth = AuthService(sessions, dead, clock, RecordingEmail(), limiter, Denylist(dead, None))
+    return {
+        deps.get_redis: dead,
+        deps.get_limiter: limiter,
+        deps.get_auth_service: auth,
+        deps.get_bid_service: BidService(dead, sessions, PersistRecorder()),
+    }

@@ -1,9 +1,11 @@
 """Refresh rotation and logout (FR-5, FR-6, NFR-17, NFR-21)."""
 
+import pytest
 from httpx import AsyncClient
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.errors import AppError
 from app.core.ratelimit import RateLimiter
 from app.core.redis import create_redis
 from app.services.auth import AuthService
@@ -116,6 +118,38 @@ async def test_denylist_unavailable_falls_back_to_postgres(
             assert getattr(exc, "code", None) == "INVALID_TOKEN"
         else:
             raise AssertionError("revoked session accepted while Redis was down")
+    finally:
+        await dead_redis.aclose()
+
+
+async def test_denylist_fallback_refuses_a_suspended_user(
+    client: AsyncClient,
+    email: RecordingEmail,
+    clock: FakeClock,
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+    user_service,
+) -> None:
+    """FR-6, FR-76: with Redis unreachable, a suspension is found in Postgres."""
+    address = fresh_email()
+    user_id = await register_verified(client, email, address)
+    token = await login(client, address)
+    admin_id = await register_verified(client, email, fresh_email())
+    await user_service.suspend_user(admin_id, user_id, "fallback test")
+
+    dead_redis = create_redis("redis://redis:6399/15")
+    try:
+        offline = AuthService(
+            sessions,
+            dead_redis,
+            clock,
+            email,
+            RateLimiter(redis, clock),
+            Denylist(dead_redis, None),
+        )
+        with pytest.raises(AppError) as info:
+            await offline.authenticate(token)
+        assert info.value.code == "ACCOUNT_SUSPENDED"
     finally:
         await dead_redis.aclose()
 

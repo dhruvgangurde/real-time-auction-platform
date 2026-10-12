@@ -1,10 +1,11 @@
 """Live auction state in Redis and its rebuild from Postgres (FR-43, DC-1).
 
-Redis holds only rebuildable state; Postgres is the source of truth. Rebuild runs only when an
-auction's Redis state has been lost (for example Redis restarted without its AOF). It is never
-used to refresh existing live state, because the outbox may still hold accepted bids and proxy
-changes that Postgres has not seen. init_state.lua refuses to rebuild while the outbox is
-non-empty.
+Redis holds only rebuildable state; Postgres is the source of truth. Only live and closing
+auctions have live state (D2); every other status is served from Postgres. Rebuild runs only
+when a live auction's Redis state is missing (for example Redis restarted without its AOF). It
+is never used to refresh existing live state, because the outbox may still hold accepted bids
+and proxy changes that Postgres has not seen. init_state.lua refuses to rebuild while the outbox
+is non-empty.
 """
 
 import logging
@@ -23,6 +24,7 @@ log = logging.getLogger("live_state")
 
 REBUILD_ATTEMPTS = 3
 REBUILD_LEASE_MS = 5_000
+LIVE_STATES = frozenset({"live", "closing"})  # the only statuses with Redis state (D2)
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
@@ -74,6 +76,10 @@ class AuctionNotFound(LookupError):
     """The auction does not exist in Postgres."""
 
 
+class AuctionNotLive(Exception):
+    """The auction is neither live nor closing, so it gets no Redis state (D2)."""
+
+
 async def _snapshot(
     sessions: async_sessionmaker[AsyncSession], auction_id: UUID
 ) -> tuple[dict[str, str], str, int, dict[str, str]]:
@@ -115,7 +121,8 @@ async def init_live_state(
     """Build an auction's live state from Postgres, only if it is absent (FR-43).
 
     Returns True if this call initialised it, False if live state already existed (or another
-    instance won the race). Raises LiveStateUnavailable when it cannot be done safely now.
+    instance won the race). Raises AuctionNotLive for any status but live or closing (D2), and
+    LiveStateUnavailable when it cannot be done safely now.
     """
     init = redis.register_script(lua.source("init_state"))
     finalize = redis.register_script(lua.source("finalize_state"))
@@ -124,6 +131,8 @@ async def init_live_state(
 
     for attempt in range(1, REBUILD_ATTEMPTS + 1):
         fields, status, sequence, proxies = await _snapshot(sessions, auction_id)
+        if status not in LIVE_STATES:
+            raise AuctionNotLive(f"auction {auction_id} is {status}")
         token = uuid4().hex
         flat_state = list(chain.from_iterable(fields.items()))
         flat_proxies = list(chain.from_iterable(proxies.items()))
@@ -168,3 +177,31 @@ async def init_live_state(
             },
         )
     raise LiveStateUnavailable("ledger kept moving during rebuild")
+
+
+async def remove_stale_state(redis: Redis, sessions: async_sessionmaker[AsyncSession]) -> int:
+    """Drop Redis state left for auctions that Postgres says are neither live nor closing (D2).
+
+    cleanup_state.lua re-checks inside Redis and keeps anything that may be in use (a hash whose
+    own status is live, closing or rebuilding, or a non-empty outbox), so racing an activation
+    or a rebuild never deletes live state. Returns the number of auctions cleaned.
+    """
+    # shortcut: SCAN walks the keyspace; fine at this scale, keep an index set if it grows
+    ids = [
+        auction_id_from_key(key)
+        async for key in redis.scan_iter(match="auction:*:state", _type="hash", count=500)
+    ]
+    if not ids:
+        return 0
+    async with sessions() as session:
+        statuses = await AuctionRepository(session).statuses(ids)
+    cleanup = redis.register_script(lua.source("cleanup_state"))
+    removed = 0
+    for auction_id in ids:
+        if statuses.get(auction_id) in LIVE_STATES:
+            continue
+        keys = [state_key(auction_id), outbox_key(auction_id), proxies_key(auction_id)]
+        removed += int(await cleanup(keys=keys))
+    if removed:
+        log.info("stale live state removed", extra={"fields": {"auctions": removed}})
+    return removed

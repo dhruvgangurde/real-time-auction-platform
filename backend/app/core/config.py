@@ -49,15 +49,20 @@ class Settings(BaseSettings):
     ws_auth_timeout_s: float = 5.0
     ws_max_message_bytes: int = 4096
     ws_max_subscriptions: int = 20
-    ws_max_connections_per_user: int = 5
+    ws_max_sessions_per_user: int = 5  # one socket per session (CI-3), at most this many sessions
     ws_send_queue_size: int = 256
-    ws_idle_timeout_s: float = 60.0
     ws_watch_interval_s: float = 1.0
+    ws_max_messages_per_s: int = 30  # per connection, counted in memory before any Redis work
     ws_max_strikes: int = 5
+    ws_strike_decay_s: float = 60.0  # one strike is forgiven per interval
     ws_presence_interval_s: float = 5.0
+    # per user and message type, shared across instances; bid submission is the strictest (CI-3)
     rate_limit_ws_place_bid: str = "10/1"  # FR-44 default: 10 bid submissions per second
     rate_limit_ws_set_proxy: str = "5/1"
-    rate_limit_ws_subscribe: str = "20/10"
+    rate_limit_ws_subscribe: str = "20/1"
+    rate_limit_ws_unsubscribe: str = "20/1"
+    rate_limit_ws_authenticate: str = "20/1"
+    rate_limit_ws_ping: str = "20/1"
 
     @property
     def origin_allowlist(self) -> frozenset[str]:

@@ -37,25 +37,28 @@ async def test_events_cross_instances(
 async def test_logout_and_suspension_close_sockets_on_other_instances(
     instances: tuple[Instance, Instance],
     make_bidder,
+    new_session,
     auth_service: AuthService,
     user_service: UserService,
 ) -> None:
-    """FR-5, FR-6: session_revoked on the user channel closes the user's sockets everywhere."""
+    """FR-5, FR-6: session_revoked on the user channel closes the right sockets everywhere:
+    logout closes that session's socket only, suspension closes every session's socket."""
     a_node, b_node = instances
     alice_id, alice_token = await make_bidder()
     on_a = await Client.open(a_node.ws, token=alice_token)
-    on_b = await Client.open(b_node.ws, token=alice_token)
-    claims = await auth_service.authenticate(alice_token)
-    await auth_service.logout(claims)
+    on_b = await Client.open(b_node.ws, token=(await new_session(alice_id)).access_token)
+    await auth_service.logout(await auth_service.authenticate(alice_token))
     assert await on_a.closed() == CloseCode.SESSION_REVOKED
-    assert await on_b.closed() == CloseCode.SESSION_REVOKED
+    await on_b.send({"type": "ping"})
+    await on_b.expect("pong")  # alice's other session is untouched
 
     bob_id, bob_token = await make_bidder()
     admin_id, _ = await make_bidder()
-    bob_b = await Client.open(b_node.ws, token=bob_token)
+    bob_a = await Client.open(a_node.ws, token=bob_token)
+    bob_b = await Client.open(b_node.ws, token=(await new_session(bob_id)).access_token)
     await user_service.suspend_user(admin_id, bob_id, "fraud review")
+    assert await bob_a.closed() == CloseCode.SESSION_REVOKED
     assert await bob_b.closed() == CloseCode.SESSION_REVOKED
-    assert alice_id != bob_id
 
 
 async def test_revoked_session_cannot_bid_even_without_the_close_event(
@@ -74,6 +77,22 @@ async def test_revoked_session_cannot_bid_even_without_the_close_event(
     assert rejected["code"] == "INVALID_TOKEN"
     assert await client.closed() == CloseCode.SESSION_REVOKED
     assert client.of_type("bid_accepted") == []
+
+
+async def test_revoked_session_cannot_subscribe_even_without_the_close_event(
+    instances: tuple[Instance, Instance], make_bidder, auction, auth_service: AuthService
+) -> None:
+    """FR-6: subscribe re-checks the session too, not only bids."""
+    node, _ = instances
+    auction_id = await auction()
+    _, token = await make_bidder()
+    client = await Client.open(node.ws, token=token)
+    auth_service._notify_revoked = None  # the session_revoked broadcast is lost
+    await auth_service.logout(await auth_service.authenticate(token))
+    await client.send({"type": "subscribe", "auction_id": str(auction_id)})
+    assert (await client.expect("error"))["code"] == "INVALID_TOKEN"
+    assert await client.closed() == CloseCode.SESSION_REVOKED
+    assert client.of_type("subscribed") == []
 
 
 async def test_200_concurrent_bids_reach_every_subscriber_exactly_once(

@@ -20,14 +20,20 @@ from app.api.deps import (
     optional_user,
     require_roles,
 )
-from app.api.ws import REJECTION_TEXT
 from app.core.config import settings
 from app.core.errors import AppError
 from app.core.ratelimit import RateLimit, RateLimiter
-from app.schemas.ws import REQUEST_ID
+from app.schemas.ws import REQUEST_ID, rejection_text
 from app.services import live_events
 from app.services.auth import CurrentUser
-from app.services.bidding import MAX_AMOUNT, BidResult, BidService, ProxyResult
+from app.services.bidding import (
+    MAX_AMOUNT,
+    BidResult,
+    BidService,
+    ProxyResult,
+    log_bid,
+    log_proxy,
+)
 from app.services.snapshot import live_snapshot
 
 router = APIRouter(prefix="/api/v1/auctions", tags=["auctions"])
@@ -48,7 +54,7 @@ class ProxyRequest(BaseModel):
 
 
 def _rejection(code: str, min_next: int | None) -> AppError:
-    text = REJECTION_TEXT.get(code, code.lower().replace("_", " "))
+    text = rejection_text(code)
     if min_next is not None:
         text = f"{text} (minimum next bid {min_next})"
     return AppError(code, text, STATUS.get(code, 409))
@@ -76,9 +82,13 @@ async def place_bid(
     limiter: RateLimiter = Depends(get_limiter),
 ) -> dict[str, Any]:
     # the same per-user limit as the WebSocket path (FR-44, NFR-22)
-    await limiter.hit(
-        "ws_place_bid", str(user.id), RateLimit.parse(settings.rate_limit_ws_place_bid)
-    )
+    try:
+        await limiter.hit(
+            "ws_place_bid", str(user.id), RateLimit.parse(settings.rate_limit_ws_place_bid)
+        )
+    except AppError as exc:  # refused before arbitration: still one FR-44 line
+        log_bid(auction_id, user.id, body.amount, body.request_id, BidResult(False, exc.code))
+        raise
     result = await bids.place_bid(auction_id, user.id, body.amount, body.request_id)
     if not result.accepted:
         raise _rejection(result.code or "SERVICE_UNAVAILABLE", result.min_next)
@@ -96,9 +106,13 @@ async def set_proxy(
     redis: Redis = Depends(get_redis),
     limiter: RateLimiter = Depends(get_limiter),
 ) -> dict[str, Any]:
-    await limiter.hit(
-        "ws_set_proxy", str(user.id), RateLimit.parse(settings.rate_limit_ws_set_proxy)
-    )
+    try:
+        await limiter.hit(
+            "ws_set_proxy", str(user.id), RateLimit.parse(settings.rate_limit_ws_set_proxy)
+        )
+    except AppError as exc:
+        log_proxy(auction_id, user.id, body.request_id, ProxyResult(False, exc.code))
+        raise
     result = await bids.set_proxy(auction_id, user.id, body.max_amount, body.request_id)
     if not result.armed:
         raise _rejection(result.code or "SERVICE_UNAVAILABLE", result.min_next)

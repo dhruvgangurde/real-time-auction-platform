@@ -1,7 +1,9 @@
 """Test WebSocket client and the documented client-side ordering rule."""
 
 import asyncio
+import base64
 import json
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -24,9 +26,19 @@ class Client:
 
     @classmethod
     async def open(
-        cls, url: str, token: str | None = None, origin: str | None = ORIGIN
+        cls,
+        url: str,
+        token: str | None = None,
+        origin: str | None = ORIGIN,
+        headers: dict[str, str] | None = None,
     ) -> "Client":
-        ws = await connect(url, origin=origin, open_timeout=5, max_size=2**20)  # type: ignore[arg-type]
+        ws = await connect(
+            url,
+            origin=origin,  # type: ignore[arg-type]
+            additional_headers=headers,
+            open_timeout=5,
+            max_size=2**20,
+        )
         client = cls(ws)
         if token is not None:
             await client.send({"type": "authenticate", "token": token})
@@ -81,6 +93,33 @@ class Client:
     async def close(self) -> None:
         await self.ws.close()
         self._reader.cancel()
+
+
+async def open_silent(
+    host: str, port: int, token: str
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """A half-open peer: handshake and authenticate by hand, then never read again and never
+    answer a ping, like a client whose network vanished without a close."""
+    reader, writer = await asyncio.open_connection(host, port)
+    key = base64.b64encode(os.urandom(16)).decode()
+    writer.write(
+        (
+            f"GET /api/v1/ws HTTP/1.1\r\nHost: {host}:{port}\r\nUpgrade: websocket\r\n"
+            f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
+            f"Origin: {ORIGIN}\r\n\r\n"
+        ).encode()
+    )
+    head = await reader.readuntil(b"\r\n\r\n")
+    assert b" 101 " in head.split(b"\r\n")[0], head
+    payload = json.dumps({"type": "authenticate", "token": token}).encode()
+    mask, n = os.urandom(4), len(payload)
+    length = bytes([0x80 | n]) if n < 126 else bytes([0x80 | 126]) + n.to_bytes(2, "big")
+    writer.write(
+        bytes([0x81]) + length + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    )
+    first = await asyncio.wait_for(reader.read(4096), 5)
+    assert b'"authenticated"' in first, first
+    return reader, writer
 
 
 def reorder(events: list[dict[str, Any]], last_applied: int = 0) -> list[dict[str, Any]]:

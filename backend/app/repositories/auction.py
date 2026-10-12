@@ -15,6 +15,22 @@ class AuctionRepository(BaseRepository):
         stmt = select(Auction.id).where(Auction.status == "live")
         return list((await self.session.execute(stmt)).scalars())
 
+    async def statuses(self, auction_ids: list[UUID]) -> dict[UUID, str]:
+        """Status per auction; unknown ids are absent."""
+        stmt = select(Auction.id, Auction.status).where(Auction.id.in_(auction_ids))
+        return {r.id: r.status for r in (await self.session.execute(stmt)).all()}
+
+    async def extension_state(self, auction_id: UUID) -> tuple[datetime, int]:
+        """end_time and extension_count, row locked for the caller's transaction, so the
+        audit 'before' of a soft-close extension is exact (FR-77)."""
+        stmt = (
+            select(Auction.end_time, Auction.extension_count)
+            .where(Auction.id == auction_id)
+            .with_for_update()
+        )
+        row = (await self.session.execute(stmt)).one()
+        return row.end_time, row.extension_count
+
     async def apply_extension(
         self, auction_id: UUID, end_time: datetime, extension_count: int
     ) -> None:

@@ -3,8 +3,10 @@
 import logging
 
 import pytest
+from redis.asyncio import Redis
 
 from app.services.live_events import alias
+from app.services.live_state import state_key
 from tests.auth.conftest import PASSWORD
 from tests.realtime.client import Client
 from tests.realtime.conftest import Instance
@@ -166,16 +168,72 @@ async def test_bid_requires_subscription_and_bidder_role(
 
 
 async def test_spectating_works_but_drafts_stay_hidden(
-    node: Instance, make_bidder, auction
+    node: Instance, make_bidder, auction, redis: Redis
 ) -> None:
-    """FR-30: anyone authenticated may watch a scheduled auction; a draft is NOT_FOUND."""
+    """FR-30: anyone authenticated may watch a scheduled auction; a draft is NOT_FOUND.
+    D2: watching an auction that is not live writes no live state."""
     scheduled = await auction(status="scheduled", starts_in_ms=60_000)
-    draft = await auction(status="draft", init=False)
+    draft = await auction(status="draft")
     _, token = await make_bidder()
     client = await Client.open(node.ws, token=token)
     sub = await client.subscribe(scheduled)
-    assert sub["snapshot"]["status"] == "scheduled"
+    assert sub["snapshot"]["status"] == "scheduled" and sub["snapshot"]["degraded"] is False
     await client.send({"type": "subscribe", "auction_id": str(draft)})
     assert (await client.expect("error"))["code"] == "NOT_FOUND"
     await client.send(_bid(scheduled, 10_000, "s1"))
     assert (await client.expect("bid_rejected", request_id="s1"))["code"] == "AUCTION_NOT_STARTED"
+    assert await redis.exists(state_key(scheduled), state_key(draft)) == 0
+
+
+async def test_unsubscribe_stops_room_events(node: Instance, make_bidder, auction) -> None:
+    """FR-29: only the events of rooms the client is currently subscribed to."""
+    a = await auction(self_outbid=False)
+    watcher = await Client.open(node.ws, token=(await make_bidder())[1])
+    bidder = await Client.open(node.ws, token=(await make_bidder())[1])
+    await watcher.subscribe(a)
+    await bidder.subscribe(a)
+    await bidder.send(_bid(a, 10_000, "b1"))
+    await watcher.expect("bid_placed", sequence_no=1)
+    await watcher.send({"type": "unsubscribe", "auction_id": str(a)})
+    await watcher.expect("unsubscribed", auction_id=str(a))
+    await bidder.send(_bid(a, 10_500, "b2"))
+    await bidder.expect("bid_placed", sequence_no=2)
+    await watcher.send({"type": "ping"})
+    await watcher.expect("pong")  # anything for seq 2 would have arrived before this
+    assert [e["sequence_no"] for e in watcher.of_type("bid_placed")] == [1]
+
+
+async def test_every_bid_decision_is_logged_once(
+    node: Instance, make_bidder, auction, caplog: pytest.LogCaptureFixture
+) -> None:
+    """FR-44, NFR-32: one line per bid decision, refusals before arbitration included;
+    automatic bids are traceable by their sequence numbers; maxima are never logged."""
+    a = await auction(start_price=10_000, min_increment=100, self_outbid=False)
+    other = await auction()
+    alice_id, alice_token = await make_bidder()
+    bob_id, bob_token = await make_bidder()
+    alice = await Client.open(node.ws, token=alice_token)
+    bob = await Client.open(node.ws, token=bob_token)
+    await alice.subscribe(a)
+    await bob.subscribe(a)
+    with caplog.at_level(logging.INFO, logger="bidding"):
+        proxy = {"type": "set_proxy", "auction_id": str(a), "max_amount": SECRET_MAX}
+        await alice.send({**proxy, "request_id": "p1"})
+        await alice.expect("proxy_armed", request_id="p1")
+        await bob.send(_bid(a, 20_000, "b1"))
+        await bob.expect("bid_accepted", request_id="b1")
+        await bob.send(_bid(other, 20_000, "b2"))
+        await bob.expect("bid_rejected", request_id="b2")
+    lines = [r.fields for r in caplog.records if r.msg in ("bid", "proxy")]
+    by_request = {line["bid_request_id"]: line for line in lines}
+    assert len(lines) == len(by_request) == 3
+    assert by_request["p1"]["decision"] == "armed"
+    assert by_request["p1"]["automatic_sequence_nos"] == [1]
+    accepted = by_request["b1"]
+    assert accepted["decision"] == "accepted" and accepted["sequence_no"] == 2
+    assert accepted["automatic_sequence_nos"] == [3]
+    refused = by_request["b2"]
+    assert refused["decision"] == "rejected" and refused["code"] == "NOT_SUBSCRIBED"
+    assert refused["auction_id"] == str(other) and refused["bidder_id"] == str(bob_id)
+    assert refused["amount"] == 20_000
+    assert str(SECRET_MAX) not in caplog.text and alice_id != bob_id

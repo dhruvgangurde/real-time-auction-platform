@@ -1,11 +1,12 @@
-"""WebSocket handshake and token lifecycle (FR-28, CI-4, FR-5, FR-6)."""
+"""WebSocket handshake and token lifecycle (FR-28, CI-3, CI-4, FR-5, FR-6)."""
 
 import pytest
 from websockets.exceptions import InvalidStatus
 
+from app.core.config import settings
 from app.schemas.ws import CloseCode
 from app.services.auth import AuthService
-from tests.auth.conftest import PASSWORD, FakeClock
+from tests.auth.conftest import FakeClock
 from tests.realtime.client import Client
 from tests.realtime.conftest import Instance
 
@@ -60,13 +61,13 @@ async def test_expiry_without_renewal_closes_4003(
 
 
 async def test_reauthentication_extends_the_connection(
-    node: Instance, make_bidder, auth_service: AuthService, clock: FakeClock, db
+    node: Instance, make_bidder, new_session, auth_service: AuthService, clock: FakeClock
 ) -> None:
-    user_id, token = await make_bidder()
-    client = await Client.open(node.ws, token=token)
+    user_id, _ = await make_bidder()
+    tokens = await new_session(user_id)
+    client = await Client.open(node.ws, token=tokens.access_token)
     clock.advance(14 * 60)
-    email = await db.fetchval("SELECT email FROM users WHERE id = $1", user_id)
-    fresh = (await auth_service.login(email, PASSWORD, "10.0.0.9")).access_token
+    fresh = (await auth_service.refresh(tokens.refresh_token)).access_token  # same session
     await client.send({"type": "authenticate", "token": fresh})
     first = client.of_type("authenticated")[0]
     renewed = await client.wait(lambda f: f.get("type") == "authenticated" and f is not first)
@@ -84,3 +85,39 @@ async def test_reauthentication_as_another_user_closes_4002(node: Instance, make
     client = await Client.open(node.ws, token=token_a)
     await client.send({"type": "authenticate", "token": token_b})
     assert await client.closed() == CloseCode.AUTH_FAILED
+
+
+async def test_reauthentication_with_another_sessions_token_closes_4002(
+    node: Instance, make_bidder, new_session
+) -> None:
+    """CI-3: a socket belongs to one session; another session's token needs its own socket."""
+    user_id, token = await make_bidder()
+    client = await Client.open(node.ws, token=token)
+    other = (await new_session(user_id)).access_token
+    await client.send({"type": "authenticate", "token": other})
+    assert await client.closed() == CloseCode.AUTH_FAILED
+
+
+async def test_bad_reauthentication_closes_4002(node: Instance, make_bidder) -> None:
+    _, token = await make_bidder()
+    client = await Client.open(node.ws, token=token)
+    await client.send({"type": "authenticate", "token": "not.a.token"})
+    assert await client.closed() == CloseCode.AUTH_FAILED
+
+
+async def test_expired_token_on_a_bid_closes_4003_not_4004(
+    node: Instance, make_bidder, auction, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FR-6: the bid's re-check sees the expiry before the watcher does; it is still an expiry."""
+    monkeypatch.setattr(settings, "ws_watch_interval_s", 60.0)  # the watcher must not win
+    a = await auction()
+    _, token = await make_bidder()
+    client = await Client.open(node.ws, token=token)
+    await client.subscribe(a)
+    clock.advance(15 * 60 + 1)
+    await client.send(
+        {"type": "place_bid", "auction_id": str(a), "amount": 10_000, "request_id": "late"}
+    )
+    rejected = await client.expect("bid_rejected", request_id="late")
+    assert rejected["code"] == "TOKEN_EXPIRED"
+    assert await client.closed() == CloseCode.TOKEN_EXPIRED

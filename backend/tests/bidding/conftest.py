@@ -14,7 +14,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services.bidding import BidService
-from app.services.live_state import from_ms, init_live_state, state_key
+from app.services.live_state import LIVE_STATES, from_ms, init_live_state, state_key
 from tests.conftest import TEST_REDIS_URL, new_redis  # noqa: F401  re-exported for tests
 from tests.db.conftest import make_auction, make_category, make_user
 
@@ -39,7 +39,8 @@ AuctionFactory = Callable[..., Awaitable[UUID]]
 def auction(
     db: asyncpg.Connection, redis: Redis, sessions: async_sessionmaker[AsyncSession]
 ) -> AuctionFactory:
-    """Create an auction timed against Redis TIME and (by default) initialise its live state."""
+    """Create an auction timed against Redis TIME. Live and closing auctions get their live
+    state initialised unless init=False; no other status ever has live state (D2)."""
 
     async def make(
         *,
@@ -70,7 +71,7 @@ def auction(
             antisnipe_extension_s=extension_s,
             extension_count=extension_count,
         )
-        if init:
+        if init and status in LIVE_STATES:
             assert await init_live_state(auction_id, redis, sessions)
             if self_outbid is not None:
                 await redis.hset(state_key(auction_id), "self_outbid", "1" if self_outbid else "0")

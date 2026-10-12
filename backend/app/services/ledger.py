@@ -30,7 +30,13 @@ from app.repositories import (
     BidRepository,
     ProxyBidRepository,
 )
-from app.services.live_state import auction_id_from_key, dead_letter_key, from_ms, outbox_key
+from app.services.live_state import (
+    auction_id_from_key,
+    dead_letter_key,
+    from_ms,
+    outbox_key,
+    to_ms,
+)
 
 log = logging.getLogger("ledger")
 
@@ -140,23 +146,34 @@ async def _write_batch(
 
         extended = [e for e in bid_entries if e.end_time_after is not None]
         if extended:
-            await AuctionRepository(session).apply_extension(
+            auctions = AuctionRepository(session)
+            end_time, count = await auctions.extension_state(auction_id)  # row locked
+            before = {"end_time_ms": to_ms(end_time), "extension_count": count}
+            await auctions.apply_extension(
                 auction_id,
                 max(e.end_time_after for e in extended if e.end_time_after),
                 max(e.extension_count or 0 for e in extended),
             )
-            for e in extended:
-                if e.sequence_no in inserted:  # audit each extension once, not on replays
+            # audit each new extension once, not on replays, chained in sequence order so each
+            # row's before is the previous row's after (FR-77)
+            for e in sorted(extended, key=lambda e: e.sequence_no or 0):
+                if e.sequence_no in inserted:
+                    after = {
+                        "sequence_no": e.sequence_no,
+                        "end_time_after": e.raw["end_time_after"],
+                        "extension_count": e.extension_count,
+                    }
                     await audit.add(
                         entity_type="auction",
                         entity_id=str(auction_id),
                         action="soft_close_extended",
-                        after={
-                            "sequence_no": e.sequence_no,
-                            "end_time_after": e.raw["end_time_after"],
-                            "extension_count": e.extension_count,
-                        },
+                        before=before,
+                        after=after,
                     )
+                    before = {
+                        "end_time_ms": int(e.raw["end_time_after"]),
+                        "extension_count": e.extension_count,
+                    }
 
         # proxy changes in stream order; each is idempotent on replay
         proxy_repo = ProxyBidRepository(session)
