@@ -11,7 +11,7 @@ import pytest
 from redis.asyncio import Redis
 
 from app import lua
-from app.services.live_state import outbox_key, request_key, state_key
+from app.services.live_state import outbox_key, proxies_key, request_key, state_key
 from tests.bidding.conftest import AuctionFactory
 
 CALLS = 1000
@@ -26,7 +26,7 @@ async def test_arbitration_p95_under_10ms(
     timings_ms: list[float] = []
     for i in range(CALLS):
         bidder = bidders[i % 2]
-        keys = [state_key(a), outbox_key(a), request_key(a, bidder, f"l{i}")]
+        keys = [state_key(a), outbox_key(a), request_key(a, bidder, f"l{i}"), proxies_key(a)]
         args = [str(a), bidder, str(10_000 + i), 600_000]
         start = time.perf_counter()
         raw = await script(keys=keys, args=args)

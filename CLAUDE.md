@@ -118,6 +118,7 @@ docker compose exec api pytest                 # run all tests
 docker compose exec api pytest tests/db        # DB integration tests (own auction_test DB)
 docker compose exec api pytest tests/bidding   # arbitration integration tests (Redis db 15 + auction_test)
 docker compose exec api pytest tests/bidding/test_latency.py -s   # NFR-1 p50/p95/p99
+docker compose exec api pytest tests/bidding/test_proxy_property.py --hypothesis-show-statistics   # OR-13 property test
 docker compose exec worker celery -A app.workers.celery_app inspect registered   # worker tasks
 docker compose exec api ruff check .           # lint
 docker compose exec api ruff format --check .  # format check

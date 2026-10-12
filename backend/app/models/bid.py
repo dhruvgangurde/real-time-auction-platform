@@ -71,7 +71,9 @@ class ProxyBid(Base):
     )
     max_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
-    # armed_at semantics (reset on raise or not) are decided in Phase 4
+    # arbitration-point counter; equal maxima are won by the lower arm_seq (FR-49)
+    arm_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    # a raise resets armed_at and takes a new arm_seq: priority goes to who committed first
     armed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -1,11 +1,17 @@
-"""Outbox persister: moves accepted bids from Redis into the bid ledger (FR-41, FR-43, NFR-10).
+"""Outbox persister: moves accepted bids and proxy changes from Redis into Postgres
+(FR-41, FR-43, FR-45, NFR-10).
 
 Bids are acknowledged before they are durable (FR-40). They wait in the per-auction outbox
 stream until this persister commits them to Postgres; only then are they deleted from the stream.
+Proxy changes (kind=proxy_set, kind=proxy_deactivated) travel through the same stream and are
+applied in stream order inside the same transaction as the bids of their batch.
 
-Idempotent and safe to run concurrently: the insert skips existing (auction_id, sequence_no)
-pairs, extensions only ever move end_time forward, and stream entries are deleted only after the
+Idempotent and safe to run concurrently: the bid insert skips existing (auction_id, sequence_no)
+pairs, extensions only ever move end_time forward, proxy rows are raised only by a newer arm_seq
+and deactivated only for their own arm_seq, and stream entries are deleted only after the
 commit. A crash between commit and delete just replays the batch.
+
+Proxy maxima never reach audit_log or log lines (FR-51, BR-7).
 """
 
 import logging
@@ -18,7 +24,12 @@ from uuid import UUID
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.repositories import AuctionRepository, AuditLogRepository, BidRepository
+from app.repositories import (
+    AuctionRepository,
+    AuditLogRepository,
+    BidRepository,
+    ProxyBidRepository,
+)
 from app.services.live_state import auction_id_from_key, dead_letter_key, from_ms, outbox_key
 
 log = logging.getLogger("ledger")
@@ -31,25 +42,52 @@ TIME_BUDGET_S = 2.0  # anything left is picked up by the next run or the sweeper
 class OutboxEntry:
     stream_id: str
     raw: dict[str, str]
+    kind: str  # bid | proxy_set | proxy_deactivated
     bidder_id: UUID
-    amount: int
-    sequence_no: int
-    bid_type: str
-    accepted_at: datetime
-    end_time_after: datetime | None
-    extension_count: int | None
+    at: datetime  # accepted_at / armed_at / deactivated_at, from Redis TIME
+    # kind=bid
+    amount: int | None = None
+    sequence_no: int | None = None
+    bid_type: str | None = None
+    end_time_after: datetime | None = None
+    extension_count: int | None = None
+    # kind=proxy_set / proxy_deactivated
+    max_amount: int | None = None
+    arm_seq: int | None = None
 
     @classmethod
     def parse(cls, stream_id: str, f: dict[str, str]) -> "OutboxEntry":
+        kind = f.get("kind", "bid")  # entries written before kinds existed are bids
+        bidder_id = UUID(f["bidder_id"])
+        if kind == "proxy_set":
+            return cls(
+                stream_id,
+                f,
+                kind,
+                bidder_id,
+                from_ms(int(f["armed_at_ms"])),
+                max_amount=int(f["max_amount"]),
+                arm_seq=int(f["arm_seq"]),
+            )
+        if kind == "proxy_deactivated":
+            return cls(
+                stream_id,
+                f,
+                kind,
+                bidder_id,
+                from_ms(int(f["deactivated_at_ms"])),
+                arm_seq=int(f["arm_seq"]),
+            )
         extended = "end_time_after" in f
         return cls(
-            stream_id=stream_id,
-            raw=f,
-            bidder_id=UUID(f["bidder_id"]),
+            stream_id,
+            f,
+            "bid",
+            bidder_id,
+            from_ms(int(f["accepted_at_ms"])),
             amount=int(f["amount"]),
             sequence_no=int(f["sequence_no"]),
             bid_type=f["bid_type"],
-            accepted_at=from_ms(int(f["accepted_at_ms"])),
             end_time_after=from_ms(int(f["end_time_after"])) if extended else None,
             extension_count=int(f["extension_count"]) if extended else None,
         )
@@ -62,32 +100,35 @@ class OutboxEntry:
             "sequence_no": self.sequence_no,
             "bid_type": self.bid_type,
             "end_time_after": self.end_time_after,
-            "created_at": self.accepted_at,  # acceptance time from Redis TIME, not insert time
+            "created_at": self.at,  # acceptance time from Redis TIME, not insert time
         }
 
 
 async def _write_batch(
     auction_id: UUID, entries: list[OutboxEntry], sessions: async_sessionmaker[AsyncSession]
 ) -> tuple[int, list[OutboxEntry]]:
-    """One transaction: ledger rows, extensions and their audit entries (FR-41, FR-55, FR-78).
-
-    Returns (rows inserted, colliding entries).
-    """
+    """One transaction: ledger rows, extensions and their audit entries, proxy rows
+    (FR-41, FR-45, FR-55, FR-78). Returns (bid rows inserted, colliding bid entries)."""
+    bid_entries = [e for e in entries if e.kind == "bid"]
     async with sessions() as session, session.begin():
         bids = BidRepository(session)
         audit = AuditLogRepository(session)
-        inserted = await bids.insert_ignore_conflicts([e.ledger_row(auction_id) for e in entries])
+        inserted = await bids.insert_ignore_conflicts(
+            [e.ledger_row(auction_id) for e in bid_entries]
+        )
 
         # A skipped entry is normally a replay of a row already written. If the existing row
         # differs, Redis reissued a sequence number (e.g. after an AOF rollback): keep the bid.
-        skipped = [e for e in entries if e.sequence_no not in inserted]
+        skipped = [e for e in bid_entries if e.sequence_no not in inserted]
         collisions: list[OutboxEntry] = []
         if skipped:
-            existing = await bids.get_by_sequences(auction_id, [e.sequence_no for e in skipped])
+            existing = await bids.get_by_sequences(
+                auction_id, [e.sequence_no for e in skipped if e.sequence_no is not None]
+            )
             collisions = [
                 e
                 for e in skipped
-                if existing.get(e.sequence_no) != (e.bidder_id, e.amount, e.bid_type)
+                if existing.get(e.sequence_no or 0) != (e.bidder_id, e.amount, e.bid_type)
             ]
         for e in collisions:
             await audit.add(
@@ -97,7 +138,7 @@ async def _write_batch(
                 after=e.raw,
             )
 
-        extended = [e for e in entries if e.end_time_after is not None]
+        extended = [e for e in bid_entries if e.end_time_after is not None]
         if extended:
             await AuctionRepository(session).apply_extension(
                 auction_id,
@@ -116,13 +157,23 @@ async def _write_batch(
                             "extension_count": e.extension_count,
                         },
                     )
+
+        # proxy changes in stream order; each is idempotent on replay
+        proxy_repo = ProxyBidRepository(session)
+        for e in entries:
+            if e.kind == "proxy_set" and e.max_amount is not None and e.arm_seq is not None:
+                await proxy_repo.upsert_active(
+                    auction_id, e.bidder_id, e.max_amount, e.arm_seq, e.at
+                )
+            elif e.kind == "proxy_deactivated" and e.arm_seq is not None:
+                await proxy_repo.deactivate(auction_id, e.bidder_id, e.arm_seq)
     return len(inserted), collisions
 
 
 async def persist_outbox(
     auction_id: UUID, redis: Redis, sessions: async_sessionmaker[AsyncSession]
 ) -> int:
-    """Drain an auction's outbox into the ledger. Returns the number of rows inserted."""
+    """Drain an auction's outbox into Postgres. Returns the number of bid rows inserted."""
     key = outbox_key(auction_id)
     deadline = time.monotonic() + TIME_BUDGET_S
     persisted = 0
@@ -140,7 +191,7 @@ async def persist_outbox(
                     "fields": {
                         "alert": "SEQUENCE_COLLISION",
                         "auction_id": str(auction_id),
-                        "entry": e.raw,
+                        "entry": e.raw,  # a bid entry: no proxy maximum in it
                     }
                 },
             )

@@ -28,9 +28,9 @@ Design reference. The SRS governs if anything here conflicts with it.
    i. soft close: if `end - now <= threshold` and `extension_count < 10`, `end += extension`, `extension_count += 1` (FR-52 to FR-54);
    j. XADDs the bid to the outbox stream, with `end_time_after` when extended (FR-55);
    k. stores the result under `req` with a TTL and returns it.
-   Rejections write nothing. Phase 4 adds proxy resolution after step h, inside the same script.
+   Rejections write nothing. After step h, `resolve()` lets armed maxima respond inside the same script (see Proxy maxima below).
 4. API acknowledges the submitter right away with sequence, amount, request_id, end time and extension count (FR-40), then enqueues `persist_bids(auction_id)` without awaiting the broker.
-5. Proxy resolution runs at the same serialisation point and may place an automatic bid (Phase 4).
+5. Proxy resolution has already run inside the script; the acceptance lists any automatic bids in `automatic_bids`, each with its own sequence number and end time.
 6. API publishes the event to `auction:{id}`; every instance fans it out to its subscribers (Phase 5).
 7. The worker's `persist_bids` task drains the outbox into the `bids` table with `ON CONFLICT (auction_id, sequence_no) DO NOTHING`, applies any extension to `auctions.end_time` and `extension_count` (never decreasing) with an audit entry in the same transaction, then XDELs the persisted entries. Retries with backoff; after 5 retries it raises the `LEDGER_WRITE_FAILED` alert and the entries stay in the outbox. A beat sweeper (`sweep_outboxes`, every 5 s) persists every non-empty outbox as a safety net.
 8. The displaced bidder is notified through `user:{id}` (Phase 5/9).
@@ -52,11 +52,13 @@ Redis runs with `appendonly yes`, `appendfsync everysec`, `maxmemory-policy noev
 | Key | Type | Contents |
 |---|---|---|
 | `auction:{id}:state` | hash | `status`, `start_time_ms`, `end_time_ms`, `highest_amount`, `highest_bidder`, `sequence`, `start_price`, `min_increment`, `extension_count`, `threshold_ms`, `extension_ms`, `self_outbid` (0/1). During a rebuild also `rebuild_token`, `rebuild_deadline_ms` and `status = rebuilding`. A missing hash means "not initialised". |
-| `auction:{id}:bids` | stream | Outbox of accepted bids not yet in Postgres: `auction_id`, `bidder_id`, `amount`, `sequence_no`, `bid_type`, `accepted_at_ms`, plus `end_time_after` and `extension_count` when the bid extended the auction. |
+| `auction:{id}:bids` | stream | Outbox, three kinds. `kind=bid` (default when absent): `auction_id`, `bidder_id`, `amount`, `sequence_no`, `bid_type`, `accepted_at_ms`, plus `end_time_after` and `extension_count` when the bid extended the auction. `kind=proxy_set`: `bidder_id`, `max_amount`, `arm_seq`, `armed_at_ms`. `kind=proxy_deactivated`: `bidder_id`, `arm_seq`, `deactivated_at_ms`. |
+| `auction:{id}:proxies` | hash | `bidder -> "max|arm_seq"` for every armed maximum. Read only by the scripts and the rebuild; never returned to another bidder. |
 | `auction:{id}:bids:dead` | stream | Dead letter for `SEQUENCE_COLLISION` entries (also written to `audit_log`). |
 | `auction:{id}:req:{bidder}:{request_id}` | string, 10 min TTL | Stored acceptance for idempotent retries. Only acceptances are stored. |
+| `auction:{id}:preq:{bidder}:{request_id}` | string, 10 min TTL | Stored proxy result (same pattern, separate namespace). |
 
-Status values mirror Postgres. Money is integer paise as decimal strings; every number the script returns is a string (cjson keeps 14 digits).
+Status values mirror Postgres. Money is integer paise as decimal strings; every number the script returns is a string (cjson keeps 14 digits). `arm_seq` in the state hash is a counter incremented by every set or raise; equal maxima are won by the lower `arm_seq`, never by wall-clock time.
 
 ### Rebuild (FR-43)
 
@@ -66,7 +68,26 @@ Redis state is rebuilt from Postgres only when it has been lost. `init_live_stat
 3. re-reads the ledger max; if a persister committed in between, aborts via `finalize_state.lua` and retries (at most 3 times, then `SERVICE_UNAVAILABLE`); otherwise commits the real status.
 `place_bid.lua` treats `rebuilding` as not initialised, so no bid is ever arbitrated against an unverified snapshot. Two instances rebuilding at once cannot clobber each other: only the token holder can commit or abort.
 
-Armed proxy maxima are held in Redis for arbitration but always also stored in Postgres (`proxy_bids`) (Phase 4).
+Armed maxima are rebuilt from the active `proxy_bids` rows, and `arm_seq` restarts above the highest `arm_seq` ever persisted for the auction, active or not. The persister applies `proxy_set` only when its `arm_seq` is above every row for that (auction, bidder), under a transaction-scoped advisory lock, so a stale replay can never resurrect an exhausted maximum.
+
+### Proxy maxima (FR-45 to FR-51)
+
+`set_proxy.lua` (KEYS `state`, `outbox`, `preq`, `proxies`) sets or raises a maximum and resolves it in the same step: idempotent request record; `AUCTION_CLOSED` for any auction that is not live (FR-46); `BELOW_CURRENT_PRICE` below the minimum next bid; `BID_ABOVE_LIMIT` above 100 x start price; `PROXY_CANNOT_DECREASE` for a lower or equal maximum; then `HINCRBY arm_seq`, `HSET proxies bidder "max|arm_seq"`, `XADD kind=proxy_set`, `resolve()`. The result echoes the maximum to its owner only and says whether the maximum is still `active` after its own resolution.
+
+Both scripts include `app/lua/_core.lua` at load time (`--#include _core`, expanded by `app/lua/__init__.py`), which holds `accept()` and `resolve()`.
+
+**Resolution, closed form (FR-47 to FR-49), after every manual accept and every set/raise:**
+
+1. Sort active maxima by amount descending, then `arm_seq` ascending. `top` and `second`.
+2. If there is no top, or top belongs to someone else and does not exceed the current highest bid, nobody acts.
+3. `competing` = the higher of the current highest bid and the runner-up maximum. `target` = `min(top.max, competing + increment)`, or the start price when nothing has been bid and nobody competes.
+4. If top already leads and no runner-up exceeds the current highest bid, nothing is placed.
+5. Otherwise: if the runner-up exceeds the current highest bid and its maximum is below `target`, it bids its own maximum first (the record bid); then top bids `target`. Equal maxima give `target == second.max`, so no record bid, and the earlier `arm_seq` leads at the common value.
+6. Deactivation: every active maximum whose owner is not the new leader and whose amount no longer exceeds the new highest bid is deleted from the hash with `XADD kind=proxy_deactivated`. The leader's own maximum stays armed.
+
+Automatic bids go through the same `accept()` as manual bids: same sequence numbers, same soft close, same outbox (FR-50). They may sit below a full increment above the previous bid, because FR-48 caps them at the maximum and FR-49 allows the leader to stop at its own maximum. A manual bid equal to an armed maximum wins (FR-48: a maximum acts only when it *exceeds* the highest bid).
+
+Worked example, increment 10, start price 1000: Bob bids 1000. Dave arms 3000 (arm 1), Carol 4000 (arm 2), Alice 5000 (arm 3), each arming resolving immediately: Dave 1010; then Dave 3000 (record), Carol 3010, Dave deactivated; then Carol 4000 (record), Alice 4010, Carol deactivated. A manual 4995 by Erin makes Alice bid 5000 (her maximum, below 5005). Equal case: Alice 3000 (arm 1) leads at 1010; Bob arms 3000 (arm 2): Alice bids 3000, Bob is deactivated at once (`active: false` in his result).
 
 ### Reconciliation (FR-43, NFR-10)
 
@@ -136,7 +157,7 @@ Migrations `0001` to `0005` in `backend/alembic/versions/`. Money is BIGINT pais
 
 Auth: EMAIL_TAKEN, INVALID_TOKEN, TOKEN_EXPIRED, INVALID_CREDENTIALS, EMAIL_NOT_VERIFIED, ACCOUNT_SUSPENDED, RATE_LIMITED, FORBIDDEN, NOT_FOUND.
 Auctions: AUCTION_ALREADY_LIVE, CATEGORY_NOT_FOUND, NOT_WATCHING, ALREADY_CLOSED.
-Bidding: AUCTION_CLOSED, AUCTION_NOT_STARTED, BID_TOO_LOW, BID_ABOVE_LIMIT, SELF_OUTBID_NOT_ALLOWED, BELOW_CURRENT_PRICE, SERVICE_UNAVAILABLE.
+Bidding: AUCTION_CLOSED, AUCTION_NOT_STARTED, BID_TOO_LOW, BID_ABOVE_LIMIT, SELF_OUTBID_NOT_ALLOWED, BELOW_CURRENT_PRICE, PROXY_CANNOT_DECREASE (lower or equal maximum, FR-46), SERVICE_UNAVAILABLE.
 Payment: NOT_WINNER, ALREADY_PAID, INVALID_SIGNATURE.
 General: VALIDATION_ERROR (also returned by the bid service for a malformed amount or request_id), INTERNAL_ERROR, SERVICE_UNAVAILABLE (readiness with a dependency down; bid path when Redis is unreachable or live state cannot be established, see the client contract in section 2).
 Internal only, never sent to clients: NOT_INITIALISED (script result meaning live state is absent; the service rebuilds or maps it).

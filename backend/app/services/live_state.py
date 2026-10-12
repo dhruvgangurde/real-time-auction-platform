@@ -2,8 +2,9 @@
 
 Redis holds only rebuildable state; Postgres is the source of truth. Rebuild runs only when an
 auction's Redis state has been lost (for example Redis restarted without its AOF). It is never
-used to refresh existing live state, because the outbox may still hold accepted bids that
-Postgres has not seen. init_state.lua refuses to rebuild while the outbox is non-empty.
+used to refresh existing live state, because the outbox may still hold accepted bids and proxy
+changes that Postgres has not seen. init_state.lua refuses to rebuild while the outbox is
+non-empty.
 """
 
 import logging
@@ -16,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import lua
 from app.core.config import settings
-from app.repositories import AuctionRepository, BidRepository
+from app.repositories import AuctionRepository, BidRepository, ProxyBidRepository
 
 log = logging.getLogger("live_state")
 
@@ -38,9 +39,19 @@ def dead_letter_key(auction_id: UUID) -> str:
     return f"auction:{{{auction_id}}}:bids:dead"
 
 
+def proxies_key(auction_id: UUID) -> str:
+    # bidder -> "max|arm_seq"; never read by anything that answers another bidder (FR-51)
+    return f"auction:{{{auction_id}}}:proxies"
+
+
 def request_key(auction_id: UUID, bidder_id: UUID, request_id: str) -> str:
     # scoped by bidder so two bidders reusing a request_id never see each other's result
     return f"auction:{{{auction_id}}}:req:{bidder_id}:{request_id}"
+
+
+def proxy_request_key(auction_id: UUID, bidder_id: UUID, request_id: str) -> str:
+    # separate namespace: a bid and a proxy set with the same request_id never collide
+    return f"auction:{{{auction_id}}}:preq:{bidder_id}:{request_id}"
 
 
 def auction_id_from_key(key: str) -> UUID:
@@ -65,13 +76,19 @@ class AuctionNotFound(LookupError):
 
 async def _snapshot(
     sessions: async_sessionmaker[AsyncSession], auction_id: UUID
-) -> tuple[dict[str, str], str, int]:
-    """Read the auction row and its last ledger bid. Returns (hash fields, status, sequence)."""
+) -> tuple[dict[str, str], str, int, dict[str, str]]:
+    """Read the auction row, its last ledger bid and its armed maxima.
+
+    Returns (state hash fields, status, sequence, proxies hash fields).
+    """
     async with sessions() as session:
         auction = await AuctionRepository(session).get(auction_id)
         if auction is None:
             raise AuctionNotFound(f"auction {auction_id} not found")
         last = await BidRepository(session).last_bid(auction_id)
+        proxy_repo = ProxyBidRepository(session)
+        active = await proxy_repo.list_active(auction_id)
+        arm_seq = await proxy_repo.max_arm_seq(auction_id)
     sequence = last.sequence_no if last else 0
     fields = {
         "start_time_ms": str(to_ms(auction.start_time)),
@@ -85,8 +102,11 @@ async def _snapshot(
         "threshold_ms": str(auction.antisnipe_threshold_s * 1000),
         "extension_ms": str(auction.antisnipe_extension_s * 1000),
         "self_outbid": "1" if settings.self_outbid_policy_enabled else "0",
+        # counter restarts above every arm_seq ever persisted, so ties stay ordered (FR-49)
+        "arm_seq": str(arm_seq),
     }
-    return fields, auction.status, sequence
+    proxies = {str(bidder): f"{max_amount}|{seq}" for bidder, max_amount, seq in active}
+    return fields, auction.status, sequence, proxies
 
 
 async def init_live_state(
@@ -99,14 +119,17 @@ async def init_live_state(
     """
     init = redis.register_script(lua.source("init_state"))
     finalize = redis.register_script(lua.source("finalize_state"))
-    state = state_key(auction_id)
+    keys = [state_key(auction_id), outbox_key(auction_id), proxies_key(auction_id)]
+    finalize_keys = [state_key(auction_id), proxies_key(auction_id)]
 
     for attempt in range(1, REBUILD_ATTEMPTS + 1):
-        fields, status, sequence = await _snapshot(sessions, auction_id)
+        fields, status, sequence, proxies = await _snapshot(sessions, auction_id)
         token = uuid4().hex
+        flat_state = list(chain.from_iterable(fields.items()))
+        flat_proxies = list(chain.from_iterable(proxies.items()))
         outcome = await init(
-            keys=[state, outbox_key(auction_id)],
-            args=[REBUILD_LEASE_MS, token, *chain.from_iterable(fields.items())],
+            keys=keys,
+            args=[REBUILD_LEASE_MS, token, len(flat_state), *flat_state, *flat_proxies],
         )
         if outcome == "EXISTS":
             return False
@@ -118,15 +141,21 @@ async def init_live_state(
         async with sessions() as session:
             ledger_max = await BidRepository(session).max_sequence(auction_id)
         if ledger_max <= sequence:
-            committed = await finalize(keys=[state], args=[token, "commit", status])
+            committed = await finalize(keys=finalize_keys, args=[token, "commit", status])
             if committed:
                 log.info(
                     "live state rebuilt",
-                    extra={"fields": {"auction_id": str(auction_id), "sequence": sequence}},
+                    extra={
+                        "fields": {
+                            "auction_id": str(auction_id),
+                            "sequence": sequence,
+                            "proxies": len(proxies),
+                        }
+                    },
                 )
             return bool(committed)  # 0: our lease expired and another rebuild took over
 
-        await finalize(keys=[state], args=[token, "abort", ""])
+        await finalize(keys=finalize_keys, args=[token, "abort", ""])
         log.warning(
             "ledger moved during rebuild, retrying",
             extra={

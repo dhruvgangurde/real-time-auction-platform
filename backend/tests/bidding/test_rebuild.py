@@ -97,7 +97,7 @@ def _racing_snapshot(db: asyncpg.Connection, times: int):
     calls = {"n": 0}
 
     async def snapshot(sessions, auction_id):
-        fields, status, sequence = await real(sessions, auction_id)
+        fields, status, sequence, proxies = await real(sessions, auction_id)
         calls["n"] += 1
         if calls["n"] <= times:
             bidder = await db.fetchval(
@@ -113,7 +113,7 @@ def _racing_snapshot(db: asyncpg.Connection, times: int):
                 20_000 + sequence * 1_000,
                 sequence + 1,
             )
-        return fields, status, sequence
+        return fields, status, sequence, proxies
 
     return snapshot
 
