@@ -2,6 +2,9 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-13 A seller cannot bid on their own auction
+The SRS does not say whether a seller may bid on their own listing; accepting it allows shill bidding (a seller pushing the price up), which an end-to-end test showed was possible. `BidService` now refuses both a bid and a proxy maximum from the auction's seller with SELLER_CANNOT_BID (403 on REST, `bid_rejected` / `proxy_rejected` on the WebSocket), after input validation and before arbitration, so nothing reaches the live state or the outbox; the refusal is logged like any bid decision (FR-44). The seller of an auction never changes, so it is cached per process: only the first bid on an auction reads Postgres, and if that read fails the bid fails closed (SERVICE_UNAVAILABLE). The Lua arbitration is unchanged.
+
 ## 2026-10-13 The platform always keeps an active administrator (FR-75)
 An end-to-end test showed an admin could suspend their own account, which locked out the only admin. Now: an admin cannot suspend themselves or remove their own admin role (CANNOT_TARGET_SELF, 409), and nobody (admin API or operator CLI) can suspend or demote the last active administrator (LAST_ADMIN, 409). "Active administrator" means the admin role and status active. Every change that can remove one takes a transaction-scoped advisory lock first, so two admins suspending or demoting each other at the same moment are decided one after the other and one of them is kept. The operator CLI gains `reinstate <email> --reason` (actor NULL, reason prefixed `cli:`) as the recovery path when no active administrator is left.
 

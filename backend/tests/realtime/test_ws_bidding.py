@@ -2,6 +2,7 @@
 
 import logging
 
+import asyncpg
 import pytest
 from redis.asyncio import Redis
 
@@ -249,3 +250,26 @@ async def test_every_bid_decision_is_logged_once(
     assert refused["auction_id"] == str(other) and refused["bidder_id"] == str(bob_id)
     assert refused["amount"] == 20_000
     assert str(SECRET_MAX) not in caplog.text and alice_id != bob_id
+
+
+async def test_seller_bid_refused_over_websocket(
+    node: Instance, make_bidder, auction, db: asyncpg.Connection
+) -> None:
+    """Decision 2026-10-13: the seller gets bid_rejected / proxy_rejected SELLER_CANNOT_BID;
+    the room sees nothing."""
+    a = await auction(start_price=10_000, min_increment=500)
+    seller_id, seller_token = await make_bidder()
+    await db.execute("UPDATE auctions SET seller_id = $2 WHERE id = $1", a, seller_id)
+    seller = await Client.open(node.ws, token=seller_token)
+    watcher = await Client.open(node.ws, token=(await make_bidder())[1])
+    await seller.subscribe(a)
+    await watcher.subscribe(a)
+    await seller.send(_bid(a, 10_000, "own"))
+    rejected = await seller.expect("bid_rejected", request_id="own")
+    assert rejected["code"] == "SELLER_CANNOT_BID"
+    await seller.send(
+        {"type": "set_proxy", "auction_id": str(a), "max_amount": 50_000, "request_id": "max"}
+    )
+    refused = await seller.expect("proxy_rejected", request_id="max")
+    assert refused["code"] == "SELLER_CANNOT_BID" and "max_amount" not in refused
+    assert not [f for f in watcher.frames if f.get("type") == "bid_placed"]

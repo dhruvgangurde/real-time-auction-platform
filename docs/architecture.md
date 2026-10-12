@@ -18,7 +18,7 @@ Design reference. The SRS governs if anything here conflicts with it.
 
 1. Client sends `place_bid {auction_id, amount, request_id}` over the WebSocket (Phase 5; REST fallback uses the same service, DC-9).
 2. API checks, cheapest first: the per-connection and per-user rate limits, the token and denylist (account status), the bidder role, the room subscription and degraded mode (FR-34, FR-44; section 4).
-3. `BidService.place_bid` validates the input (amount is an integer 1..2^53-1, request_id is 1..64 chars of `[A-Za-z0-9_-]`) and calls `place_bid.lua` with keys `state`, `outbox`, `req`. In one atomic step the script:
+3. `BidService.place_bid` validates the input (amount is an integer 1..2^53-1, request_id is 1..64 chars of `[A-Za-z0-9_-]`), refuses the auction's own seller with `SELLER_CANNOT_BID` (seller cached per process after the first bid; decisions 2026-10-13), and calls `place_bid.lua` with keys `state`, `outbox`, `req`. In one atomic step the script:
    a. returns the stored result if `req` exists (idempotent retry);
    b. returns `NOT_INITIALISED` if the state hash is missing or still `rebuilding`;
    c. reads `now` from Redis `TIME` (DC-3);
@@ -308,7 +308,7 @@ Migrations `0001` to `0010` in `backend/alembic/versions/`. Money is BIGINT pais
 Auth: EMAIL_TAKEN, INVALID_TOKEN, TOKEN_EXPIRED, INVALID_CREDENTIALS, EMAIL_NOT_VERIFIED, ACCOUNT_SUSPENDED, RATE_LIMITED, FORBIDDEN, NOT_FOUND.
 Auctions: AUCTION_ALREADY_LIVE (409), AUCTION_NOT_LIVE (409, force-close of a draft or scheduled auction), CATEGORY_NOT_FOUND (422), NOT_WATCHING (404), ALREADY_CLOSED (409), NOT_DRAFT (409, publish of a scheduled auction), UNSUPPORTED_IMAGE (422), IMAGE_TOO_LARGE (413), TOO_MANY_IMAGES (409), CATEGORY_IN_USE (409), CATEGORY_CYCLE (422), SLUG_TAKEN (409).
 Validation errors carry an optional `fields` object of per-field messages (FR-12).
-Bidding: AUCTION_CLOSED, AUCTION_NOT_STARTED, BID_TOO_LOW, BID_ABOVE_LIMIT, SELF_OUTBID_NOT_ALLOWED, BELOW_CURRENT_PRICE, PROXY_CANNOT_DECREASE (lower or equal maximum, FR-46), SERVICE_UNAVAILABLE.
+Bidding: SELLER_CANNOT_BID (403: the auction's seller, for bids and maxima), AUCTION_CLOSED, AUCTION_NOT_STARTED, BID_TOO_LOW, BID_ABOVE_LIMIT, SELF_OUTBID_NOT_ALLOWED, BELOW_CURRENT_PRICE, PROXY_CANNOT_DECREASE (lower or equal maximum, FR-46), SERVICE_UNAVAILABLE.
 Administration: NOT_SUSPENDED (409, reinstating an account that is not suspended); CANNOT_TARGET_SELF (409, an admin suspending their own account or removing their own admin role); LAST_ADMIN (409, suspending or demoting the last active administrator, from the API or the CLI); FORBIDDEN for anyone without the admin role; ALREADY_CLOSED for a force-close of a terminal auction or a cancel of a closing or terminal one.
 Payment: NOT_WINNER (403), ALREADY_PAID (409), INVALID_SIGNATURE (400, checkout callback or webhook), PAYMENT_MISMATCH (409, amount or currency differs from the settlement), AMOUNT_BELOW_GATEWAY_MINIMUM (409, under 100 paise), PAYLOAD_TOO_LARGE (413, webhook body over 64 KB), SERVICE_UNAVAILABLE (503, gateway unreachable or not configured).
 Notifications: NOT_FOUND for another user's notification (FR-74).

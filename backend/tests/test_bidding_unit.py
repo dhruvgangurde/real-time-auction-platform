@@ -56,10 +56,14 @@ class FakeSession:
     async def __aexit__(self, *_: Any) -> None:
         return None
 
+    async def get(self, *_: Any) -> None:
+        return None  # the seller check finds no auction; arbitration decides as before
+
 
 class FakeAuction:
     def __init__(self, status: str) -> None:
         self.status = status
+        self.seller_id = uuid4()  # never the bidder in these tests
 
 
 def fake_repo(auction: FakeAuction | None) -> type:

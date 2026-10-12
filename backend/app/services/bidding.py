@@ -230,6 +230,7 @@ class BidService:
         self.record_outbid = record_outbid
         self._place_bid = redis.register_script(lua.source("place_bid"))
         self._set_proxy = redis.register_script(lua.source("set_proxy"))
+        self._sellers: dict[UUID, UUID] = {}  # auction -> seller; a seller never changes
 
     async def place_bid(
         self, auction_id: UUID, bidder_id: UUID, amount: int, request_id: str
@@ -300,6 +301,8 @@ class BidService:
         if not _valid(auction_id, bidder_id, amount, request_id):
             return _rejected("VALIDATION_ERROR")
         try:
+            if await self._seller_of(auction_id) == bidder_id:
+                return _rejected("SELLER_CANNOT_BID")  # no shill bidding, before arbitration
             raw = await arbitrate()
             if raw.get("code") == "NOT_INITIALISED":
                 raw = await self._rebuild_and_retry(auction_id, arbitrate)
@@ -317,6 +320,22 @@ class BidService:
             )
             return _rejected("SERVICE_UNAVAILABLE")
         return raw
+
+    async def _seller_of(self, auction_id: UUID) -> UUID | None:
+        """The auction's seller, cached per process: only the first bid on an auction reads
+        Postgres, so the bid path keeps working on Redis alone afterwards. If that first read
+        fails the bid fails closed (SERVICE_UNAVAILABLE). None for an unknown auction, which the
+        arbitration path then reports."""
+        seller = self._sellers.get(auction_id)
+        if seller is None:
+            async with self._sessions() as session:
+                auction = await AuctionRepository(session).get(auction_id)
+            if auction is None:
+                return None
+            if len(self._sellers) >= 10_000:  # shortcut: crude bound; an LRU if it ever matters
+                self._sellers.clear()
+            seller = self._sellers[auction_id] = auction.seller_id
+        return seller
 
     async def _rebuild_and_retry(
         self, auction_id: UUID, arbitrate: Callable[[], Awaitable[dict[str, Any]]]

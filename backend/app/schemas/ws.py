@@ -19,6 +19,7 @@ REJECTION_TEXT = {
     "BID_TOO_LOW": "bid is below the minimum next bid",
     "BID_ABOVE_LIMIT": "amount is more than 100 times the starting price",
     "SELF_OUTBID_NOT_ALLOWED": "you already hold the highest bid",
+    "SELLER_CANNOT_BID": "sellers cannot bid on their own auction",
     "AUCTION_CLOSED": "auction is not open for bids",
     "AUCTION_NOT_STARTED": "auction has not started",
     "BELOW_CURRENT_PRICE": "maximum is below the minimum next bid",

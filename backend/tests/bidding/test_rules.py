@@ -1,12 +1,14 @@
 """Arbitration rules (FR-36, FR-37, FR-38, BR-14). Rejections write nothing (FR-41)."""
 
+import logging
 from uuid import uuid4
 
+import asyncpg
 import pytest
 from redis.asyncio import Redis
 
 from app.services.bidding import BidService
-from app.services.live_state import outbox_key, state_key
+from app.services.live_state import outbox_key, proxies_key, state_key
 from tests.bidding.conftest import AuctionFactory
 
 
@@ -148,3 +150,29 @@ async def test_invalid_input_never_reaches_redis(
     r = await service.place_bid(uuid4(), uuid4(), amount, request_id)  # type: ignore[arg-type]
     assert r.code == "VALIDATION_ERROR"
     assert await redis.dbsize() == 0
+
+
+async def test_seller_cannot_bid_or_arm_a_maximum_on_own_auction(
+    service: BidService,
+    auction,
+    new_user,
+    redis: Redis,
+    db: asyncpg.Connection,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Decision 2026-10-13 (no shill bidding): the seller's bid and maximum are refused with
+    SELLER_CANNOT_BID before arbitration; nothing reaches the live state or the outbox; the
+    refusal is logged like any bid decision (FR-44). Another bidder is unaffected."""
+    a = await auction()
+    seller = await db.fetchval("SELECT seller_id FROM auctions WHERE id = $1", a)
+    with caplog.at_level(logging.INFO, logger="bidding"):
+        bid = await service.place_bid(a, seller, 10_000, "own-bid")
+        proxy = await service.set_proxy(a, seller, 50_000, "own-max")
+    assert (bid.accepted, bid.code) == (False, "SELLER_CANNOT_BID")
+    assert (proxy.armed, proxy.code) == (False, "SELLER_CANNOT_BID")
+    assert (await redis.hget(state_key(a), "sequence")) == "0"
+    assert await redis.xlen(outbox_key(a)) == 0
+    assert await redis.hlen(proxies_key(a)) == 0
+    codes = [r.fields.get("code") for r in caplog.records if r.msg in ("bid", "proxy")]
+    assert codes == ["SELLER_CANNOT_BID", "SELLER_CANNOT_BID"]
+    assert (await service.place_bid(a, await new_user(), 10_000, "other")).accepted

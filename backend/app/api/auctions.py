@@ -39,7 +39,12 @@ from app.services.snapshot import live_snapshot
 
 router = APIRouter(prefix="/api/v1/auctions", tags=["auctions"])
 
-STATUS = {"VALIDATION_ERROR": 422, "NOT_FOUND": 404, "SERVICE_UNAVAILABLE": 503}
+STATUS = {
+    "VALIDATION_ERROR": 422,
+    "NOT_FOUND": 404,
+    "SELLER_CANNOT_BID": 403,
+    "SERVICE_UNAVAILABLE": 503,
+}
 
 
 class BidRequest(BaseModel):

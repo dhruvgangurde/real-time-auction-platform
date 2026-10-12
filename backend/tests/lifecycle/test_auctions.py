@@ -385,3 +385,17 @@ async def test_starting_price_below_gateway_minimum_refused_on_edit(
         f"/api/v1/auctions/{draft}", json={"starting_price": 100}, headers=bearer(token)
     )
     assert ok.status_code == 200
+
+
+async def test_seller_bid_refused_over_rest(api: AsyncClient, make_user, seeded) -> None:
+    """Decision 2026-10-13: SELLER_CANNOT_BID (403) on the REST fallback for bids and maxima."""
+    seller_id, token = await make_user("seller")
+    auction_id = await seeded(seller_id, "live", start_in_s=-60)
+    for path, body in (
+        ("bids", {"amount": 10_000, "request_id": "own-1"}),
+        ("proxy", {"max_amount": 50_000, "request_id": "own-2"}),
+    ):
+        r = await api.post(
+            f"/api/v1/auctions/{auction_id}/{path}", json=body, headers=bearer(token)
+        )
+        assert (r.status_code, _code(r)) == (403, "SELLER_CANNOT_BID")
