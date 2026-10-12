@@ -170,3 +170,21 @@ Define in phase 5 and record here.
 ## 11. Pseudonyms
 
 Public bidder label: `Bidder-` plus the first four hex characters of a per-auction hash of the bidder id (NFR-27).
+
+## 12. Identity (FR-1 to FR-10)
+
+**Accounts.** `POST /api/v1/auth/register` creates a `pending_verification` user with the bidder role and an argon2id password hash (t=3, m=64 MiB, p=4, from config). Email is normalised to lower case; a duplicate gives `EMAIL_TAKEN` (FR-1). Passwords are 10 to 128 characters and may not equal the email.
+
+**Tokens.** Opaque tokens (verification, reset, refresh) are 32 random bytes, urlsafe; only their SHA-256 is stored. Verification tokens last 24 h, reset tokens 1 h, both single use through one `UPDATE ... WHERE used_at IS NULL`. Access tokens are HS256 JWTs (`sub`, `roles`, `sid`, `iat`, `exp`, `jti`) valid 15 minutes; decoding pins `algorithms=["HS256"]`, requires every claim and checks expiry against the service clock. The refresh token lives only in an `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` cookie, 30 days sliding, rotated on every `POST /api/v1/auth/refresh`, which also requires an `X-Requested-With` header (NFR-21).
+
+**Login (FR-4).** Rate limits per IP and per email first. An unknown email runs a dummy argon2 verify so timing matches a wrong password; both return the same `INVALID_CREDENTIALS` body. `EMAIL_NOT_VERIFIED` and `ACCOUNT_SUSPENDED` are returned only after the password verified.
+
+**Revocation (FR-5, FR-6).** Postgres is the source of truth (`sessions.revoked_at`, `users.status`). Redis keys `revoked:sid:{sid}` and `revoked:user:{user_id}` (TTL = access-token lifetime) make the per-request check one round trip: a user key means `ACCOUNT_SUSPENDED`, a sid key means `INVALID_TOKEN`. Logout and password reset write sid keys (reset never writes a user key, so the next login works at once); suspension writes the user key. A failed write is retried once, then handed to the `denylist_revoke` Celery task; the `sync_denylist` beat task (every 30 s) rewrites every revocation of the last 15 minutes from Postgres. If Redis is unreachable at request time the check runs against Postgres instead of being skipped.
+
+**Rate limits (NFR-22).** Fixed windows keyed by the clock bucket (`rl:{name}:{subject}:{window_start}`), counted by one Lua `INCR`+`EXPIRE`. Defaults: login 10/60 s per IP and 5/300 s per email; register 5/h per IP; resend and forgot 5/h per IP and 3/h per email. `RATE_LIMITED` is 429 with `Retry-After`. Redis down means `SERVICE_UNAVAILABLE` on these endpoints (fail closed).
+
+**Profile (FR-9, FR-10).** `GET`/`PATCH /api/v1/users/me` (name and avatar only; the schema forbids other fields). `GET /api/v1/users/me/bids` pages the caller's ledger rows newest first with a `created_at:id` keyset cursor.
+
+**Suspension.** `UserService.suspend_user(admin, user, reason)`: status, revocation of every session and the `audit_log` row (`user_suspended`, with the reason) commit in one transaction (FR-78, BR-12), then the user denylist key. The admin endpoint arrives with the admin work.
+
+**Status codes.** 401 `INVALID_TOKEN`/`TOKEN_EXPIRED` for bearer problems and `INVALID_CREDENTIALS`; 400 for a bad body token; 403 `EMAIL_NOT_VERIFIED`, `ACCOUNT_SUSPENDED`, `FORBIDDEN`; 409 `EMAIL_TAKEN`; 429 `RATE_LIMITED`.

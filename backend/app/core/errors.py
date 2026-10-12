@@ -11,19 +11,26 @@ log = logging.getLogger(__name__)
 
 
 class AppError(Exception):
-    def __init__(self, code: str, message: str, status: int = 400) -> None:
+    def __init__(
+        self, code: str, message: str, status: int = 400, headers: dict[str, str] | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.status = status
+        self.headers = headers or {}
 
 
-def envelope(code: str, message: str, status: int) -> JSONResponse:
-    return JSONResponse({"error": {"code": code, "message": message}}, status_code=status)
+def envelope(
+    code: str, message: str, status: int, headers: dict[str, str] | None = None
+) -> JSONResponse:
+    return JSONResponse(
+        {"error": {"code": code, "message": message}}, status_code=status, headers=headers
+    )
 
 
 async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
-    return envelope(exc.code, exc.message, exc.status)
+    return envelope(exc.code, exc.message, exc.status, exc.headers)
 
 
 async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:

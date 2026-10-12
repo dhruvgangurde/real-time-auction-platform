@@ -1,7 +1,8 @@
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.dialects.postgresql import insert
 
 from app.models import Bid
@@ -57,3 +58,13 @@ class BidRepository(BaseRepository):
             "ORDER BY s"
         )
         return list((await self.session.execute(stmt, {"upto": upto, "a": auction_id})).scalars())
+
+    async def list_for_bidder(
+        self, bidder_id: UUID, limit: int, before: tuple[datetime, int] | None
+    ) -> list[Bid]:
+        """A bidder's own bids across auctions, most recent first, keyset paginated (FR-10)."""
+        stmt = select(Bid).where(Bid.bidder_id == bidder_id)
+        if before is not None:
+            stmt = stmt.where(tuple_(Bid.created_at, Bid.id) < tuple_(before[0], before[1]))
+        stmt = stmt.order_by(Bid.created_at.desc(), Bid.id.desc()).limit(limit)
+        return list((await self.session.execute(stmt)).scalars())

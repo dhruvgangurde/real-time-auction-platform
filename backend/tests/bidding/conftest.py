@@ -1,60 +1,22 @@
-"""Integration fixtures for bid arbitration: real Redis (DB index 15) and Postgres `auction_test`.
+"""Integration fixtures for bid arbitration on top of the shared Redis/Postgres fixtures.
 
 Rows are committed (not rolled back) because Redis scripts, the persister and the rebuild all
 use their own connections. Every test creates fresh auctions and users, so nothing collides.
 """
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
 import asyncpg
 import pytest
 from redis.asyncio import Redis
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import settings
-from app.core.redis import create_redis
 from app.services.bidding import BidService
 from app.services.live_state import from_ms, init_live_state, state_key
-from tests.db.conftest import make_auction, make_category, make_user, owner_dsn
-
-TEST_REDIS_URL = settings.redis_url.rsplit("/", 1)[0] + "/15"
-
-
-def new_redis() -> Redis:
-    return create_redis(TEST_REDIS_URL)
-
-
-@pytest.fixture
-async def redis() -> AsyncIterator[Redis]:
-    client = new_redis()
-    await client.flushdb()
-    yield client
-    await client.aclose()
-
-
-@pytest.fixture(scope="session")
-async def sessions(test_db: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """App-role sessions on auction_test, as api and worker use in production (DC-4)."""
-    url = make_url(settings.migration_database_url).set(
-        drivername="postgresql+asyncpg",
-        database=test_db,
-        username=settings.app_db_user,
-        password=settings.app_db_password,
-    )
-    engine = create_async_engine(url)
-    yield async_sessionmaker(engine, expire_on_commit=False)
-    await engine.dispose()
-
-
-@pytest.fixture(scope="session")
-async def db(test_db: str) -> AsyncIterator[asyncpg.Connection]:
-    """Owner connection in autocommit mode, for setup and for reading results."""
-    conn = await asyncpg.connect(owner_dsn(test_db))
-    yield conn
-    await conn.close()
+from tests.conftest import TEST_REDIS_URL, new_redis  # noqa: F401  re-exported for tests
+from tests.db.conftest import make_auction, make_category, make_user
 
 
 async def redis_now_ms(redis: Redis) -> int:

@@ -2,6 +2,21 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-12 Identity before WebSockets (roadmap phases 5 and 6 swapped)
+The WebSocket layer authenticates its first message with the access token (CI-4, FR-5) and needs `current_user`, the denylist check and the session model, so Identity is built first. Roadmap Phase 5 is now Identity and Phase 6 the real-time layer.
+
+## 2026-10-12 Identity choices
+- **`EMAIL_TAKEN` on duplicate registration** (FR-1 says so), even though it reveals that an address is registered. Non-enumeration is applied where the SRS requires it: login (FR-4), resend-verification and forgot-password (FR-8).
+- **argon2id** via argon2-cffi with t=3, m=64 MiB, p=4 from config; hashing and verification run in a worker thread. An unknown email verifies against a real throwaway hash so timing matches a wrong password.
+- **Password rules:** minimum 10 (FR-2), maximum 128, not equal to the email, new users get the bidder role (the SRS is silent on the last three).
+- **Access tokens are HS256 JWTs, 15 min**, with `sub`, `roles`, `sid`, `iat`, `exp`, `jti`; decode pins the algorithm and requires every claim. Expiry is checked against the injected service clock, not the JWT library's wall clock, so tests control time. Roles in the token are up to 15 minutes stale; role changes are out of scope until the admin work.
+- **Refresh tokens** are opaque, hashed at rest, cookie-only (`HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`), 30 days sliding, rotated on use (NFR-17). Refresh requires `X-Requested-With` as CSRF protection (NFR-21). Logout requires a valid access token.
+- **Denylist with Postgres fallback.** Per-sid keys for logout and reset, a per-user key only for suspension (a user key after reset would block the user's next login for 15 min). Writes retry once, then go to a Celery task, and the `sync_denylist` beat task rewrites recent revocations from Postgres every 30 s; a failure of both write and enqueue raises the `DENYLIST_WRITE_FAILED` alert. On a Redis error at request time the check runs against Postgres and is never skipped (FR-6).
+- **Rate limits are fixed windows keyed by the clock bucket**, so a limit resets when the clock enters the next window and tests advance a fake clock instead of sleeping. They fail closed (`SERVICE_UNAVAILABLE`) when Redis is down: a limiter that stops counting is no brute-force protection, and bidding already fails closed without Redis.
+- **Console email backend is dev-only** (TBD-1 open): it logs the whole message including links with raw tokens, and `check_startup_config()` refuses it outside `APP_ENV=local`, as it refuses a `JWT_SECRET` under 32 bytes.
+- **Bid history uses a keyset cursor** (`created_at_ms:id`), newest first (FR-10), on the existing `(bidder_id, created_at DESC)` index.
+- **No `X-Forwarded-For` handling yet.** Rate limits use the direct peer address; a reverse-proxy deployment must add trusted-proxy handling first.
+
 ## 2026-10-12 Phase 4 proxy bidding choices
 - **`arm_seq` is a counter at the serialisation point, not a timestamp.** Every set or raise does `HINCRBY arm_seq` and stores `max|arm_seq`; equal maxima are won by the lower `arm_seq` (FR-49). Redis TIME can tie at microsecond resolution and a rebuild cannot reproduce it; a counter is exact, ordered by the same atomic step that orders bids, and rebuilds from Postgres (restarting above the highest `arm_seq` ever persisted). **A raise takes a new `arm_seq`:** the tie goes to whoever committed to that amount first, so raising resets priority.
 - **Automatic bids may be sub-increment** (FR-48 caps at the maximum, FR-49 lets the leader stop at its own maximum). A maximum of 300 facing a manual 295 at increment 10 bids 300. The SRS wins over the earlier "below the next minimum bid places nothing" wording.

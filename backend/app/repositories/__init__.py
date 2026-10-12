@@ -6,7 +6,9 @@ from app.repositories.category import CategoryRepository
 from app.repositories.notification import NotificationRepository
 from app.repositories.payment import PaymentRepository
 from app.repositories.proxy_bid import ProxyBidRepository
+from app.repositories.session import SessionRepository
 from app.repositories.settlement import SettlementRepository
+from app.repositories.token import TokenRepository
 from app.repositories.user import UserRepository
 from app.repositories.watchlist import WatchlistRepository
 
@@ -19,7 +21,9 @@ __all__ = [
     "NotificationRepository",
     "PaymentRepository",
     "ProxyBidRepository",
+    "SessionRepository",
     "SettlementRepository",
+    "TokenRepository",
     "UserRepository",
     "WatchlistRepository",
 ]

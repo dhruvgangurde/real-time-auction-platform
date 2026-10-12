@@ -13,6 +13,8 @@ celery_app.conf.beat_schedule = {
         "schedule": 30.0,
         "options": {"expires": 30},
     },
+    # denylist safety net: revocations committed in Postgres always reach Redis (FR-6)
+    "sync-denylist": {"task": "sync_denylist", "schedule": 30.0, "options": {"expires": 30}},
 }
 
 

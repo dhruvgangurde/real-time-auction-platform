@@ -5,7 +5,8 @@ from uuid import UUID
 
 from celery import Task
 
-from app.services import ledger, reconciliation
+from app.core.clock import SystemClock
+from app.services import denylist, ledger, reconciliation
 from app.workers import runtime
 from app.workers.celery_app import celery_app
 
@@ -41,3 +42,18 @@ def sweep_outboxes() -> int:
 @celery_app.task(name="reconcile_live_auctions")
 def reconcile_live_auctions() -> dict[str, str]:
     return runtime.run(reconciliation.reconcile(runtime.redis(), runtime.sessions()))
+
+
+@celery_app.task(name="denylist_revoke", bind=True, acks_late=True, max_retries=10)
+def denylist_revoke(self: Task, keys: list[str], ttl_s: int) -> None:
+    """Retry a denylist write the API could not complete (FR-6)."""
+    try:
+        runtime.run(denylist.write_keys(runtime.redis(), keys, ttl_s))
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=min(2**self.request.retries, 30)) from exc
+
+
+@celery_app.task(name="sync_denylist")
+def sync_denylist() -> int:
+    """Safety net: rewrite every recent revocation from Postgres into Redis (FR-6)."""
+    return runtime.run(denylist.resync(runtime.redis(), runtime.sessions(), SystemClock()))

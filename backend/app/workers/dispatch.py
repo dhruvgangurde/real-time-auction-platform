@@ -2,24 +2,28 @@
 
 import asyncio
 import logging
-from uuid import UUID
+from typing import Any
 
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger("workers")
 
 
-def _log_failure(future: asyncio.Future[object], auction_id: UUID) -> None:
+def _log_failure(future: asyncio.Future[object], name: str, args: list[Any]) -> None:
     if future.exception() is not None:
-        # the bid is already safe in the outbox; the sweeper will persist it
         log.error(
-            "persist enqueue failed",
-            extra={"fields": {"auction_id": str(auction_id), "error": repr(future.exception())}},
+            "enqueue failed",
+            extra={"fields": {"task": name, "args": args, "error": repr(future.exception())}},
         )
 
 
-def schedule_persist(auction_id: UUID) -> None:
-    """Enqueue persist_bids without blocking the caller's acknowledgement (FR-40)."""
+def enqueue(name: str, args: list[Any]) -> None:
+    """Send a task without blocking the caller's response (FR-40). Failures are logged;
+    every task dispatched this way has a beat safety net that redoes the work."""
     loop = asyncio.get_running_loop()
-    future = loop.run_in_executor(None, celery_app.send_task, "persist_bids", [str(auction_id)])
-    future.add_done_callback(lambda f: _log_failure(f, auction_id))
+    future = loop.run_in_executor(None, celery_app.send_task, name, args)
+    future.add_done_callback(lambda f: _log_failure(f, name, args))
+
+
+def schedule_persist(auction_id: Any) -> None:
+    enqueue("persist_bids", [str(auction_id)])

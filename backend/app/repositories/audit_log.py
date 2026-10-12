@@ -1,5 +1,8 @@
+from datetime import datetime
 from typing import Any
 from uuid import UUID
+
+from sqlalchemy import select
 
 from app.models import AuditLog
 from app.repositories.base import BaseRepository
@@ -33,3 +36,10 @@ class AuditLogRepository(BaseRepository):
             )
         )
         await self.session.flush()
+
+    async def entity_ids_for_action(self, action: str, since: datetime) -> list[UUID]:
+        """Entity ids (as UUIDs) of recent entries with this action, for the denylist resync."""
+        stmt = select(AuditLog.entity_id).where(
+            AuditLog.action == action, AuditLog.created_at >= since
+        )
+        return [UUID(e) for e in (await self.session.execute(stmt)).scalars()]
