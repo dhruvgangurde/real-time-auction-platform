@@ -1,5 +1,5 @@
 """Outbox persister: moves accepted bids and proxy changes from Redis into Postgres
-(FR-41, FR-43, FR-45, NFR-10).
+(FR-41, FR-43, FR-45, NFR-10), and keeps auctions.current_price / bid_count in step (D7).
 
 Bids are acknowledged before they are durable (FR-40). They wait in the per-auction outbox
 stream until this persister commits them to Postgres; only then are they deleted from the stream.
@@ -144,9 +144,15 @@ async def _write_batch(
                 after=e.raw,
             )
 
+        auctions = AuctionRepository(session)
+        new = [e for e in bid_entries if e.sequence_no in inserted]
+        if new:  # D7: listing price and bid count, in the same transaction as the ledger rows
+            top = max(new, key=lambda e: e.sequence_no or 0)
+            assert top.amount is not None and top.sequence_no is not None
+            await auctions.apply_bids(auction_id, top.amount, top.sequence_no)
+
         extended = [e for e in bid_entries if e.end_time_after is not None]
         if extended:
-            auctions = AuctionRepository(session)
             end_time, count = await auctions.extension_state(auction_id)  # row locked
             before = {"end_time_ms": to_ms(end_time), "extension_count": count}
             await auctions.apply_extension(

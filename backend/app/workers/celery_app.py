@@ -13,6 +13,12 @@ celery_app.conf.beat_schedule = {
         "schedule": 30.0,
         "options": {"expires": 30},
     },
+    # auction lifecycle: scheduled -> live -> closing (FR-15, FR-16, D9)
+    "run-scheduler": {
+        "task": "run_scheduler",
+        "schedule": settings.scheduler_interval_s,
+        "options": {"expires": settings.scheduler_interval_s},
+    },
     # denylist safety net: revocations committed in Postgres always reach Redis (FR-6)
     "sync-denylist": {"task": "sync_denylist", "schedule": 30.0, "options": {"expires": 30}},
 }

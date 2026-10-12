@@ -1,4 +1,5 @@
-"""Single error envelope for every response (CI-2): {"error": {"code", "message"}}."""
+"""Single error envelope for every response (CI-2): {"error": {"code", "message"}}, plus an
+optional "fields" object of per-field messages for validation failures (FR-12)."""
 
 import logging
 
@@ -12,29 +13,47 @@ log = logging.getLogger(__name__)
 
 class AppError(Exception):
     def __init__(
-        self, code: str, message: str, status: int = 400, headers: dict[str, str] | None = None
+        self,
+        code: str,
+        message: str,
+        status: int = 400,
+        headers: dict[str, str] | None = None,
+        fields: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.status = status
         self.headers = headers or {}
+        self.fields = fields
 
 
 def envelope(
-    code: str, message: str, status: int, headers: dict[str, str] | None = None
+    code: str,
+    message: str,
+    status: int,
+    headers: dict[str, str] | None = None,
+    fields: dict[str, str] | None = None,
 ) -> JSONResponse:
-    return JSONResponse(
-        {"error": {"code": code, "message": message}}, status_code=status, headers=headers
-    )
+    error: dict[str, object] = {"code": code, "message": message}
+    if fields:
+        error["fields"] = fields
+    return JSONResponse({"error": error}, status_code=status, headers=headers)
 
 
 async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
-    return envelope(exc.code, exc.message, exc.status, exc.headers)
+    return envelope(exc.code, exc.message, exc.status, exc.headers, exc.fields)
 
 
 async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
-    return envelope("VALIDATION_ERROR", str(exc.errors()[0].get("msg", "invalid request")), 422)
+    errors = exc.errors()
+    fields: dict[str, str] = {}
+    for e in errors:
+        loc = [str(p) for p in e.get("loc", ())]
+        # drop the source ("body", "query", "path") so the key is the field name
+        fields.setdefault(".".join(loc[1:]) or ".".join(loc) or "request", str(e.get("msg")))
+    message = str(errors[0].get("msg", "invalid request")) if errors else "invalid request"
+    return envelope("VALIDATION_ERROR", message, 422, fields=fields)
 
 
 async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:

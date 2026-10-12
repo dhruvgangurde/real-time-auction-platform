@@ -8,7 +8,7 @@ Design reference. The SRS governs if anything here conflicts with it.
 |---|---|
 | API (FastAPI) | REST and one WebSocket endpoint, stateless apart from connections |
 | Worker (Celery) | Durable bid writes, settlement, notifications, reconciliation |
-| Beat | Scheduler: activate auctions, close auctions, ending-soon, reconciliation |
+| Beat | Scheduler: activate auctions and move them to closing (`run_scheduler`, 5 s), outbox sweep, reconciliation, denylist resync; ending-soon in Phase 9 |
 | PostgreSQL | Source of truth |
 | Redis | Live auction state, Lua arbitration, pub/sub, rate limits, task queue |
 
@@ -170,10 +170,50 @@ Pub/sub is at-most-once and events from different instances can arrive out of or
 - `GET /api/v1/auctions/{id}/live` (public; drafts only for their seller or an admin, FR-30): status, current price, leader alias, sequence, bid count, min next, end time, extension count, participants, last 20 bids (ledger merged with unpersisted outbox entries, never above the sequence) and `server_time_ms`. Live and closing auctions are read from Redis live state (state, outbox and presence in one MULTI) and rebuilt when missing (FR-26); every other status is served from Postgres with `degraded: false` and writes nothing to Redis (D2). With Redis unreachable it is served from Postgres with `degraded: true` (NFR-13).
 - `POST /api/v1/auctions/{id}/bids` and `/proxy` (bidder role): the REST fallback (DC-9, UC-01 2a). Same service, same `request_id` contract, same per-user rate limit; the response is the acknowledgement and events are published after it is sent. Rejections: 409 with the arbitration code, 422, 429, 503.
 
+Lifecycle and discovery (Phase 7; `api/lifecycle.py`, `api/discovery.py`, services `AuctionService`, `CatalogService`):
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `POST /api/v1/auctions` | seller (BR-1) | draft; FR-12 per-field errors; anti-snipe 60/120 default, bounded by config; 10 per hour per user (NFR-22) |
+| `PATCH /api/v1/auctions/{id}` | owner | rules by status in section 5; audit before/after |
+| `POST /api/v1/auctions/{id}/publish` | owner | draft to scheduled; at least one image (FR-13); FR-12 re-checked |
+| `POST /api/v1/auctions/{id}/cancel` | owner | draft or scheduled to cancelled (FR-18, BR-9) |
+| `POST /api/v1/auctions/{id}/images` | owner | the body is the image (any Content-Type); decoded JPEG/PNG/WebP only, at most 5 MB (streamed), pixel cap, re-encoded without metadata, random name, at most 8 (D10, NFR-24) |
+| `DELETE /api/v1/auctions/{id}/images/{image_id}` | owner | an auction that left draft keeps at least one image |
+| `GET /api/v1/auctions` | public | `q` (at most 200, websearch syntax, title ranked above description), `category` (descendants included), `status` (repeatable; default scheduled, live, closing; draft and cancelled refused), `min_price`/`max_price` on `coalesce(current_price, starting_price)`, `closing_before`, `page`, `page_size` (20, at most 50); `has_more` |
+| `GET /api/v1/auctions/{id}` | public (drafts: owner, admin) | FR-26 details (title, description, category, images, seller name) plus the `/live` fields; `has_reserve`, `reserve_met` for everyone; `reserve_price` for the owner only (BR-6) |
+| `GET /api/v1/auctions/{id}/bids?before=&limit=` | public | newest first, keyset on `sequence_no`, at most 100; unpersisted outbox bids merged for live and closing auctions; aliases; admins also get `bidder_id` (BR-10) |
+| `GET /api/v1/categories` | public | nested tree |
+| `POST /api/v1/categories`, `PATCH`/`DELETE /api/v1/categories/{id}` | admin | `reason` required and audited with the actor (FR-20, FR-75); no cycles; no delete while it has subcategories or auctions |
+| `PUT`/`DELETE /api/v1/watchlist/{auction_id}`, `GET /api/v1/watchlist` | authenticated | add is idempotent; cancelled refused; view with price, end time and `server_time_ms` (FR-24, FR-25) |
+| `GET /api/v1/seller/auctions` | seller | own auctions including drafts, with price, bid count, times and outcome (FR-19) |
+| `/media/...` | public | re-encoded images, read-only (named volume `media`) |
+
+Live and closing items in lists, the watchlist and the dashboard take price, bid count and end time from Redis (one pipeline), falling back to `auctions.current_price`/`bid_count` (D7).
+
 ## 5. Auction status
 
 draft, scheduled, live, closing, closed_sold, closed_no_sale, cancelled.
-Transitions: draft to scheduled; draft or scheduled to cancelled; scheduled to live (scheduler); live to closing (end time passed); live to cancelled (admin only); closing to closed_sold or closed_no_sale.
+
+| From | To | Who | How |
+|---|---|---|---|
+| (new) | draft | seller | `POST /api/v1/auctions` |
+| draft | scheduled | owner | publish (needs an image, FR-12 re-checked) |
+| draft, scheduled | cancelled | owner | cancel (FR-18, BR-9) |
+| scheduled | live | scheduler | start time passed (FR-16); live state installed after the commit (FR-15) |
+| live | closing | scheduler | `set_status.lua` sees Redis TIME >= `end_time_ms` (D9, FR-58) |
+| live | cancelled | administrator | Phase 8 (force-cancel with a reason) |
+| closing | closed_sold, closed_no_sale | settlement | Phase 8 |
+
+Every transition is a conditional UPDATE (`AuctionRepository.transition`) with an `audit_log` row (`status_changed`, before and after) in the same transaction (FR-77, FR-78); the scheduler's rows have a NULL actor.
+
+Editing by status (FR-17, BR-4): draft and scheduled, any field, re-validated, `original_end_time` follows `end_time` (D1); live, title, description and images only while Redis `sequence == 0` (D8; Redis unavailable means `SERVICE_UNAVAILABLE`), otherwise `AUCTION_ALREADY_LIVE`; closing and terminal, `ALREADY_CLOSED`.
+
+### Scheduler (`services/scheduler.py`, beat every 5 s)
+
+1. **Activate:** scheduled auctions with `start_time <= now()`, claimed `FOR UPDATE SKIP LOCKED`; conditional UPDATE to live plus audit, one transaction; a start more than two intervals late logs a warning (FR-16). After the commit: `cleanup_state.lua` removes any stale non-live hash, then `init_live_state`. Bids in between find no state and are rebuilt lazily by the bid path.
+2. **Repair:** live auctions without Redis state get it built.
+3. **Close:** live auctions with Postgres `end_time <= now()` are candidates (Postgres lags Redis, never leads it). `set_status.lua` flips Redis live to closing only once Redis TIME has reached `end_time_ms`; then a conditional UPDATE live to closing plus audit, and `on_closing` (logs only until Phase 8). Missing state is rebuilt first; a pending outbox defers to the next run; Redis closing with Postgres live is completed.
 
 ## 6. Settlement status
 
@@ -191,7 +231,7 @@ pending_payment, paid, no_sale. A failed payment attempt leaves pending_payment 
 
 ## 8. Data model (tables)
 
-Migrations `0001` to `0007` in `backend/alembic/versions/`. Money is BIGINT paise, every timestamp is `timestamptz`, every FK is `ON DELETE RESTRICT`. Constraint names follow the naming convention in `app/models/base.py` (`pk_`, `uq_`, `ck_`, `fk_`, `ix_`).
+Migrations `0001` to `0008` in `backend/alembic/versions/`. Money is BIGINT paise, every timestamp is `timestamptz`, every FK is `ON DELETE RESTRICT`. Constraint names follow the naming convention in `app/models/base.py` (`pk_`, `uq_`, `ck_`, `fk_`, `ix_`).
 
 | Table | PK | Key constraints and indexes |
 |---|---|---|
@@ -200,11 +240,11 @@ Migrations `0001` to `0007` in `backend/alembic/versions/`. Money is BIGINT pais
 | sessions | uuid | `refresh_token_hash` UNIQUE; `revoked_at` for immediate revocation |
 | email_verification_tokens, password_reset_tokens | bigint | `token_hash` UNIQUE |
 | categories | bigint | `slug` UNIQUE; self-FK `parent_id`, indexed |
-| auctions | uuid | CHECKs: end > start, starting_price > 0 (migration 0006, FR-37), min_increment > 0, reserve NULL or >= starting_price, extension_count 0..10, status in the 7 states. Trigger blocks any change to `original_end_time` (FR-14). Indexes: (status, start_time), (status, end_time), seller_id, category_id, GIN on generated `search_vector` ('simple' config, title weight A, description weight B) |
-| auction_images | bigint | index on auction_id |
+| auctions | uuid | CHECKs: end > start, starting_price > 0 (migration 0006, FR-37), min_increment > 0, reserve NULL or >= starting_price, extension_count 0..10, status in the 7 states, current_price NULL or > 0, bid_count >= 0. `current_price`/`bid_count` kept by the persister (D7). Trigger blocks any change to `original_end_time` once the auction has left draft and scheduled (FR-14, D1). Indexes: (status, start_time), (status, end_time), seller_id, category_id, created_at, GIN on generated `search_vector` ('simple' config, title weight A, description weight B) |
+| auction_images | bigint | index on auction_id; `object_key` is the server-chosen storage key (D10) |
 | bids (append-only) | bigint | UNIQUE (auction_id, sequence_no); amount > 0; bid_type manual or automatic; `end_time_after` (FR-55). Indexes: (auction_id, sequence_no DESC), (bidder_id, created_at DESC) |
 | proxy_bids | bigint | partial UNIQUE (auction_id, bidder_id) WHERE is_active; max_amount > 0 |
-| watchlist | (user_id, auction_id) | |
+| watchlist | (user_id, auction_id) | index on auction_id (watchers of an auction, FR-25) |
 | settlements | uuid | UNIQUE auction_id; UNIQUE idempotency_key; CHECK no_sale iff winner_id and final_price are NULL |
 | payments | uuid | UNIQUE gateway_ref; UNIQUE idempotency_key; partial UNIQUE settlement_id WHERE status = 'succeeded' (failed attempts can be retried) |
 | notifications | bigint | UNIQUE dedupe_key; type CHECK; partial index (user_id, created_at DESC) WHERE read_at IS NULL |
@@ -221,7 +261,8 @@ Migrations `0001` to `0007` in `backend/alembic/versions/`. Money is BIGINT pais
 ## 9. Error codes (add new ones here)
 
 Auth: EMAIL_TAKEN, INVALID_TOKEN, TOKEN_EXPIRED, INVALID_CREDENTIALS, EMAIL_NOT_VERIFIED, ACCOUNT_SUSPENDED, RATE_LIMITED, FORBIDDEN, NOT_FOUND.
-Auctions: AUCTION_ALREADY_LIVE, CATEGORY_NOT_FOUND, NOT_WATCHING, ALREADY_CLOSED.
+Auctions: AUCTION_ALREADY_LIVE (409), CATEGORY_NOT_FOUND (422), NOT_WATCHING (404), ALREADY_CLOSED (409), NOT_DRAFT (409, publish of a scheduled auction), UNSUPPORTED_IMAGE (422), IMAGE_TOO_LARGE (413), TOO_MANY_IMAGES (409), CATEGORY_IN_USE (409), CATEGORY_CYCLE (422), SLUG_TAKEN (409).
+Validation errors carry an optional `fields` object of per-field messages (FR-12).
 Bidding: AUCTION_CLOSED, AUCTION_NOT_STARTED, BID_TOO_LOW, BID_ABOVE_LIMIT, SELF_OUTBID_NOT_ALLOWED, BELOW_CURRENT_PRICE, PROXY_CANNOT_DECREASE (lower or equal maximum, FR-46), SERVICE_UNAVAILABLE.
 Payment: NOT_WINNER, ALREADY_PAID, INVALID_SIGNATURE.
 Real-time: NOT_SUBSCRIBED, TOO_MANY_SUBSCRIPTIONS, MESSAGE_TOO_LARGE, UNKNOWN_TYPE (RATE_LIMITED, SERVICE_UNAVAILABLE and INTERNAL_ERROR are also sent as `error` frames).

@@ -85,7 +85,7 @@ async def _recent_bids(
     ][:RECENT_BIDS]
 
 
-async def _read_live(auction_id: UUID, redis: Redis) -> tuple[dict[str, str], Outbox, int]:
+async def read_live(auction_id: UUID, redis: Redis) -> tuple[dict[str, str], Outbox, int]:
     """State, outbox and participant count as of one instant (one MULTI)."""
     async with redis.pipeline(transaction=True) as pipe:
         pipe.hgetall(state_key(auction_id))
@@ -105,13 +105,13 @@ async def live_snapshot(
     if auction.status not in LIVE_STATES:
         return await _postgres_snapshot(auction, sessions, redis, degraded=False)
     try:
-        state, outbox, participants = await _read_live(auction_id, redis)
+        state, outbox, participants = await read_live(auction_id, redis)
         if not state or state.get("status") == "rebuilding":
             try:
                 await init_live_state(auction_id, redis, sessions)
             except (LiveStateUnavailable, AuctionNotLive) as exc:
                 raise AppError("SERVICE_UNAVAILABLE", "live state is being rebuilt", 503) from exc
-            state, outbox, participants = await _read_live(auction_id, redis)
+            state, outbox, participants = await read_live(auction_id, redis)
             if not state or state.get("status") == "rebuilding":
                 raise AppError("SERVICE_UNAVAILABLE", "live state is being rebuilt", 503)
     except RedisError:

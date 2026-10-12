@@ -7,6 +7,7 @@ from celery import Task
 
 from app.core.clock import SystemClock
 from app.services import denylist, ledger, reconciliation
+from app.services.scheduler import Scheduler
 from app.workers import runtime
 from app.workers.celery_app import celery_app
 
@@ -42,6 +43,13 @@ def sweep_outboxes() -> int:
 @celery_app.task(name="reconcile_live_auctions")
 def reconcile_live_auctions() -> dict[str, str]:
     return runtime.run(reconciliation.reconcile(runtime.redis(), runtime.sessions()))
+
+
+@celery_app.task(name="run_scheduler")
+def run_scheduler() -> dict[str, int]:
+    """Lifecycle transitions: activate, repair, close (FR-15, FR-16, D9)."""
+    report = runtime.run(Scheduler(runtime.redis(), runtime.sessions()).run())
+    return {k: len(v) for k, v in vars(report).items()}
 
 
 @celery_app.task(name="denylist_revoke", bind=True, acks_late=True, max_retries=10)

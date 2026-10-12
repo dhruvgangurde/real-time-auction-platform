@@ -1,4 +1,5 @@
 from app.repositories.auction import AuctionRepository
+from app.repositories.auction_image import AuctionImageRepository
 from app.repositories.audit_log import AuditLogRepository
 from app.repositories.base import BaseRepository
 from app.repositories.bid import BidRepository
@@ -14,6 +15,7 @@ from app.repositories.watchlist import WatchlistRepository
 
 __all__ = [
     "AuditLogRepository",
+    "AuctionImageRepository",
     "AuctionRepository",
     "BaseRepository",
     "BidRepository",

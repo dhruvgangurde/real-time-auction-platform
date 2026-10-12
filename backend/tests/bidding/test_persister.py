@@ -11,6 +11,7 @@ import pytest
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.repositories import AuctionRepository
 from app.services.bidding import BidService
 from app.services.ledger import persist_all_pending, persist_outbox
 from app.services.live_state import dead_letter_key, from_ms, outbox_key, to_ms
@@ -78,6 +79,27 @@ async def test_concurrent_persisters_never_duplicate(
     assert sum(inserted) == 20
     assert await _ledger(db, a) == list(range(1, 21))
     assert await redis.xlen(outbox_key(a)) == 0
+    # D7: listing price and count follow the highest sequence, whatever order batches commit
+    row = await db.fetchrow("SELECT current_price, bid_count FROM auctions WHERE id = $1", a)
+    assert (row["current_price"], row["bid_count"]) == (10_000 + 19 * 500, 20)
+
+
+async def test_current_price_never_moves_backwards(
+    service: BidService,
+    auction: AuctionFactory,
+    new_user,
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+    db: asyncpg.Connection,
+) -> None:
+    """D7: an older batch committing after a newer one leaves the newer price in place."""
+    a = await auction()
+    await _place(service, a, [await new_user(), await new_user()], 10_000, 4)
+    await persist_outbox(a, redis, sessions)
+    async with sessions() as session, session.begin():  # a slow persister's older batch
+        await AuctionRepository(session).apply_bids(a, 10_500, 2)
+    row = await db.fetchrow("SELECT current_price, bid_count FROM auctions WHERE id = $1", a)
+    assert (row["current_price"], row["bid_count"]) == (11_500, 4)
 
 
 async def test_extension_reaches_auction_row_with_audit(
@@ -103,8 +125,13 @@ async def test_extension_reaches_auction_row_with_audit(
     assert row["end_time"] == from_ms(second.end_time_ms)
     assert row["extension_count"] == 2
     assert row["original_end_time"] == original
-    bid = await db.fetchrow("SELECT end_time_after FROM bids WHERE auction_id = $1", a)
-    assert bid["end_time_after"] == from_ms(first.end_time_ms)
+    bids = await db.fetch(
+        "SELECT end_time_after FROM bids WHERE auction_id = $1 ORDER BY sequence_no", a
+    )
+    assert [b["end_time_after"] for b in bids] == [
+        from_ms(first.end_time_ms),
+        from_ms(second.end_time_ms),
+    ]
     audits = await db.fetch(
         "SELECT action, before, after FROM audit_log "
         "WHERE entity_type = 'auction' AND entity_id = $1 ORDER BY id",

@@ -1,4 +1,5 @@
-"""Profile, bid history and suspension (FR-6, FR-9, FR-10, FR-78, BR-12)."""
+"""Profile, bid history, suspension and operator role changes (FR-6, FR-9, FR-10, FR-78,
+BR-12, D6)."""
 
 import logging
 from dataclasses import dataclass
@@ -9,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.clock import Clock
 from app.core.errors import AppError
+from app.models.user import ROLES
 from app.repositories import AuditLogRepository, BidRepository, SessionRepository, UserRepository
-from app.services.auth import Profile, RevokeNotifier, profile_of
+from app.services.auth import Profile, RevokeNotifier, normalise_email, profile_of
 from app.services.denylist import SUSPENDED_ACTION, Denylist, user_key
 from app.services.live_state import from_ms, to_ms
 
@@ -85,6 +87,30 @@ class UserService:
         ]
         next_cursor = _cursor(page[-1].created_at, page[-1].id) if len(rows) > limit else None
         return BidHistoryPage(items, next_cursor)
+
+    async def change_role(self, email: str, role: str, *, grant: bool) -> bool:
+        """Grant or revoke a role from the operator CLI (D6). The change and its audit row
+        (actor NULL, reason 'cli') commit together (FR-77, FR-78). Returns False when nothing
+        changed. Roles travel in the access token, so the user must log in again."""
+        if role not in ROLES:
+            raise AppError("VALIDATION_ERROR", f"unknown role {role!r}", 422)
+        async with self._sessions() as session, session.begin():
+            users = UserRepository(session)
+            user = await users.get_by_email(normalise_email(email))
+            if user is None:
+                raise AppError("NOT_FOUND", "user not found", 404)
+            before = list(await users.roles(user.id))
+            changed = await (users.add_role if grant else users.remove_role)(user.id, role)
+            if changed:
+                await AuditLogRepository(session).add(
+                    entity_type="user",
+                    entity_id=str(user.id),
+                    action="role_granted" if grant else "role_revoked",
+                    before={"roles": before},
+                    after={"roles": list(await users.roles(user.id))},
+                    reason="cli",
+                )
+        return changed
 
     async def suspend_user(self, admin_id: UUID, user_id: UUID, reason: str) -> None:
         """Suspend, revoke every session and audit it in one transaction (FR-6, FR-78, BR-12)."""

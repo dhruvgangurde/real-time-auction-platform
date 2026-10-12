@@ -52,6 +52,8 @@ class Auction(Base):
             "reserve_price IS NULL OR reserve_price >= starting_price", name="reserve_ge_start"
         ),
         CheckConstraint("extension_count BETWEEN 0 AND 10", name="extension_count_range"),
+        CheckConstraint("current_price IS NULL OR current_price > 0", name="current_price_pos"),
+        CheckConstraint("bid_count >= 0", name="bid_count_nonneg"),
         Index("ix_auctions_status_start_time", "status", "start_time"),
         Index("ix_auctions_status_end_time", "status", "end_time"),
         Index("ix_auctions_search_vector", "search_vector", postgresql_using="gin"),
@@ -82,8 +84,11 @@ class Auction(Base):
         Integer, nullable=False, server_default="120"
     )
     extension_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # D7: from the ledger, kept by the persister; live state in Redis may be ahead
+    current_price: Mapped[int | None] = mapped_column(BigInteger)
+    bid_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

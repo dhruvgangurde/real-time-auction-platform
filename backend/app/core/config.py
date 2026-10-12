@@ -63,6 +63,17 @@ class Settings(BaseSettings):
     rate_limit_ws_unsubscribe: str = "20/1"
     rate_limit_ws_authenticate: str = "20/1"
     rate_limit_ws_ping: str = "20/1"
+    # auction lifecycle (Phase 7: FR-11 to FR-18, NFR-22, NFR-24)
+    rate_limit_auction_create: str = "10/3600"  # per user (NFR-22)
+    antisnipe_threshold_min_s: int = 10
+    antisnipe_threshold_max_s: int = 600
+    antisnipe_extension_min_s: int = 10
+    antisnipe_extension_max_s: int = 600
+    scheduler_interval_s: float = 5.0  # beat period of the lifecycle scheduler (FR-16)
+    media_root: str = "/media"  # named volume; served read-only under /media (D10)
+    image_max_bytes: int = 5 * 1024 * 1024  # FR-13
+    image_max_pixels: int = 40_000_000  # decompression-bomb guard (NFR-24)
+    images_per_auction: int = 8
 
     @property
     def origin_allowlist(self) -> frozenset[str]:

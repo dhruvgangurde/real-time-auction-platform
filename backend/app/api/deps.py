@@ -13,10 +13,14 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.clock import Clock, SystemClock
+from app.core.config import settings
 from app.core.errors import AppError
 from app.core.ratelimit import RateLimiter
+from app.core.storage import LocalStorage
+from app.services.auctions import AuctionService
 from app.services.auth import AuthService, CurrentUser
 from app.services.bidding import BidService
+from app.services.catalog import CatalogService
 from app.services.denylist import Denylist
 from app.services.email import ConsoleEmailSender
 from app.services.users import UserService
@@ -80,6 +84,21 @@ def get_bid_service() -> BidService:
     from app.workers.dispatch import schedule_persist
 
     return BidService(get_redis(), get_sessions(), schedule_persist)
+
+
+@cache
+def get_storage() -> LocalStorage:
+    return LocalStorage(settings.media_root)
+
+
+@cache
+def get_auction_service() -> AuctionService:
+    return AuctionService(get_sessions(), get_redis(), get_clock(), get_limiter(), get_storage())
+
+
+@cache
+def get_catalog_service() -> CatalogService:
+    return CatalogService(get_sessions(), get_redis(), get_storage())
 
 
 def client_ip(request: Request) -> str:

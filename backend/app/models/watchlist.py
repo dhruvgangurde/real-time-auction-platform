@@ -14,7 +14,7 @@ class Watchlist(Base):
         ForeignKey("users.id", ondelete="RESTRICT"), primary_key=True
     )
     auction_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("auctions.id", ondelete="RESTRICT"), primary_key=True
+        ForeignKey("auctions.id", ondelete="RESTRICT"), primary_key=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -1,7 +1,8 @@
 from collections.abc import Iterable
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert
 
 from app.models import User, UserRole
 from app.repositories.base import BaseRepository
@@ -31,6 +32,25 @@ class UserRepository(BaseRepository):
             self.session.add(UserRole(user_id=user.id, role=role))
         await self.session.flush()
         return user
+
+    async def add_role(self, user_id: UUID, role: str) -> bool:
+        """False when the user already holds it."""
+        stmt = (
+            insert(UserRole)
+            .values(user_id=user_id, role=role)
+            .on_conflict_do_nothing(index_elements=["user_id", "role"])
+            .returning(UserRole.role)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none() is not None
+
+    async def remove_role(self, user_id: UUID, role: str) -> bool:
+        """False when the user did not hold it."""
+        stmt = (
+            delete(UserRole)
+            .where(UserRole.user_id == user_id, UserRole.role == role)
+            .returning(UserRole.role)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none() is not None
 
     async def roles(self, user_id: UUID) -> tuple[str, ...]:
         stmt = select(UserRole.role).where(UserRole.user_id == user_id).order_by(UserRole.role)

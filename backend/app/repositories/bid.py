@@ -69,6 +69,14 @@ class BidRepository(BaseRepository):
         )
         return list((await self.session.execute(stmt)).scalars())
 
+    async def history(self, auction_id: UUID, before: int | None, limit: int) -> list[Bid]:
+        """An auction's ledger, newest first, keyset on sequence_no (FR-27)."""
+        stmt = select(Bid).where(Bid.auction_id == auction_id)
+        if before is not None:
+            stmt = stmt.where(Bid.sequence_no < before)
+        stmt = stmt.order_by(Bid.sequence_no.desc()).limit(limit)
+        return list((await self.session.execute(stmt)).scalars())
+
     async def list_for_bidder(
         self, bidder_id: UUID, limit: int, before: tuple[datetime, int] | None
     ) -> list[Bid]:
