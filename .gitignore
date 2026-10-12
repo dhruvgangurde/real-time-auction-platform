@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 celerybeat-schedule*
+
+# Playwright MCP browser artifacts (snapshots, screenshots, console logs)
+.playwright-mcp/

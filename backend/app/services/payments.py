@@ -465,6 +465,8 @@ class PaymentService:
     async def _succeeded(
         self, session: AsyncSession, payment: Payment, settlement: Settlement, c: Confirmation
     ) -> list[Notification]:
+        # read before the update: the ORM update also refreshes the loaded row (FR-77)
+        before = {"status": payment.status}
         await PaymentRepository(session).set_status(payment.id, "succeeded", c.gateway_payment_id)
         if not await SettlementRepository(session).mark_paid(settlement.id):
             raise RuntimeError(f"settlement {settlement.id} is not awaiting payment")
@@ -473,7 +475,7 @@ class PaymentService:
             entity_type="payment",
             entity_id=str(payment.id),
             action="payment_succeeded",
-            before={"status": payment.status},
+            before=before,
             after={
                 "status": "succeeded",
                 "gateway_payment_id": c.gateway_payment_id,
@@ -513,12 +515,13 @@ class PaymentService:
     async def _failed(
         self, session: AsyncSession, payment: Payment, settlement: Settlement, c: Confirmation
     ) -> list[Notification]:
+        before = {"status": payment.status}  # before the update refreshes the loaded row
         await PaymentRepository(session).set_status(payment.id, "failed")
         await AuditLogRepository(session).add(
             entity_type="payment",
             entity_id=str(payment.id),
             action="payment_failed",
-            before={"status": payment.status},
+            before=before,
             after={
                 "status": "failed",
                 "gateway_payment_id": c.gateway_payment_id,
