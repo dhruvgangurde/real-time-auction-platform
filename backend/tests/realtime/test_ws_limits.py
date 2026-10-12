@@ -1,6 +1,7 @@
 """Message validation, limits, strikes and slow consumers (CI-3, DC-11, NFR-5, NFR-22)."""
 
 import asyncio
+import logging
 from typing import Any
 
 import pytest
@@ -124,6 +125,30 @@ async def test_in_memory_cap_closes_a_flooding_socket(
     assert await client.closed() == CloseCode.POLICY_VIOLATION
     assert [e["code"] for e in client.of_type("error")] == ["RATE_LIMITED"] * 3
     assert len(client.of_type("pong")) == 5
+
+
+async def test_over_cap_bid_is_answered_as_a_bid_and_logged(
+    node: Instance,
+    make_bidder,
+    auction,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """CI-3, FR-44: a bid refused by the in-memory cap still gets bid_rejected RATE_LIMITED
+    and its decision line."""
+    monkeypatch.setattr(settings, "ws_max_messages_per_s", 1)
+    a = await auction()
+    user_id, token = await make_bidder()
+    client = await Client.open(node.ws, token=token)
+    with caplog.at_level(logging.INFO, logger="bidding"):
+        await client.send({"type": "ping"})  # uses up this second's allowance
+        await client.send(_bid(a, 10_000, "over"))
+        rejected = await client.expect("bid_rejected", request_id="over")
+    assert rejected["code"] == "RATE_LIMITED"
+    [line] = [r.fields for r in caplog.records if r.msg == "bid"]
+    assert line["bid_request_id"] == "over" and line["code"] == "RATE_LIMITED"
+    assert line["decision"] == "rejected" and line["bidder_id"] == str(user_id)
+    assert line["auction_id"] == str(a) and line["amount"] == 10_000
 
 
 async def test_every_message_type_is_rate_limited(

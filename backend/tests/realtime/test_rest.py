@@ -129,6 +129,36 @@ async def test_rest_limiter_rejection_is_logged_as_a_bid_decision(
     assert lines["two"]["amount"] == 10_000 and lines["two"]["auction_id"] == str(a)
 
 
+async def test_rest_proxy_limiter_refusal_and_rejection(
+    node: Instance, make_bidder, auction, monkeypatch, caplog
+) -> None:
+    """FR-44, FR-46: the REST maximum path refuses over the limit with 429 and logs the
+    decision (never the maximum), and maps arbitration rejections to 409 with min_next."""
+    monkeypatch.setattr(settings, "rate_limit_ws_set_proxy", "1/1")
+    a = await auction(start_price=10_000, min_increment=500)
+    user_id, token = await make_bidder()
+    async with httpx.AsyncClient(base_url=node.http) as http:
+        with caplog.at_level(logging.INFO, logger="bidding"):
+            low = await http.post(
+                f"/api/v1/auctions/{a}/proxy",
+                json={"max_amount": 9_000, "request_id": "p-low"},
+                headers=_auth(token),
+            )
+            limited = await http.post(
+                f"/api/v1/auctions/{a}/proxy",
+                json={"max_amount": 77_001, "request_id": "p-over"},
+                headers=_auth(token),
+            )
+    assert low.status_code == 409
+    assert low.json()["error"]["code"] == "BELOW_CURRENT_PRICE"
+    assert "10000" in low.json()["error"]["message"]
+    assert limited.status_code == 429 and limited.json()["error"]["code"] == "RATE_LIMITED"
+    lines = {r.fields["bid_request_id"]: r.fields for r in caplog.records if r.msg == "proxy"}
+    assert lines["p-over"]["decision"] == "rejected" and lines["p-over"]["code"] == "RATE_LIMITED"
+    assert lines["p-over"]["bidder_id"] == str(user_id)
+    assert "77001" not in caplog.text  # FR-51: the maximum is never logged
+
+
 async def test_redis_down_live_from_postgres_and_subscribe_fails_closed(
     start_instance, make_bidder, auction, bid_service, new_user, redis: Redis, sessions, clock
 ) -> None:

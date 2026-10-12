@@ -185,6 +185,18 @@ async def test_spectating_works_but_drafts_stay_hidden(
     assert await redis.exists(state_key(scheduled), state_key(draft)) == 0
 
 
+async def test_proxy_rejection_carries_min_next(node: Instance, make_bidder, auction) -> None:
+    """FR-46: a maximum below the minimum next bid is BELOW_CURRENT_PRICE, with min_next."""
+    a = await auction(start_price=10_000, min_increment=500)
+    client = await Client.open(node.ws, token=(await make_bidder())[1])
+    await client.subscribe(a)
+    proxy = {"type": "set_proxy", "auction_id": str(a), "request_id": "low"}
+    await client.send({**proxy, "max_amount": 9_000})
+    rejected = await client.expect("proxy_rejected", request_id="low")
+    assert rejected["code"] == "BELOW_CURRENT_PRICE" and rejected["min_next"] == 10_000
+    assert "max_amount" not in rejected
+
+
 async def test_unsubscribe_stops_room_events(node: Instance, make_bidder, auction) -> None:
     """FR-29: only the events of rooms the client is currently subscribed to."""
     a = await auction(self_outbid=False)

@@ -9,9 +9,11 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api import deps
+from app.api import ws as ws_module
 from app.core.ratelimit import RateLimiter
 from app.core.redis import create_redis
 from app.schemas.ws import CloseCode
+from app.services import live_events
 from app.services.auth import AuthService
 from app.services.denylist import Denylist
 from tests.auth.conftest import FakeClock, RecordingEmail
@@ -75,6 +77,67 @@ async def test_postgres_and_redis_lost_mid_bid_is_logged_and_answered(
     finally:
         await engine.dispose()
         await cut_redis.aclose()
+
+
+async def test_unexpected_error_in_a_non_bid_message_gets_internal_error(
+    start_instance,
+    make_bidder,
+    auction,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failing subscribe is logged and answered with error INTERNAL_ERROR; the room is left
+    and the socket keeps working."""
+
+    async def broken(*_: object) -> dict:
+        raise RuntimeError("snapshot fault")
+
+    monkeypatch.setattr(ws_module, "live_snapshot", broken)
+    node = await start_instance()
+    a = await auction()
+    _, token = await make_bidder()
+    client = await Client.open(node.ws, token=token)
+    with caplog.at_level(logging.INFO, logger="ws"):
+        await client.send({"type": "subscribe", "auction_id": str(a)})
+        error = await client.expect("error")
+        await client.send({"type": "ping"})
+        await client.expect("pong")
+    assert error["code"] == "INTERNAL_ERROR" and error["request_id"] is None
+    [failed] = [r for r in caplog.records if r.msg == "ws message failed"]
+    assert failed.levelno == logging.ERROR and failed.exc_info is not None
+    assert client.of_type("subscribed") == []
+    assert all(a not in c.rooms for c in node.hub._conns)  # joined, then left again
+
+
+async def test_publish_failure_after_the_ack_is_logged_never_answered(
+    start_instance,
+    make_bidder,
+    auction,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """FR-40: once acknowledged, a bid is never rejected; a failed publish is only logged."""
+
+    async def broken(*_: object) -> None:
+        raise RuntimeError("publish fault")
+
+    monkeypatch.setattr(live_events, "publish_bid_events", broken)
+    node = await start_instance()
+    a = await auction()
+    _, token = await make_bidder()
+    client = await Client.open(node.ws, token=token)
+    await client.subscribe(a)
+    with caplog.at_level(logging.INFO, logger="ws"):
+        await client.send(
+            {"type": "place_bid", "auction_id": str(a), "amount": 10_000, "request_id": "p1"}
+        )
+        accepted = await client.expect("bid_accepted", request_id="p1")
+        await client.send({"type": "ping"})
+        await client.expect("pong")  # anything for p1 would have arrived before this
+    assert accepted["sequence_no"] == 1
+    assert [f for f in client.frames if f.get("type") in ("bid_rejected", "error")] == []
+    [failed] = [r for r in caplog.records if r.msg == "bid events not published"]
+    assert failed.levelno == logging.ERROR and failed.exc_info is not None
 
 
 class BrokenClock(FakeClock):
