@@ -25,6 +25,23 @@ celery_app.conf.beat_schedule = {
     },
     # closing repair and the unresolved-close alert (FR-57, NFR-12)
     "sweep-closing": {"task": "sweep_closing", "schedule": 30.0, "options": {"expires": 30}},
+    # payment reconciliation against the gateway (FR-69)
+    "reconcile-payments": {
+        "task": "reconcile_payments",
+        "schedule": settings.payment_reconcile_interval_s,
+        "options": {"expires": settings.payment_reconcile_interval_s},
+    },
+    # notifications: watchers of auctions about to end (FR-73), email delivery (FR-72)
+    "notify-ending-soon": {
+        "task": "notify_ending_soon",
+        "schedule": settings.ending_soon_interval_s,
+        "options": {"expires": settings.ending_soon_interval_s},
+    },
+    "dispatch-notification-emails": {
+        "task": "dispatch_notification_emails",
+        "schedule": settings.email_dispatch_interval_s,
+        "options": {"expires": settings.email_dispatch_interval_s},
+    },
     # denylist safety net: revocations committed in Postgres always reach Redis (FR-6)
     "sync-denylist": {"task": "sync_denylist", "schedule": 30.0, "options": {"expires": 30}},
 }

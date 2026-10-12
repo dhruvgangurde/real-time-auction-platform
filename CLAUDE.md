@@ -33,8 +33,9 @@ This file is read at the start of every session. Follow it for all work in this 
 | API | 8010 | 8000 |
 | Postgres | 5442 | 5432 |
 | Redis | 6389 | 6379 |
+| Mailpit web UI (dev only) | 8025 | 8025 |
 
-Ports 5432 and 8000 are used by another project on this machine. Never bind them. Containers talk to each other on the container ports. Postgres and Redis host mappings exist only in `docker-compose.override.yml`. Host ports are configurable through `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`. Compose project name is `auction`; never use `container_name`.
+Ports 5432 and 8000 are used by another project on this machine. Never bind them. Mailpit (dev SMTP sink) exists only in `docker-compose.override.yml`; its UI port is `MAILPIT_UI_HOST_PORT`. Containers talk to each other on the container ports. Postgres and Redis host mappings exist only in `docker-compose.override.yml`. Host ports are configurable through `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`. Compose project name is `auction`; never use `container_name`.
 
 ## 5. Repo layout
 
@@ -123,6 +124,8 @@ docker compose exec api pytest tests/auth tests/test_security_unit.py   # identi
 docker compose exec api pytest tests/realtime  # WebSocket tests on two in-process uvicorn instances
 docker compose exec api pytest tests/closing   # close task: lock, backstop, re-check, outcomes, sweep
 docker compose exec api pytest tests/admin     # admin endpoints and settlement read
+docker compose exec api pytest tests/payments  # payments: order, callback, webhook, reconcile, races (no network)
+docker compose exec api pytest tests/notifications   # notification API, producers, email dispatch
 docker compose exec api pytest tests/lifecycle tests/scheduler tests/discovery   # Phase 7 tests
 docker compose exec api pytest tests/discovery/test_nfr6.py -s   # NFR-6 p50/p95 with 2,000 auctions, query plans
 docker compose exec api python -m app.cli grant-role <email> seller   # roles only via CLI (D6); revoke-role too

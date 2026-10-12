@@ -68,7 +68,10 @@ def jwt_secret() -> str:
 
 
 def check_startup_config() -> None:
-    """Refuse to start with dev-only security settings outside the local environment (NFR-26)."""
+    """Refuse to start with dev-only security settings outside the local environment (NFR-26),
+    and with live payment keys anywhere: Release 1 uses the gateway's test mode only (AS-5)."""
+    if settings.razorpay_key_id and not settings.razorpay_key_id.startswith("rzp_test_"):
+        raise RuntimeError("RAZORPAY_KEY_ID must be a test-mode key (rzp_test_...)")
     if settings.app_env == "local":
         if len(settings.jwt_secret.encode()) < 32:
             log.warning("JWT_SECRET missing or short; using the dev-only secret (APP_ENV=local)")
@@ -79,6 +82,12 @@ def check_startup_config() -> None:
         raise RuntimeError("ALIAS_SECRET must be at least 32 bytes outside APP_ENV=local")
     if settings.email_backend == "console":
         raise RuntimeError("EMAIL_BACKEND=console is dev-only; configure a real sender (TBD-1)")
+    if not (
+        settings.razorpay_key_id
+        and settings.razorpay_key_secret
+        and settings.razorpay_webhook_secret
+    ):
+        raise RuntimeError("RAZORPAY_KEY_ID, _KEY_SECRET and _WEBHOOK_SECRET are required")
 
 
 class TokenError(Exception):

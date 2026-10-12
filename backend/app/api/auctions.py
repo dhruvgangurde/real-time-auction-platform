@@ -93,7 +93,9 @@ async def place_bid(
     result = await bids.place_bid(auction_id, user.id, body.amount, body.request_id)
     if not result.accepted:
         raise _rejection(result.code or "SERVICE_UNAVAILABLE", result.min_next)
-    background.add_task(live_events.publish_bid_events, redis, auction_id, user.id, result)
+    background.add_task(
+        live_events.publish_bid_events, redis, auction_id, user.id, result, bids.record_outbid
+    )
     return _bid_ack(auction_id, body.request_id, result)
 
 
@@ -117,7 +119,9 @@ async def set_proxy(
     result = await bids.set_proxy(auction_id, user.id, body.max_amount, body.request_id)
     if not result.armed:
         raise _rejection(result.code or "SERVICE_UNAVAILABLE", result.min_next)
-    background.add_task(live_events.publish_bid_events, redis, auction_id, user.id, result)
+    background.add_task(
+        live_events.publish_bid_events, redis, auction_id, user.id, result, bids.record_outbid
+    )
     return _proxy_ack(auction_id, body.request_id, result)
 
 

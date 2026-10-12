@@ -119,3 +119,7 @@ class UserRepository(BaseRepository):
             return []
         stmt = select(User.id).where(User.id.in_(user_ids), User.status == "suspended")
         return list((await self.session.execute(stmt)).scalars())
+
+    async def get_many(self, user_ids: list[UUID]) -> dict[UUID, User]:
+        stmt = select(User).where(User.id.in_(user_ids))
+        return {u.id: u for u in (await self.session.execute(stmt)).scalars()}

@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    Integer,
     String,
     func,
     text,
@@ -28,21 +29,36 @@ NOTIFICATION_TYPES = (
     "payment_received",
     "auction_sold",  # the seller's close outcome (FR-62, migration 0009)
     "auction_no_sale",
+    "payment_failed",  # FR-68: the bidder is told a payment attempt failed (migration 0010)
 )
+EMAIL_STATUSES = ("pending", "sent", "skipped", "failed")
 _TYPE_CHECK = "type IN (" + ", ".join(f"'{t}'" for t in NOTIFICATION_TYPES) + ")"
 
 
 class Notification(Base):
-    """dedupe_key makes dispatch idempotent (DC-5)."""
+    """dedupe_key makes creation idempotent (DC-5). Email delivery (FR-72): pending rows are
+    claimed with a lease (email_next_at), sent once per (user, type, auction) group, then
+    sent, skipped (preference off or account not active) or failed after the last attempt."""
 
     __tablename__ = "notifications"
     __table_args__ = (
         CheckConstraint(_TYPE_CHECK, name="type"),
+        CheckConstraint(
+            "email_status IN ('pending', 'sent', 'skipped', 'failed')", name="email_status"
+        ),
         Index(
             "ix_notifications_user_unread",
             "user_id",
             text("created_at DESC"),
             postgresql_where=text("read_at IS NULL"),
+        ),
+        Index(
+            "ix_notifications_email_pending",
+            "user_id",
+            "type",
+            "auction_id",
+            "created_at",
+            postgresql_where=text("email_status = 'pending'"),
         ),
     )
 
@@ -60,6 +76,10 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    email_status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
+    email_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    email_next_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class NotificationPreference(Base):

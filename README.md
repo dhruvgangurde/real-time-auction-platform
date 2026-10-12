@@ -37,5 +37,6 @@ New migrations are hand-written in `backend/alembic/versions/` and must grant pr
 | API | 8010 | 8000 |
 | Postgres | 5442 | 5432 |
 | Redis | 6389 | 6379 |
+| Mailpit web UI (dev only) | 8025 | 8025 |
 
 Change them with `API_HOST_PORT`, `POSTGRES_HOST_PORT` and `REDIS_HOST_PORT` in `.env`.

@@ -455,7 +455,7 @@ class LiveSession:
         self.conn.offer(self._ack(message, result))  # acknowledge first (FR-40, NFR-3)
         try:
             await live_events.publish_bid_events(
-                self.redis, message.auction_id, self.conn.user.id, result
+                self.redis, message.auction_id, self.conn.user.id, result, self.bids.record_outbid
             )
         except Exception:
             # already acknowledged, so never answered twice; clients recover via presence/live

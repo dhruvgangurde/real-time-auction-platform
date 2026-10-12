@@ -1,6 +1,7 @@
+from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.models import Auction, Watchlist
@@ -34,3 +35,19 @@ class WatchlistRepository(BaseRepository):
             .order_by(Auction.end_time, Auction.id)
         )
         return list((await self.session.execute(stmt)).scalars())
+
+    async def ending_soon(self, lead_s: int, limit: int) -> list[tuple[UUID, UUID, str, datetime]]:
+        """(watcher, auction, title, end_time) for live auctions ending within the lead
+        interval (FR-73), on ix_watchlist_auction_id."""
+        stmt = (
+            select(Watchlist.user_id, Auction.id, Auction.title, Auction.end_time)
+            .join(Auction, Auction.id == Watchlist.auction_id)
+            .where(
+                Auction.status == "live",
+                Auction.end_time > func.now(),
+                Auction.end_time <= func.now() + timedelta(seconds=lead_s),
+            )
+            .order_by(Auction.end_time)
+            .limit(limit)
+        )
+        return [tuple(r) for r in (await self.session.execute(stmt)).all()]

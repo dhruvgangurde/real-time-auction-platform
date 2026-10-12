@@ -29,14 +29,17 @@ def _unsupported(message: str) -> AppError:
     return AppError("UNSUPPORTED_IMAGE", message, 422)
 
 
-async def read_capped(body: AsyncIterator[bytes], limit: int) -> bytes:
-    """Read a request body, stopping as soon as it passes `limit` bytes."""
+async def read_capped(
+    body: AsyncIterator[bytes], limit: int, *, code: str = "IMAGE_TOO_LARGE", what: str = "images"
+) -> bytes:
+    """Read a request body, stopping as soon as it passes `limit` bytes (413 `code`). Also
+    used for the payment webhook, whose signature needs the raw bytes."""
     data = bytearray()
     async for chunk in body:
         data += chunk
         if len(data) > limit:
-            raise AppError("IMAGE_TOO_LARGE", f"images are limited to {limit} bytes", 413)
-    if not data:
+            raise AppError(code, f"{what} are limited to {limit} bytes", 413)
+    if not data and what == "images":
         raise _unsupported("empty upload")
     return bytes(data)
 

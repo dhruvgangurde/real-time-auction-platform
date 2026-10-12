@@ -7,3 +7,9 @@ services:
   redis:
     ports:
       - "${REDIS_HOST_PORT:-6389}:6379"
+  # development SMTP sink (SI-4, TBD-1 stays open): SMTP on mailpit:1025 inside the network,
+  # every sent email readable in the web UI on the host
+  mailpit:
+    image: axllent/mailpit:v1.27.10
+    ports:
+      - "${MAILPIT_UI_HOST_PORT:-8025}:8025"

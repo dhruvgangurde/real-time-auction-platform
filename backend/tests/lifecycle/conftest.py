@@ -130,6 +130,7 @@ def _provide(value: Any) -> Callable[[], Any]:
 
 @pytest.fixture
 async def api(
+    request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
     storage: LocalStorage,
     auth_service: AuthService,
@@ -160,6 +161,13 @@ async def api(
         deps.get_limiter: limiter,
     }.items():
         app.dependency_overrides[provider] = _provide(value)
+    # services only some packages define: overridden when the test uses that fixture
+    for provider, name in {
+        deps.get_payment_service: "payment_service",
+        deps.get_notification_service: "notification_service",
+    }.items():
+        if name in request.fixturenames:
+            app.dependency_overrides[provider] = _provide(request.getfixturevalue(name))
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client

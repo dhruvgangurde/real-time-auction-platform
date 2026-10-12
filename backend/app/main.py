@@ -10,6 +10,8 @@ from app.api.auctions import router as auctions_router
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.lifecycle import router as lifecycle_router
+from app.api.notifications import router as notifications_router
+from app.api.payments import router as payments_router
 from app.api.users import router as users_router
 from app.api.ws import router as ws_router
 from app.core.config import settings
@@ -50,6 +52,8 @@ def create_app() -> FastAPI:
     app.include_router(discovery.watchlist)
     app.include_router(discovery.seller)
     app.include_router(admin_router)
+    app.include_router(payments_router)
+    app.include_router(notifications_router)
     app.include_router(ws_router)
     # re-encoded auction images, read-only (GET/HEAD only), never user-chosen names (NFR-24)
     app.mount(

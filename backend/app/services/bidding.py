@@ -211,16 +211,23 @@ def _valid(auction_id: UUID, bidder_id: UUID, amount: int, request_id: str) -> b
     )
 
 
+OutbidRecorder = Callable[[UUID, list[UUID], int, int], None]
+
+
 class BidService:
     def __init__(
         self,
         redis: Redis,
         sessions: async_sessionmaker[AsyncSession],
         schedule_persist: Callable[[UUID], None],
+        record_outbid: OutbidRecorder | None = None,
     ) -> None:
         self._redis = redis
         self._sessions = sessions
         self._schedule_persist = schedule_persist
+        # called after the acknowledgement with the displaced bidders (FR-70); never on the
+        # arbitration path
+        self.record_outbid = record_outbid
         self._place_bid = redis.register_script(lua.source("place_bid"))
         self._set_proxy = redis.register_script(lua.source("set_proxy"))
 

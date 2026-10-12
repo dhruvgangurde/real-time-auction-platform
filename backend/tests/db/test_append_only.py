@@ -87,3 +87,19 @@ async def test_migration_state_read_only(app: asyncpg.Connection) -> None:
         app, InsufficientPrivilegeError, "UPDATE alembic_version SET version_num = 'x'"
     )
     await expect_error(app, InsufficientPrivilegeError, "DELETE FROM alembic_version")
+
+
+async def test_payment_events_append_only(app: asyncpg.Connection) -> None:
+    """DC-4, FR-67: applied gateway events are evidence; the app role can only add them."""
+    await app.execute(
+        "INSERT INTO payment_events (dedupe_key, source, event, outcome) "
+        "VALUES ('callback:pay_append_only', 'callback', 'payment.captured', 'succeeded')"
+    )
+    for sql in (
+        "UPDATE payment_events SET outcome = 'failed'",
+        "DELETE FROM payment_events",
+        "TRUNCATE payment_events",
+    ):
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            async with app.transaction():
+                await app.execute(sql)

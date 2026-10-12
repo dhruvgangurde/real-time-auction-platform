@@ -6,6 +6,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Identity,
     Index,
     String,
     func,
@@ -50,11 +51,14 @@ class Settlement(Base):
 
 
 class Payment(Base):
-    """Retries allowed per settlement, but at most one succeeded payment (FR-67, DC-5)."""
+    """One row per Razorpay order (idempotency_key 'order:{settlement_id}'); gateway_payment_id
+    is the captured payment. At most one succeeded payment per settlement (FR-66, FR-67, DC-5).
+    Status: created -> failed | succeeded, failed -> succeeded; succeeded is terminal."""
 
     __tablename__ = "payments"
     __table_args__ = (
         CheckConstraint("status IN ('created', 'succeeded', 'failed')", name="status"),
+        CheckConstraint("amount > 0", name="amount_pos"),
         Index(
             "uq_payments_settlement_succeeded",
             "settlement_id",
@@ -71,11 +75,39 @@ class Payment(Base):
     )
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    gateway_ref: Mapped[str | None] = mapped_column(String(128), unique=True)
+    gateway_payment_id: Mapped[str | None] = mapped_column(String(128), unique=True)
+    gateway_order_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PaymentEvent(Base):
+    """Every applied terminal confirmation, once: the dedupe_key is the event id of a webhook,
+    the payment id of a checkout callback, or payment id and status for the reconciler
+    (FR-67, DC-5). Append-only for the application role."""
+
+    __tablename__ = "payment_events"
+    __table_args__ = (
+        CheckConstraint("source IN ('callback', 'webhook', 'reconcile')", name="source"),
+        CheckConstraint("outcome IN ('succeeded', 'failed')", name="outcome"),
+        Index("ix_payment_events_payment_id", "payment_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payments.id", ondelete="RESTRICT")
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    event: Mapped[str] = mapped_column(String(64), nullable=False)
+    gateway_payment_id: Mapped[str | None] = mapped_column(String(64))
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

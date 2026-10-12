@@ -76,6 +76,36 @@ class Settings(BaseSettings):
     images_per_auction: int = 8
     # closing and settlement (Phase 8: FR-57 to FR-62, NFR-12)
     close_grace_s: int = 300  # past end_time + this without a terminal status: UNRESOLVED_CLOSE
+    # payments (Phase 9: FR-65 to FR-69, SI-3); Razorpay test mode only (AS-5)
+    razorpay_key_id: str = ""  # rzp_test_...; public, handed to the checkout
+    razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""  # set per webhook in the Razorpay dashboard
+    razorpay_api_base: str = "https://api.razorpay.com/v1"
+    razorpay_timeout_s: float = 10.0
+    payment_min_amount: int = 100  # paise: the gateway's minimum charge
+    payment_reconcile_interval_s: float = 120.0
+    payment_reconcile_after_s: int = 120  # leave fresh orders to the callback and webhook
+    payment_reconcile_lookback_s: int = 7 * 86_400  # counted from the last payment activity
+    payment_reconcile_batch: int = 50
+    payment_webhook_max_bytes: int = 65_536
+    rate_limit_payment_start: str = "10/60"  # per user
+    rate_limit_payment_confirm: str = "20/60"  # per user
+    rate_limit_payment_webhook: str = "600/60"  # per source address
+    # notifications (FR-70 to FR-74, SI-4); EMAIL_BACKEND=smtp sends through SMTP_* (TBD-1)
+    smtp_host: str = "mailpit"
+    smtp_port: int = 1025
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = False
+    smtp_timeout_s: float = 10.0
+    email_from: str = "Auction <no-reply@auction.local>"
+    email_group_window_s: int = 60  # FR-72: same type, recipient and auction combined
+    email_max_attempts: int = 5
+    email_lease_s: int = 300  # a claimed group is retried after this if the sender died
+    email_dispatch_interval_s: float = 15.0
+    email_batch: int = 200
+    ending_soon_lead_s: int = 300  # FR-73 default lead interval
+    ending_soon_interval_s: float = 30.0
 
     @property
     def origin_allowlist(self) -> frozenset[str]:

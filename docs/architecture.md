@@ -7,10 +7,12 @@ Design reference. The SRS governs if anything here conflicts with it.
 | Component | Role |
 |---|---|
 | API (FastAPI) | REST and one WebSocket endpoint, stateless apart from connections |
-| Worker (Celery) | Durable bid writes, settlement (`close_auction`), notifications, reconciliation |
-| Beat | Scheduler: activate auctions and move them to closing (`run_scheduler`, 5 s), close repair sweep and unresolved-close alert (`sweep_closing`, 30 s), outbox sweep, reconciliation, denylist resync; ending-soon in Phase 9 |
+| Worker (Celery) | Durable bid writes, settlement (`close_auction`), payment reconciliation, notifications and email, reconciliation |
+| Beat | Scheduler: activate auctions and move them to closing (`run_scheduler`, 5 s), close repair sweep and unresolved-close alert (`sweep_closing`, 30 s), outbox sweep, reconciliation, denylist resync, payment reconciliation (`reconcile_payments`, 120 s), ending soon (`notify_ending_soon`, 30 s), email (`dispatch_notification_emails`, 15 s) |
 | PostgreSQL | Source of truth |
 | Redis | Live auction state, Lua arbitration, pub/sub, rate limits, task queue |
+| Payment gateway | Razorpay in test mode only (AS-5): orders, payments, signed checkout callback and webhook (section 13) |
+| Mailpit (dev only) | SMTP sink with a web UI, in `docker-compose.override.yml`; production uses any SMTP provider (TBD-1) |
 
 ## 2. Bid flow (accepted manual bid)
 
@@ -103,6 +105,9 @@ Worked example, increment 10, start price 1000: Bob bids 1000. Dave arms 3000 (a
 | `LEDGER_WRITE_FAILED` | persist task exhausted its retries; entries remain in the outbox |
 | `RECONCILE_FAILED` | reconciliation of one auction raised an error (logged with its traceback); the other auctions were still checked |
 | `UNRESOLVED_CLOSE` | an auction is past `end_time` + `close_grace_s` (300 s) without a terminal status (NFR-12); raised by `sweep_closing`, see section 7 |
+| `PAYMENT_MISMATCH` | a confirmed payment's amount, currency or order does not match its settlement; not applied (section 13) |
+| `PAYMENT_DUPLICATE_CHARGE` | a second captured payment for an already paid settlement; refund manually |
+| `EMAIL_DELIVERY_FAILED` | an email group (or a queued verification or reset email) failed its last attempt |
 
 ## 4. Channels and real-time layer
 
@@ -149,11 +154,12 @@ Every outbound event carries `server_time_ms`. Clients derive countdowns from `e
 | room | `auction_closed` | `auction_id`, `outcome` (`closed_sold`, `closed_no_sale` or `cancelled`), `final_price` (null unless sold), `reserve_met` (null without a reserve and on cancel; never the reserve itself, BR-6), `final_sequence_no` (the last bid's sequence; 0 without bids). Sent once per auction (FR-62) |
 | room (local) | `presence` | `auction_id`, `participants`, `sequence_no`, `end_time_ms` |
 | user | `outbid_notice` | `auction_id`, `current_price`, `sequence_no` |
+| user | `notification` | `id`, `notification_type`, `auction_id`, `payload`, `created_at_ms`: a stored notification just created (FR-71); not sent for `outbid`, which `outbid_notice` already delivers live |
 | user (internal) | `session_revoked` | `sid` or null: the instance closes the matching sockets with 4004 |
 | user (internal) | `session_replaced` | `sid`, `gen`: the instance closes that session's sockets with a lower generation with 4012 |
 | local | `system_status` | `degraded` |
 
-**Outbid recipients:** the leader before the trigger, every maximum the trigger exhausted, and every bidder whose bid in the trigger was immediately exceeded, minus the new leader; each once. Retries republish, so Phase 9's notification `dedupe_key` must include (auction_id, user_id, sequence_no).
+**Outbid recipients:** the leader before the trigger, every maximum the trigger exhausted, and every bidder whose bid in the trigger was immediately exceeded, minus the new leader; each once. Retries republish; the stored outbid notification's `dedupe_key` is `outbid:{auction}:{user}:{sequence_no}`, so a retry stores nothing twice.
 
 ### Client rules (Phase 10 must implement)
 
@@ -233,7 +239,7 @@ Editing by status (FR-17, BR-4): draft and scheduled, any field, re-validated, `
 
 ## 6. Settlement status
 
-pending_payment, paid, no_sale. A failed payment attempt leaves pending_payment so the bidder can retry.
+pending_payment, paid, no_sale. Only pending_payment to paid exists (a verified confirmation, section 13). A failed payment attempt leaves pending_payment so the bidder can retry. There is no payment window in Release 1: an unpaid settlement stays payable (known issue).
 
 ## 7. Close and settlement flow
 
@@ -269,7 +275,7 @@ A Redis status already `closing` at step 1 counts as flipped, so the call can be
 
 ## 8. Data model (tables)
 
-Migrations `0001` to `0009` in `backend/alembic/versions/`. Money is BIGINT paise, every timestamp is `timestamptz`, every FK is `ON DELETE RESTRICT`. Constraint names follow the naming convention in `app/models/base.py` (`pk_`, `uq_`, `ck_`, `fk_`, `ix_`).
+Migrations `0001` to `0010` in `backend/alembic/versions/`. Money is BIGINT paise, every timestamp is `timestamptz`, every FK is `ON DELETE RESTRICT`. Constraint names follow the naming convention in `app/models/base.py` (`pk_`, `uq_`, `ck_`, `fk_`, `ix_`).
 
 | Table | PK | Key constraints and indexes |
 |---|---|---|
@@ -284,8 +290,9 @@ Migrations `0001` to `0009` in `backend/alembic/versions/`. Money is BIGINT pais
 | proxy_bids | bigint | partial UNIQUE (auction_id, bidder_id) WHERE is_active; max_amount > 0 |
 | watchlist | (user_id, auction_id) | index on auction_id (watchers of an auction, FR-25) |
 | settlements | uuid | UNIQUE auction_id; UNIQUE idempotency_key; CHECK no_sale iff winner_id and final_price are NULL |
-| payments | uuid | UNIQUE gateway_ref; UNIQUE idempotency_key; partial UNIQUE settlement_id WHERE status = 'succeeded' (failed attempts can be retried) |
-| notifications | bigint | UNIQUE dedupe_key; type CHECK (outbid, ending_soon, auction_won, auction_lost, payment_due, payment_received, and from migration 0009 auction_sold and auction_no_sale for the seller, FR-62); partial index (user_id, created_at DESC) WHERE read_at IS NULL |
+| payments | uuid | One row per settlement and gateway order: UNIQUE idempotency_key (`order:{settlement_id}`), UNIQUE gateway_order_id, UNIQUE gateway_payment_id (the captured payment), partial UNIQUE settlement_id WHERE status = 'succeeded'; status created, failed, succeeded; amount > 0; `reconciled_at` (migration 0010) |
+| payment_events (append-only) | bigint | Every applied terminal confirmation once: UNIQUE dedupe_key (`webhook:{event id}`, `callback:{payment id}:{outcome}`, `reconcile:{payment id}:{outcome}`); source, event, gateway payment id, outcome succeeded or failed; no payload, no contact data |
+| notifications | bigint | UNIQUE dedupe_key; type CHECK (outbid, ending_soon, auction_won, auction_lost, payment_due, payment_received, from migration 0009 auction_sold and auction_no_sale, from 0010 payment_failed); email delivery state `email_status` (pending, sent, skipped, failed), `email_attempts`, `email_next_at` (lease or backoff), `emailed_at`; partial index (user_id, created_at DESC) WHERE read_at IS NULL; partial index for the email queue WHERE email_status = 'pending' |
 | notification_preferences | (user_id, type) | type CHECK |
 | audit_log (append-only) | bigint | `actor_id` NULL for system actions. Indexes: (entity_type, entity_id), (actor_id, created_at), created_at |
 
@@ -294,7 +301,7 @@ Migrations `0001` to `0009` in `backend/alembic/versions/`. Money is BIGINT pais
 | Role | Used by | Privileges |
 |---|---|---|
 | owner (`POSTGRES_USER`) | Alembic only, via `MIGRATION_DATABASE_URL` | owns every object |
-| `auction_app` | api, worker, beat, via `DATABASE_URL` | SELECT, INSERT, UPDATE, DELETE on ordinary tables; SELECT, INSERT only on `bids` and `audit_log`; SELECT only on `alembic_version`; USAGE on schema and sequences; no TRUNCATE, no default privileges |
+| `auction_app` | api, worker, beat, via `DATABASE_URL` | SELECT, INSERT, UPDATE, DELETE on ordinary tables; SELECT, INSERT only on `bids`, `audit_log` and `payment_events`; SELECT only on `alembic_version`; USAGE on schema and sequences; no TRUNCATE, no default privileges |
 
 ## 9. Error codes (add new ones here)
 
@@ -303,7 +310,8 @@ Auctions: AUCTION_ALREADY_LIVE (409), AUCTION_NOT_LIVE (409, force-close of a dr
 Validation errors carry an optional `fields` object of per-field messages (FR-12).
 Bidding: AUCTION_CLOSED, AUCTION_NOT_STARTED, BID_TOO_LOW, BID_ABOVE_LIMIT, SELF_OUTBID_NOT_ALLOWED, BELOW_CURRENT_PRICE, PROXY_CANNOT_DECREASE (lower or equal maximum, FR-46), SERVICE_UNAVAILABLE.
 Administration: NOT_SUSPENDED (409, reinstating an account that is not suspended); FORBIDDEN for anyone without the admin role; ALREADY_CLOSED for a force-close of a terminal auction or a cancel of a closing or terminal one.
-Payment: NOT_WINNER, ALREADY_PAID, INVALID_SIGNATURE.
+Payment: NOT_WINNER (403), ALREADY_PAID (409), INVALID_SIGNATURE (400, checkout callback or webhook), PAYMENT_MISMATCH (409, amount or currency differs from the settlement), AMOUNT_BELOW_GATEWAY_MINIMUM (409, under 100 paise), PAYLOAD_TOO_LARGE (413, webhook body over 64 KB), SERVICE_UNAVAILABLE (503, gateway unreachable or not configured).
+Notifications: NOT_FOUND for another user's notification (FR-74).
 Real-time: NOT_SUBSCRIBED, TOO_MANY_SUBSCRIPTIONS, MESSAGE_TOO_LARGE, UNKNOWN_TYPE (RATE_LIMITED, SERVICE_UNAVAILABLE and INTERNAL_ERROR are also sent as `error` frames).
 General: VALIDATION_ERROR (also returned by the bid service for a malformed amount or request_id), INTERNAL_ERROR, SERVICE_UNAVAILABLE (readiness with a dependency down; bid path when Redis is unreachable or live state cannot be established, see the client contract in section 2).
 Internal only, never sent to clients: NOT_INITIALISED (script result meaning live state is absent; the service rebuilds or maps it).
@@ -350,3 +358,52 @@ Public bidder label: `Bidder-` plus the first four hex characters of a per-aucti
 **Suspension.** `UserService.suspend_user(admin, user, reason)`: status, revocation of every session and the `audit_log` row (`user_suspended`, with the reason) commit in one transaction (FR-78, BR-12), then the user denylist key. The admin endpoint arrives with the admin work.
 
 **Status codes.** 401 `INVALID_TOKEN`/`TOKEN_EXPIRED` for bearer problems and `INVALID_CREDENTIALS`; 400 for a bad body token; 403 `EMAIL_NOT_VERIFIED`, `ACCOUNT_SUSPENDED`, `FORBIDDEN`; 409 `EMAIL_TAKEN`; 429 `RATE_LIMITED`.
+
+## 13. Payments (Phase 9: FR-65 to FR-69, NFR-25, DC-10, DP-1, SI-3)
+
+Razorpay in test mode only: a key id that is not `rzp_test_…` is refused at startup everywhere (AS-5). The winner pays in Razorpay Checkout, so card data never reaches the platform (DC-10). `services/payment_gateway.py` holds the gateway interface (`create_order`, `find_order(receipt)`, `order_payments`, `capture`), the httpx client (no SDK) and the two signature checks; tests use an in-memory gateway. Nothing in bidding, closing or settlement creation calls the gateway (DP-1).
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `POST /api/v1/auctions/{id}/payment` | the winner | FR-65: NOT_WINNER for anyone else (a no-sale has no winner), ALREADY_PAID, AMOUNT_BELOW_GATEWAY_MINIMUM. Returns `{payment_id, settlement_id, status, amount, currency, gateway, key_id, order_id}` for the checkout. The amount is the settlement's; no body is read. 10 per minute per user |
+| `POST /api/v1/auctions/{id}/payment/confirm` | the winner | Body: the three ids the checkout returns (`razorpay_order_id`, `razorpay_payment_id`, `razorpay_signature`, strict patterns, nothing else). 200 `{status: paid|failed}`, 202 `{status: pending}` while the gateway cannot be read, 400 INVALID_SIGNATURE, 409 PAYMENT_MISMATCH. 20 per minute per user |
+| `POST /api/v1/payments/razorpay/webhook` | the gateway | No session; admitted only by `X-Razorpay-Signature` over the raw body. 200 once processed or deliberately ignored, 400 INVALID_SIGNATURE, 413 above 64 KB, 5xx on a database or limiter failure so the gateway redelivers. 600 per minute per address |
+| `GET /api/v1/auctions/{id}/settlement` | winner, seller, admin | now includes `payment {id, status, amount, currency, order_id, payment_id, updated_at_ms}` (FR-69) |
+
+**Order (FR-66).** One payment row and one gateway order per settlement (`idempotency_key = order:{settlement_id}`, receipt = settlement id). No transaction is held across the gateway call: tx 1 returns an existing row (touching `updated_at`); then `create_order`; a duplicate-receipt refusal adopts the order found by receipt (an earlier attempt whose commit failed); tx 2 inserts with ON CONFLICT DO NOTHING and reads the row back, so concurrent starts share one order. Failed attempts are retried on the same order (B.5).
+
+**Confirmation (FR-67, FR-68).** Three sources, any order, any number of times, concurrently:
+1. Checkout callback: `hex HMAC_SHA256(key_secret, stored_order_id|payment_id)`, constant-time, checked before anything else; then `sync_order`.
+2. Webhook: `hex HMAC_SHA256(webhook_secret, raw_body)` checked before parsing; `payment.captured` applies success and `payment.failed` failure from the signed payload, with no outbound call; any other event is ignored. The event id (`x-razorpay-event-id`) is the dedupe key.
+3. Reconciler `reconcile_payments` (beat, 120 s, FR-69, S4): orders in created or failed of pending_payment settlements whose last activity is between 120 s and 7 days old, least recently checked first (`reconciled_at` nulls first), 50 per run; `sync_order` each.
+
+`sync_order` reads the order's payments from the gateway: a captured one applies success; else an authorized one is captured by the platform (so the dashboard's auto-capture setting does not matter; "already captured" means read again) and applied; else the latest failed one applies failure.
+
+Applying is one transaction on the payment row lock (`FOR UPDATE` by gateway order id):
+- success: refused with PAYMENT_MISMATCH if the amount differs from the payment or the settlement, or the currency is not INR; nothing new if already succeeded (a different payment id raises PAYMENT_DUPLICATE_CHARGE); otherwise the `payment_events` row, payment created/failed to succeeded with `gateway_payment_id`, settlement pending_payment to paid (a conditional update that must change one row or the transaction rolls back), audit rows `payment_succeeded` and settlement `status_changed` (FR-64), `payment_received` to winner and seller;
+- failure: nothing if the payment already succeeded or this gateway payment's failure was applied before; otherwise the `payment_events` row, payment to failed, audit `payment_failed`, `payment_failed` to the winner. failed to succeeded stays possible (late authorisation); succeeded is terminal.
+A `payment_events` row is written only when an outcome is applied; a sync that changes nothing writes nothing. Exactly once rests on the row lock, with the conditional updates, `UNIQUE gateway_payment_id`, the partial unique succeeded payment per settlement and the notification `dedupe_key` as backstops.
+
+**Client contract (Phase 10).** Open Checkout with `key_id`, `order_id` and the amount from `POST …/payment`; on the handler's success post its three ids to `/confirm`; on 202 show "confirming" and poll `GET …/settlement` (the webhook or the reconciler completes it); on `failed` offer to pay again (same order). The client never sends an amount.
+
+## 14. Notifications (Phase 9: FR-70 to FR-74, SI-4)
+
+Every notification is a row first (`services/notifications.py`), written by its producer with a `dedupe_key`, so a retried producer writes nothing twice:
+
+| Producer | Types | dedupe_key |
+|---|---|---|
+| close (section 7) | `auction_won` and `payment_due` to the winner, `auction_sold` or `auction_no_sale` to the seller, `auction_lost` to every other participant | `close:{auction}:{type}:{user}` |
+| payments (section 13) | `payment_received` to winner and seller; `payment_failed` to the winner | `pay:{settlement}:payment_received:{user}`, `pay:{payment}:failed:{gateway payment}` |
+| outbid | `outbid` to the bidders a bid displaced (same recipients as `outbid_notice`), written by the task `record_outbid`, queued fire-and-forget after the bid's acknowledgement | `outbid:{auction}:{user}:{sequence_no}` |
+| ending soon (beat, 30 s) | `ending_soon` to watchers of a live auction whose end is within 300 s; once per auction, even after an extension (FR-73) | `ending_soon:{auction}:{user}` |
+
+**In-app (FR-71).** The row is the record; after the commit the producer pushes `notification` on the recipient's channel (at-most-once). Outbid rows are not pushed, since `outbid_notice` already reached the bidder live.
+
+**API (FR-74).** `GET /api/v1/notifications?unread=&before=&limit=` (newest first, keyset on id, at most 100; `{items: [{id, type, auction_id, payload, read, created_at_ms}], next_before}`); `POST /api/v1/notifications/{id}/read` (204; another user's or unknown is NOT_FOUND); `POST /api/v1/notifications/read-all` (`{updated}`); `GET`/`PUT /api/v1/notifications/preferences` (`{email: {type: bool}}`, every type defaults to on; unknown types are refused).
+
+**Email (FR-72, SI-4).** `dispatch_notification_emails` (beat, 15 s):
+1. Claim: a `(user, type, auction)` group is due once its oldest pending row is older than 60 s; its pending rows are claimed with `FOR UPDATE SKIP LOCKED`, `email_attempts + 1` and a 5-minute lease in `email_next_at`, and the claim commits before anything is sent, so the user's own reads and writes never wait behind SMTP.
+2. One email per group (repeats combined, "outbid 5 times"); preference off or an account that is not active: `skipped` (the in-app row is unaffected).
+3. Sent: `sent` and `emailed_at`. Failed: retried after 1, 2, 4 and 8 minutes; after the fifth attempt `failed` and `EMAIL_DELIVERY_FAILED`. Delivery is at least once: a crash between the SMTP accept and the final update re-sends after the lease.
+Emails are built from the payload only (no reserve, no maximum ever appears in one); amounts are formatted from paise with integer arithmetic. Verification and reset emails are queued to the `send_email` task (`QueuedEmailSender`, retried), so the request never waits for SMTP; their arguments are never logged. Senders: `SmtpEmailSender` (any SMTP server through `SMTP_*`; Mailpit in dev) or the dev-only console sender.
+

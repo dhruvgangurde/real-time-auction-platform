@@ -2,6 +2,27 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-13 Phase 9 payments and notification delivery
+Decisions taken with the plan review:
+- **No payment window in Release 1.** The SRS gives no window and no non-payment consequence, and its settlement state machine (B.5) has no transition out of pending_payment except to paid. An unpaid settlement stays payable; recorded as a known issue.
+- **`auction_won` at close, alongside `payment_due`.** FR-70 lists the type and 4.10.2 S3 tells the winner both the outcome and that payment is due; UC-03 step 7 names only payment due. The requirement statement wins (CLAUDE.md section 2). This reverses the Phase 8 notification set; the closing tests changed with it.
+- **`payment_failed` type** (migration 0010) for FR-68's "notify the bidder" of a confirmed failure.
+- **100 paise minimum.** Razorpay cannot charge less. `POST …/payment` refuses a smaller settlement with AMOUNT_BELOW_GATEWAY_MINIMUM, and create and edit require `starting_price >= 100` in API validation (FR-12); no DB CHECK, so existing rows are untouched.
+- **The platform captures authorized payments itself** in `sync_order`, so the Razorpay dashboard's auto-capture setting does not matter; "already captured" means read again.
+- **Outbid rows through a task queued after the acknowledgement.** The outbox does not carry the outbid recipients: a `bid` entry holds only that bid's own bidder, amount, sequence and timing, and the displaced leader, exhausted maxima and immediately exceeded bidders exist only in the arbitration result (`BidResult.previous_leader` / `exhausted`). Rebuilding them in the persister would need trigger boundaries the outbox does not record. So `publish_bid_events` hands the same recipients as the live `outbid_notice` to `BidService.record_outbid` (production: a fire-and-forget Celery enqueue, `record_outbid`), inside try/except; arbitration and the acknowledgement are untouched. A lost enqueue loses the stored row only (known issue).
+- **Email**: Mailpit (`axllent/mailpit:v1.27.10`, dev-only, in the override file) for development; any SMTP provider through `SMTP_*` for production; TBD-1 stays open. Verification and reset emails are queued to the worker (`QueuedEmailSender`), which closes the timing side channel and meets SI-4.
+
+Design choices:
+- **One payment row and one gateway order per settlement** (`idempotency_key = order:{settlement_id}`, receipt = settlement id, UNIQUE `gateway_order_id`). No database transaction is held across a gateway call; an order created at the gateway by an attempt whose commit failed is adopted through its receipt. A failed attempt is retried on the same order.
+- **Exactly once** rests on the payment row lock (`FOR UPDATE` by gateway order id) taken by every source, with the conditional settlement update (which must change one row or the transaction rolls back), `UNIQUE gateway_payment_id`, the partial unique succeeded payment per settlement (from 0004) and the notification `dedupe_key` as backstops.
+- **`payment_events` (append-only)** records each applied terminal outcome once, keyed `webhook:{event id}`, `callback:{payment id}:{outcome}` or `reconcile:{payment id}:{outcome}`; a sync that changes nothing writes no row. The same gateway payment's failure is applied once whatever the source.
+- **The webhook trusts its signed payload** and makes no outbound call; it answers 200 once processed or deliberately ignored (unknown order, unsubscribed event, unreadable signed body) and 5xx on a database or limiter error so the gateway redelivers. Only `payment.captured` and `payment.failed` are acted on.
+- **The checkout callback** verifies against the stored order id (the client's must equal it), then reads the order from the gateway; 202 pending when the gateway cannot be read.
+- **Reconciler**: last activity (`updated_at`, touched when the winner reopens the payment) between 120 s and 7 days, least recently checked first (`reconciled_at`, nulls first), 50 per run.
+- **Email delivery**: a group (user, type, auction) is due once its oldest pending row is older than 60 s; the claim (SKIP LOCKED, attempts + 1, a 5-minute lease) commits before sending; one email per group; backoff 1, 2, 4, 8 minutes, then failed and EMAIL_DELIVERY_FAILED. At least once across a crash. Rows written before 0010 are marked skipped and never emailed.
+- **Live push**: producers publish a `notification` event after their commit; outbid rows are not pushed (the bid path's `outbid_notice` already was).
+- **httpx** moved from the dev group to runtime dependencies (the gateway client); no Razorpay SDK.
+
 ## 2026-10-13 Revoking a role revokes every session (FR-6, FR-75, BR-1)
 Roles travel in the access token (15 minutes). Before this, revoking a role changed Postgres but left the user's tokens valid, so a demoted admin kept full admin access until expiry: enough to re-grant itself admin through `PUT /api/v1/admin/users/{id}/roles/admin`, or to suspend the admin who demoted it; a demoted seller could keep creating, editing and publishing. Found by a security review of the Phase 8 commit.
 

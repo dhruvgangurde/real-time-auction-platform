@@ -174,3 +174,47 @@ def test_sweep_closing_enqueues_through_celery(
     report = tasks.sweep_closing.run()
     assert report == {"enqueued": 1, "unresolved": 0, "grace_s": tasks.settings.close_grace_s}
     assert no_runtime == [("close_auction", [str(auction_id)])]
+
+
+# ---------------------------------------------------------------- payments and notifications
+
+
+class _Service:
+    """Stands in for PaymentService and NotificationService in the task wrappers."""
+
+    def __init__(self, *_: Any, **__: Any) -> None:
+        pass
+
+    async def reconcile(self) -> dict[str, int]:
+        return {"paid": 1}
+
+    async def record_outbid(self, *args: Any) -> int:
+        if args[2] < 0:
+            raise RuntimeError("db down")
+        return len(args[1])
+
+    async def notify_ending_soon(self) -> int:
+        return 2
+
+    async def dispatch_emails(self) -> dict[str, int]:
+        return {"sent": 3}
+
+
+def test_payment_and_notification_tasks(
+    monkeypatch: pytest.MonkeyPatch, no_runtime: list[tuple[str, list[Any]]]
+) -> None:
+    """FR-69, FR-70, FR-72, FR-73: thin wrappers around the services."""
+    monkeypatch.setattr(tasks, "PaymentService", _Service)
+    monkeypatch.setattr(tasks, "NotificationService", _Service)
+    monkeypatch.setattr(tasks, "RateLimiter", _Service)
+    assert tasks.reconcile_payments.run() == {"paid": 1}
+    assert tasks.record_outbid.run(str(uuid4()), [str(uuid4()), str(uuid4())], 7, 12_000) == 2
+    assert tasks.notify_ending_soon.run() == 2
+    assert tasks.dispatch_notification_emails.run() == {"sent": 3}
+    task = tasks.record_outbid
+    task.push_request(id="o1", retries=0, called_directly=True)
+    try:
+        with pytest.raises(RuntimeError):
+            task.run(str(uuid4()), [str(uuid4())], -1, 12_000)
+    finally:
+        task.pop_request()

@@ -14,6 +14,7 @@ import hmac
 import json
 import logging
 import time
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -21,7 +22,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app.core.config import settings
-from app.services.bidding import BidResult, ProxyResult
+from app.services.bidding import BidResult, OutbidRecorder, ProxyResult
 
 log = logging.getLogger("live_events")
 
@@ -136,9 +137,23 @@ def bid_events(
 
 
 async def publish_bid_events(
-    redis: Redis, auction_id: UUID, submitter: UUID, result: BidResult | ProxyResult
+    redis: Redis,
+    auction_id: UUID,
+    submitter: UUID,
+    result: BidResult | ProxyResult,
+    record_outbid: OutbidRecorder | None = None,
 ) -> None:
     room, notices = bid_events(auction_id, submitter, result)
+    if notices and record_outbid is not None:
+        # stored outbid notifications for the same recipients as the live notice (FR-70);
+        # fire-and-forget: it can never delay or fail the bid, already acknowledged (FR-40)
+        notice = next(iter(notices.values()))
+        try:
+            record_outbid(auction_id, list(notices), notice["sequence_no"], notice["current_price"])
+        except Exception:
+            log.exception(
+                "outbid notification not queued", extra={"fields": {"auction_id": str(auction_id)}}
+            )
     if not room and not notices:
         return
     try:
@@ -196,4 +211,28 @@ async def publish_auction_closed(
         log.warning(
             "auction_closed publish failed",
             extra={"fields": {"auction_id": str(auction_id), "error": repr(exc)}},
+        )
+
+
+async def publish_notifications(redis: Redis, rows: Sequence[Any]) -> None:
+    """Live in-app delivery of stored notifications on each recipient's channel (FR-71), after
+    the commit. At-most-once: the notifications table is the record, read through the API."""
+    if not rows:
+        return
+    try:
+        async with redis.pipeline(transaction=False) as pipe:
+            for row in rows:
+                payload = event(
+                    "notification",
+                    id=row.id,
+                    notification_type=row.type,
+                    auction_id=str(row.auction_id) if row.auction_id else None,
+                    payload=row.payload,
+                    created_at_ms=int(row.created_at.timestamp() * 1000),
+                )
+                pipe.publish(user_channel(row.user_id), json.dumps(payload))
+            await pipe.execute()
+    except RedisError as exc:
+        log.warning(
+            "notification publish failed", extra={"fields": {"rows": len(rows), "error": repr(exc)}}
         )

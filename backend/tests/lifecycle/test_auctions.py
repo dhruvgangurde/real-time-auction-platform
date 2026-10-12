@@ -103,6 +103,7 @@ async def test_validation_reports_each_failing_field(
     "overrides, field",
     [
         ({"starting_price": 0}, "starting_price"),
+        ({"starting_price": 99}, "starting_price"),  # below the gateway minimum (FR-12)
         ({"min_increment": 0}, "min_increment"),
         ({"starting_price": 10.5}, "starting_price"),
         ({"title": "   "}, "title"),
@@ -367,3 +368,20 @@ async def test_revoked_seller_can_only_cancel(
     for auction_id in (draft, scheduled):
         r = await api.post(f"/api/v1/auctions/{auction_id}/cancel", headers=auth)
         assert r.status_code == 200 and r.json()["status"] == "cancelled"
+
+
+async def test_starting_price_below_gateway_minimum_refused_on_edit(
+    api: AsyncClient, make_user, seeded
+) -> None:
+    """FR-12: create and edit both keep the starting price at or above the payment gateway's
+    100 paise minimum, so every sale can be paid."""
+    seller_id, token = await make_user("seller")
+    draft = await seeded(seller_id, "draft")
+    r = await api.patch(
+        f"/api/v1/auctions/{draft}", json={"starting_price": 99}, headers=bearer(token)
+    )
+    assert r.status_code == 422 and "starting_price" in r.json()["error"]["fields"]
+    ok = await api.patch(
+        f"/api/v1/auctions/{draft}", json={"starting_price": 100}, headers=bearer(token)
+    )
+    assert ok.status_code == 200

@@ -48,6 +48,7 @@ from app.repositories import (
     AuditLogRepository,
     BidRepository,
     NotificationRepository,
+    PaymentRepository,
     ProxyBidRepository,
     SettlementRepository,
     UserRepository,
@@ -62,6 +63,7 @@ from app.services.live_state import (
     state_key,
     to_ms,
 )
+from app.services.payments import payment_view
 from app.services.snapshot import visible
 
 log = logging.getLogger("closing")
@@ -175,9 +177,10 @@ class Closer:
                 after={"auction_id": str(auction_id), **outcome, "status": settlement.status},
             )
             await ProxyBidRepository(session).deactivate_all(auction_id)  # FR-51
-            await NotificationRepository(session).add_many(
+            created = await NotificationRepository(session).add_many(
                 await self._notifications(session, auction, decision)
             )
+        await live_events.publish_notifications(self._redis, created)  # FR-71, after commit
         log.info(
             "auction settled",
             extra={"fields": {"auction_id": str(auction_id), **outcome}},
@@ -225,8 +228,12 @@ class Closer:
             "reserve_met": decision.reserve_met,  # never the reserve itself (BR-6)
         }
         recipients: list[tuple[UUID, str]] = []
-        if decision.winner_id:
-            recipients += [(decision.winner_id, "payment_due"), (auction.seller_id, "auction_sold")]
+        if decision.winner_id:  # the outcome and that payment is due (FR-62, FR-70, 4.10.2 S3)
+            recipients += [
+                (decision.winner_id, "auction_won"),
+                (decision.winner_id, "payment_due"),
+                (auction.seller_id, "auction_sold"),
+            ]
         else:
             recipients.append((auction.seller_id, "auction_no_sale"))
         losers = await BidRepository(session).participant_ids(auction.id) - {decision.winner_id}
@@ -365,4 +372,5 @@ async def settlement_view(
         user = None
         if settlement.winner_id is not None:
             user = await UserRepository(session).get(settlement.winner_id)
-    return settlement_dict(settlement, user)
+        payment = await PaymentRepository(session).for_settlement(settlement.id)
+    return settlement_dict(settlement, user) | {"payment": payment_view(payment)}

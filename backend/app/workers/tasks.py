@@ -8,8 +8,13 @@ from celery import Task
 
 from app.core.clock import SystemClock
 from app.core.config import settings
+from app.core.ratelimit import RateLimiter
 from app.services import closing, denylist, ledger, reconciliation
 from app.services.closing import Closer, Outcome
+from app.services.email import email_sender_from_settings
+from app.services.notifications import NotificationService
+from app.services.payment_gateway import razorpay_from_settings
+from app.services.payments import PaymentService
 from app.services.scheduler import Scheduler
 from app.workers import runtime
 from app.workers.celery_app import celery_app
@@ -106,3 +111,69 @@ def denylist_revoke(self: Task, keys: list[str], ttl_s: int) -> None:
 def sync_denylist() -> int:
     """Safety net: rewrite every recent revocation from Postgres into Redis (FR-6)."""
     return runtime.run(denylist.resync(runtime.redis(), runtime.sessions(), SystemClock()))
+
+
+def _payments() -> PaymentService:
+    return PaymentService(
+        runtime.sessions(),
+        runtime.redis(),
+        razorpay_from_settings(),
+        RateLimiter(runtime.redis(), SystemClock()),
+        key_secret=settings.razorpay_key_secret,
+        webhook_secret=settings.razorpay_webhook_secret,
+    )
+
+
+@celery_app.task(name="reconcile_payments")
+def reconcile_payments() -> dict[str, int]:
+    """FR-69: complete any charge whose callback and webhook never arrived."""
+    return runtime.run(_payments().reconcile())
+
+
+# ---------------------------------------------------------------- notifications (FR-70 to FR-74)
+
+
+def _notifications() -> NotificationService:
+    return NotificationService(runtime.sessions(), runtime.redis(), email_sender_from_settings())
+
+
+@celery_app.task(name="record_outbid", bind=True, acks_late=True, max_retries=5)
+def record_outbid(
+    self: Task, auction_id: str, users: list[str], sequence_no: int, price: int
+) -> int:
+    """Stored outbid notifications for the bidders a bid displaced (FR-70)."""
+    try:
+        return runtime.run(
+            _notifications().record_outbid(
+                UUID(auction_id), [UUID(u) for u in users], sequence_no, price
+            )
+        )
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=min(2**self.request.retries, 30)) from exc
+
+
+@celery_app.task(name="notify_ending_soon")
+def notify_ending_soon() -> int:
+    return runtime.run(_notifications().notify_ending_soon())
+
+
+@celery_app.task(name="dispatch_notification_emails")
+def dispatch_notification_emails() -> dict[str, int]:
+    """FR-72: one email per due group, retried with backoff; never blocks a producer."""
+    return runtime.run(_notifications().dispatch_emails())
+
+
+@celery_app.task(name="send_email", bind=True, acks_late=True, max_retries=5)
+def send_email(self: Task, to: str, subject: str, body: str) -> None:
+    """Verification and reset emails queued by the API (SI-4). The body carries a raw token:
+    it is never logged, only the subject."""
+    try:
+        runtime.run(email_sender_from_settings().send(to, subject, body))
+    except Exception as exc:
+        if self.request.retries >= 5:
+            log.critical(
+                "email not delivered after the last attempt",
+                extra={"fields": {"alert": "EMAIL_DELIVERY_FAILED", "subject": subject}},
+            )
+            raise
+        raise self.retry(exc=exc, countdown=min(2**self.request.retries * 10, 300)) from exc

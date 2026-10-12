@@ -16,6 +16,8 @@ Description = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10_000)
 ]
 Money = Annotated[int, Field(ge=1, le=MAX_AMOUNT, strict=True)]
+# at least the payment gateway's minimum charge, 100 paise, so a sale can always be paid (FR-12)
+StartingPrice = Annotated[int, Field(ge=100, le=MAX_AMOUNT, strict=True)]
 Seconds = Annotated[int, Field(ge=1, le=86_400, strict=True)]
 Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
@@ -36,7 +38,7 @@ class AuctionCreate(_Strict):
     title: Title
     description: Description
     category_id: int = Field(ge=1, strict=True)
-    starting_price: Money
+    starting_price: StartingPrice
     reserve_price: Money | None = None  # absent means no reserve (FR-12)
     min_increment: Money
     start_time: AwareDatetime
@@ -52,7 +54,7 @@ class AuctionUpdate(_Strict):
     title: Title | None = None
     description: Description | None = None
     category_id: int | None = Field(default=None, ge=1, strict=True)
-    starting_price: Money | None = None
+    starting_price: StartingPrice | None = None
     reserve_price: Money | None = None
     min_increment: Money | None = None
     start_time: AwareDatetime | None = None

@@ -66,7 +66,13 @@ async def test_ten_concurrent_closes_settle_once(
     assert len(await terminal_audits(db, auction_id)) == 1
     seller = await db.fetchval("SELECT seller_id FROM auctions WHERE id = $1", auction_id)
     assert await notifications(db, auction_id) == sorted(
-        [(b3, "payment_due"), (seller, "auction_sold"), (b1, "auction_lost"), (b2, "auction_lost")]
+        [
+            (b3, "auction_won"),
+            (b3, "payment_due"),
+            (seller, "auction_sold"),
+            (b1, "auction_lost"),
+            (b2, "auction_lost"),
+        ]
     )
     assert [e["type"] for e in room.events] == ["auction_closed"]
 
@@ -103,7 +109,7 @@ async def test_constraint_alone_keeps_one_settlement(
     assert len(rolled_back) == 9  # the constraint, not the lock, stopped them
     assert len(await settlement_rows(db, auction_id)) == 1
     assert len(await terminal_audits(db, auction_id)) == 1
-    assert len(await notifications(db, auction_id)) == 3  # payment_due, auction_sold, lost
+    assert len(await notifications(db, auction_id)) == 4  # won, payment_due, sold, lost
 
 
 async def test_retry_after_success_does_nothing(
@@ -117,7 +123,7 @@ async def test_retry_after_success_does_nothing(
         assert await Closer(redis, sessions).close(auction_id) is Outcome.ALREADY_CLOSED
     assert [e["type"] for e in room.events] == ["auction_closed"]
     assert len(await settlement_rows(db, auction_id)) == 1
-    assert len(await notifications(db, auction_id)) == 2
+    assert len(await notifications(db, auction_id)) == 3  # won, payment_due, sold
     assert not await redis.exists(state_key(auction_id), proxies_key(auction_id))
 
 
@@ -287,7 +293,9 @@ async def test_outcome_by_reserve(
     assert json.loads(created["after"])["status"] == settlement["status"]  # FR-64
 
     expected = (
-        [(seller, "auction_sold"), (b2, "payment_due")] if sold else [(seller, "auction_no_sale")]
+        [(seller, "auction_sold"), (b2, "auction_won"), (b2, "payment_due")]
+        if sold
+        else [(seller, "auction_no_sale")]
     )
     losers = {b1, holder} | ({b2} if bidders == [b1, b2] and not sold else set())
     expected += [(u, "auction_lost") for u in losers]
@@ -429,3 +437,26 @@ async def test_rebuild_in_progress_defers(
     await redis.hset(state_key(auction_id), "status", "rebuilding")
     assert await Closer(redis, sessions).close(auction_id) is Outcome.DEFERRED
     assert await settlement_rows(db, auction_id) == []
+
+
+async def test_close_notifications_are_pushed_live_once(
+    ended: Ended, db: asyncpg.Connection, redis: Redis, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    """FR-71: each recipient's channel gets the stored notifications after the commit; a
+    retried close inserts nothing and pushes nothing."""
+    from app.services.live_events import user_channel
+
+    winner, loser = await _users(db, 2)
+    auction_id = await ended(bids=[(loser, 10_000), (winner, 10_500)])
+    async with (
+        Room(channel=user_channel(winner)) as winner_room,
+        Room(channel=user_channel(loser)) as loser_room,
+    ):
+        assert await Closer(redis, sessions).close(auction_id) is Outcome.SETTLED
+        assert await Closer(redis, sessions).close(auction_id) is Outcome.ALREADY_CLOSED
+    assert sorted(e["notification_type"] for e in winner_room.events) == [
+        "auction_won",
+        "payment_due",
+    ]
+    assert [e["notification_type"] for e in loser_room.events] == ["auction_lost"]
+    assert all(e["auction_id"] == str(auction_id) for e in winner_room.events)

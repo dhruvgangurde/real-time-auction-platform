@@ -115,4 +115,9 @@ def test_startup_refuses_dev_secret_outside_local(monkeypatch: pytest.MonkeyPatc
     with pytest.raises(RuntimeError):
         security.check_startup_config()
     monkeypatch.setattr(settings, "email_backend", "smtp")
+    with pytest.raises(RuntimeError):  # payment gateway secrets (SI-3, NFR-26)
+        security.check_startup_config()
+    monkeypatch.setattr(settings, "razorpay_key_id", "rzp_test_x")
+    monkeypatch.setattr(settings, "razorpay_key_secret", "s")
+    monkeypatch.setattr(settings, "razorpay_webhook_secret", "w")
     security.check_startup_config()

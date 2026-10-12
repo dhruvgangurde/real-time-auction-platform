@@ -24,7 +24,10 @@ from app.services.bidding import BidService
 from app.services.catalog import CatalogService
 from app.services.closing import Closer
 from app.services.denylist import Denylist
-from app.services.email import ConsoleEmailSender
+from app.services.email import ConsoleEmailSender, EmailSender, QueuedEmailSender
+from app.services.notifications import NotificationService
+from app.services.payment_gateway import razorpay_from_settings
+from app.services.payments import PaymentService
 from app.services.users import UserService
 
 
@@ -63,13 +66,22 @@ async def _notify_revoked(user_id: UUID, sid: UUID | None) -> None:
     await publish_session_revoked(get_redis(), user_id, sid)
 
 
+def _email_sender() -> EmailSender:
+    """Console inline in local dev; otherwise queued to the worker, which sends (SI-4)."""
+    if settings.email_backend == "console":
+        return ConsoleEmailSender()
+    from app.workers.dispatch import enqueue
+
+    return QueuedEmailSender(enqueue)
+
+
 @cache
 def get_auth_service() -> AuthService:
     return AuthService(
         get_sessions(),
         get_redis(),
         get_clock(),
-        ConsoleEmailSender(),
+        _email_sender(),
         get_limiter(),
         _denylist(),
         notify_revoked=_notify_revoked,
@@ -83,9 +95,9 @@ def get_user_service() -> UserService:
 
 @cache
 def get_bid_service() -> BidService:
-    from app.workers.dispatch import schedule_persist
+    from app.workers.dispatch import schedule_outbid, schedule_persist
 
-    return BidService(get_redis(), get_sessions(), schedule_persist)
+    return BidService(get_redis(), get_sessions(), schedule_persist, schedule_outbid)
 
 
 @cache
@@ -113,6 +125,24 @@ def get_admin_service() -> AdminService:
         Closer(get_redis(), get_sessions()),
         lambda auction_id: enqueue("close_auction", [str(auction_id)]),
     )
+
+
+@cache
+def get_payment_service() -> PaymentService:
+    return PaymentService(
+        get_sessions(),
+        get_redis(),
+        razorpay_from_settings(),
+        get_limiter(),
+        key_secret=settings.razorpay_key_secret,
+        webhook_secret=settings.razorpay_webhook_secret,
+    )
+
+
+@cache
+def get_notification_service() -> NotificationService:
+    # the API only reads and marks; emails are sent by the worker
+    return NotificationService(get_sessions(), get_redis(), ConsoleEmailSender())
 
 
 def client_ip(request: Request) -> str:
