@@ -392,6 +392,11 @@ function drain(state: RoomState, effects: RoomEffect[]): Step {
       continue;
     }
     if (seq === next.sequence + 1 && frame.type === 'bid_placed') {
+      // a bid under your_alias that this page never acked (another tab, device or REST) while not
+      // marked leading: refetch so you_lead decides; the alias itself never sets leading (item 15)
+      if (next.yourAlias !== null && frame.bidder_alias === next.yourAlias && !next.own.leading) {
+        effects.push({ type: 'refetch', reason: 'own-alias' });
+      }
       next = { ...place(next, frame), buffer: next.buffer.slice(1) };
       continue;
     }

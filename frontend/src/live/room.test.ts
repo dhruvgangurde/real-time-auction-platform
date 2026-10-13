@@ -384,3 +384,25 @@ describe('slice-2 review fixes: own status and panels', () => {
     expect(lost.last).toBeNull();
   });
 });
+
+describe('04-room-built fixes', () => {
+  test('fix 1: a bid under your_alias while not leading refetches; you_lead then decides, alias never does', () => {
+    const outbidNotice = frame({ type: 'outbid_notice', auction_id: A, current_price: 1100000, sequence_no: 4, server_time_ms: T });
+    const lead = run(connected(), { type: 'bidSent', requestId: 'r1', amount: 1050000, kind: 'bid' }, frame(accepted(3, 'r1'))).state;
+    const outbid = run(lead, frame(placed(4)), outbidNotice).state;
+    // the viewer bids from elsewhere (another tab or REST): no ack reaches this page
+    const step = roomReducer(outbid, frame(placed(5, { bidder_alias: 'Bidder-you', amount: 1150000 })));
+    expect(step.effects).toContainEqual({ type: 'refetch', reason: 'own-alias' });
+    expect(step.state.own.leading).toBe(false); // alias equality never sets leading (item 15)
+    expect(step.state.own.outbidAt).toBe(1100000);
+    const fresh = run(step.state, { type: 'snapshot', source: 'fetch', body: snapshot({ sequence_no: 5, current_price: 1150000, viewer: { you_lead: true, your_max: null, your_result: null } }) }).state;
+    expect(fresh.own.leading).toBe(true);
+    expect(fresh.own.outbidAt).toBeNull();
+  });
+
+  test('fix 1: no refetch for another alias, or when the viewer already leads', () => {
+    expect(roomReducer(connected(), frame(placed(3))).effects).not.toContainEqual({ type: 'refetch', reason: 'own-alias' });
+    const lead = run(connected(), { type: 'snapshot', source: 'fetch', body: snapshot({ viewer: { you_lead: true, your_max: null, your_result: null } }) }).state;
+    expect(roomReducer(lead, frame(placed(3, { bidder_alias: 'Bidder-you' }))).effects).not.toContainEqual({ type: 'refetch', reason: 'own-alias' });
+  });
+});
