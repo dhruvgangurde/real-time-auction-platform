@@ -67,6 +67,8 @@ export type CloseCode =
   | 4012;
 
 export type ConnectionState = 'offline' | 'reconnecting' | 'connected' | 'reconnected';
+export type HelpTopic = 'reserve' | 'increment' | 'maximum' | 'clock';
+export const HELP_TOPICS: readonly HelpTopic[] = ['reserve', 'increment', 'maximum', 'clock'];
 
 export type Catalogue = {
   locale: string;
@@ -122,6 +124,24 @@ export type Catalogue = {
   placeholder: {
     title: string;
     body: string;
+  };
+  help: {
+    title: string;
+    lede: string;
+    apiDocs: string;
+    close: string;
+    openLabel: (title: string) => string;
+    topics: Record<
+      HelpTopic,
+      {
+        title: string;
+        question: string;
+        body: string[];
+        example: string;
+        diagram: string;
+        labels: string[];
+      }
+    >;
   };
   auth: {
     register: {
