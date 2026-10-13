@@ -2,6 +2,15 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-13 "Try to break it" is anonymous (deviation from NFR-21)
+NFR-21 asks every state-changing endpoint to require the access token in a request header. That rule exists to stop a cross-site page from acting as a signed-in user whose cookie the browser sends along. `POST /api/v1/demo/stress` (design brief 12.4) has no user, no session and no cookie, so there is nothing to forge, and anyone can call it directly anyway; requiring sign-in would lose most of the visitors the demo is for. It stays anonymous and keeps the `X-Requested-With` header, so a plain cross-site form cannot trigger it. The controls are the single global run, a 60 s cooldown after the previous run settles, 3 starts per IP per hour, at most 50 bots and 20 submissions per bot, and an env kill switch.
+
+## 2026-10-13 Phase 10a design brief answers
+- The payment page is its own document with its own CSP, so Razorpay's `checkout.js` runs on no other page (brief section 13, item 25).
+- Demo mode as proposed (brief 12.3): bots get sessions from the session and token code without logging in (no per-IP login limit, no argon2 hashing), and no notification rows or email; a person bidding on a demo lot gets the normal notifications, including `payment_due` on a win.
+- Four subcategories join the category seed: Electronics > Cameras, Fashion > Watches, Collectibles > Art and prints, Home and garden > Furniture.
+- The product name stays open (the owner's call); hosting is still TBD-2. Backend work follows the build order in brief 12.6, each bidding, settlement or payment item with its own plan and approval.
+
 ## 2026-10-13 A seller cannot bid on their own auction
 The SRS does not say whether a seller may bid on their own listing; accepting it allows shill bidding (a seller pushing the price up), which an end-to-end test showed was possible. `BidService` now refuses both a bid and a proxy maximum from the auction's seller with SELLER_CANNOT_BID (403 on REST, `bid_rejected` / `proxy_rejected` on the WebSocket), after input validation and before arbitration, so nothing reaches the live state or the outbox; the refusal is logged like any bid decision (FR-44). The seller of an auction never changes, so it is cached per process: only the first bid on an auction reads Postgres, and if that read fails the bid fails closed (SERVICE_UNAVAILABLE). The Lua arbitration is unchanged.
 
