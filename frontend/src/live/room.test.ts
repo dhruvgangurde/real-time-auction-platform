@@ -353,3 +353,22 @@ describe('self-outbid policy (B1 self_outbid_blocked)', () => {
     expect(canBid(open)).toBe(true);
   });
 });
+
+describe('slice-2 review fixes: own status and panels', () => {
+  const lead3 = (reqId = 'r1') =>
+    run(connected(), { type: 'bidSent', requestId: reqId, amount: 1050000, kind: 'bid' }, frame(accepted(3, reqId))).state;
+
+  test('fix 1: arming a maximum refetches, and a you_lead snapshot clears the outbid treatment', () => {
+    const outbid = run(lead3(), frame(placed(4)), frame({ type: 'outbid_notice', auction_id: A, current_price: 1100000, sequence_no: 4, server_time_ms: T })).state;
+    expect(outbid.own.outbidAt).toBe(1100000);
+    const armedStep = roomReducer(
+      roomReducer(outbid, { type: 'bidSent', requestId: 'p1', amount: 2000000, kind: 'proxy' }).state,
+      frame({ type: 'proxy_armed', request_id: 'p1', auction_id: A, max_amount: 2000000, active: true, server_time_ms: T }),
+    );
+    expect(armedStep.effects).toContainEqual({ type: 'refetch', reason: 'proxy-armed' });
+    expect(armedStep.state.own.outbidAt).toBe(1100000); // proxy_armed alone does not clear it
+    const fresh = run(armedStep.state, { type: 'snapshot', source: 'fetch', body: snapshot({ sequence_no: 5, current_price: 1150000, viewer: { you_lead: true, your_max: 2000000, your_result: null } }) }).state;
+    expect(fresh.own.leading).toBe(true);
+    expect(fresh.own.outbidAt).toBeNull();
+  });
+});

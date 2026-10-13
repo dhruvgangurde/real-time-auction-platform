@@ -54,6 +54,8 @@ test('two bidders: outbid, a maximum answers, a soft-close extension on both scr
   await alicePage.getByRole('button', { name: r.proxy.confirm }).click();
   await expect(aliceAssertive).toContainText('Your maximum of ₹15,000 is set', { timeout: 10_000 });
   await expect(alicePage.getByText(r.proxy.only)).toBeVisible();
+  // fix 1: the maximum answered bob at once, so her price block shows she leads, not the outbid treatment
+  await expect(alicePage.getByText(/You're the highest bidder with bid/)).toBeVisible({ timeout: 10_000 });
 
   // bob bids again; the maximum answers one step above, so bob is outbid on his own screen
   await (await restBid(request, bob, id, 1050000)).json();

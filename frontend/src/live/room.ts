@@ -281,12 +281,17 @@ function applyFrame(state: RoomState, frame: InboundFrame): Step {
     case 'proxy_armed': {
       if (frame.auction_id !== state.auctionId) return done(state);
       const pending = state.pending?.requestId === frame.request_id ? null : state.pending;
-      return done({
-        ...state,
-        pending,
-        last: { kind: 'armed', maximum: frame.max_amount, active: frame.active },
-        own: { ...state.own, maximum: frame.max_amount, maximumActive: frame.active },
-      });
+      // proxy_armed carries no leading info (arch 4) and an alias never sets leading (item 15):
+      // refetch /live (authenticated, so fresh you_lead) so an answering maximum clears the outbid
+      return done(
+        {
+          ...state,
+          pending,
+          last: { kind: 'armed', maximum: frame.max_amount, active: frame.active },
+          own: { ...state.own, maximum: frame.max_amount, maximumActive: frame.active },
+        },
+        [{ type: 'refetch', reason: 'proxy-armed' }],
+      );
     }
     case 'outbid_notice':
       if (frame.auction_id !== state.auctionId) return done(state);
