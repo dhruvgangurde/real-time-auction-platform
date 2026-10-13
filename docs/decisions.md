@@ -4,6 +4,7 @@ Newest first. Add an entry whenever a decision is made or changed. Format: date,
 
 ## 2026-10-14 Phase 10c slice 2
 - Verification and reset links put the token in the URL fragment, not the query (`/verify-email#token=…`). A fragment never reaches a server, so nginx, a future hosting proxy or any access log cannot hold it; the SPA reads `location.hash`, strips it with `history.replaceState` before the first render, and the token travels only in the API request body (brief 13 item 23). An e2e check greps `docker compose logs web` for both token values after the flows.
+- The dev-only `docker-compose.override.yml` raises the identity and anonymous-read rate limits (register, verify-email, login, `anon_live`) because the Playwright suite makes and signs in many accounts and polls `/live` from one host address; the production `.env` keeps the real limits, which the backend pytest suite exercises. The Playwright config runs one worker: `e2e/room-shots.spec.ts` pauses Redis to shoot the degraded state, which must not run beside other specs.
 - Above-the-fold serif text is Spectral 400 (`display-1`, `display-2`, the header mark), not 500: the 120 KB first-paint font budget (brief 11.5) is measured as every font file fetched before the load event on every route, at 390 and 1440 (`e2e/budgets.spec.ts`), and Spectral Medium (35 KB) on top of the two preloads (101 KB) broke it. Medium and SemiBold stay for text below the fold. Brief 3.2 amended.
 
 ## 2026-10-13 Frontend scaffold choices (Phase 10c slice 1, F1)

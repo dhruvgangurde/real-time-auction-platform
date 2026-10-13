@@ -9,9 +9,9 @@ services:
     # the Playwright suites (frontend/e2e) register, verify and sign in many accounts from one
     # address per run; the identity limits keep their defaults everywhere but this dev override
     environment: &e2e-identity-limits
-      RATE_LIMIT_REGISTER_IP: "100/3600"
-      RATE_LIMIT_VERIFY_IP: "200/3600"
-      RATE_LIMIT_LOGIN_IP: "100/60"
+      RATE_LIMIT_REGISTER_IP: "5000/3600"
+      RATE_LIMIT_VERIFY_IP: "5000/3600"
+      RATE_LIMIT_LOGIN_IP: "1000/60"
       RATE_LIMIT_ANON_READ_IP: "2000/1"   # the e2e suite polls /live from one host address
   api-2:
     environment: *e2e-identity-limits
