@@ -62,6 +62,15 @@ export async function newAccount(api: APIRequestContext, name: string, role?: Ro
   return { email, password, name, id, token };
 }
 
+/** Reset an account's password through the mail link: every session is revoked (socket 4004). */
+export async function resetPassword(api: APIRequestContext, account: Account): Promise<string> {
+  await ok(api.post(`${API}/auth/forgot-password`, { data: { email: account.email } }));
+  const token = await mailToken(api, account.email, 'reset-password');
+  const password = `Pw-${tag()}-${tag()}-reset`;
+  await ok(api.post(`${API}/auth/reset-password`, { data: { token, password } }));
+  return password;
+}
+
 export async function login(api: APIRequestContext, email: string, password: string): Promise<string> {
   const r = await ok(api.post(`${API}/auth/login`, { data: { email, password } }));
   return String(((await r.json()) as { access_token: string }).access_token);

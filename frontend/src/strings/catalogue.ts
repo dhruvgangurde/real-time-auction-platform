@@ -427,6 +427,26 @@ export type Catalogue = {
   unknownError: string;
 };
 
+/**
+ * A sentence never renders with a value missing: every catalogue function returns '' when any
+ * argument is '' or NaN (an amount or time that is not known yet), so the UI shows nothing rather
+ * than "The first bid can be ." Wrapped functions keep their arity.
+ */
+export function guardSentences<T>(catalogue: T): T {
+  const walk = (value: unknown): unknown => {
+    if (typeof value === 'function') {
+      const sentence = value as (...args: unknown[]) => unknown;
+      const guarded = (...args: unknown[]) => (args.some((a) => a === '' || Number.isNaN(a)) ? '' : sentence(...args));
+      return Object.defineProperty(guarded, 'length', { value: sentence.length });
+    }
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, walk(inner)]));
+    }
+    return value;
+  };
+  return walk(catalogue) as T;
+}
+
 const StringsContext = createContext<Catalogue | null>(null);
 
 export function StringsProvider(props: { catalogue: Catalogue; children: ReactNode }) {

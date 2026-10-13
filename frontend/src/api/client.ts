@@ -113,8 +113,9 @@ export function createApi(deps: ApiDeps) {
   return {
     request,
 
-    async live(auctionId: string): Promise<LiveSnapshot> {
-      return parsed(await request('GET', `/auctions/${auctionId}/live`), parseLiveSnapshot);
+    /** anonymous: no token even when one is held (a revoked session polls the public view) */
+    async live(auctionId: string, anonymous = false): Promise<LiveSnapshot> {
+      return parsed(await request('GET', `/auctions/${auctionId}/live`, anonymous ? { auth: 'none' } : {}), parseLiveSnapshot);
     },
 
     async detail(auctionId: string): Promise<AuctionDetail> {

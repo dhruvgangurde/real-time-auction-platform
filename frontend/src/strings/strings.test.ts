@@ -54,3 +54,21 @@ test('interpolations take formatted amounts and counts', () => {
   expect(enIN.room.participants(1)).toContain('1');
   expect(enIN.nav.unread(2)).toBe('2 unread');
 });
+
+test('a catalogue sentence never renders with an amount, time or other value missing', () => {
+  const sentences: [string, (...args: unknown[]) => unknown][] = [];
+  const walk = (value: unknown, path: string): void => {
+    if (typeof value === 'function') sentences.push([path, value as (...args: unknown[]) => unknown]);
+    else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [key, inner] of Object.entries(value)) walk(inner, `${path}.${key}`);
+    }
+  };
+  walk(enIN, 'enIN');
+  expect(sentences.length).toBeGreaterThan(60);
+  for (const [path, sentence] of sentences) {
+    for (let i = 0; i < sentence.length; i += 1) {
+      const args = Array.from({ length: sentence.length }, (_, j) => (j === i ? '' : 'x'));
+      expect(sentence(...args), `${path} with argument ${i} missing`).toBe('');
+    }
+  }
+});

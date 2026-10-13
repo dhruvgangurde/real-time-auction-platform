@@ -76,9 +76,17 @@ export function createRoomSession(deps: SessionDeps) {
     emit();
   }
 
-  function startPolling(): void {
+  function startPolling(seed?: RoomState, anonymous = false): void {
     mode = 'polling';
-    const next = createRoomController({ auctionId: deps.auctionId, api: deps.api, socket: null, timers, hidden: () => document.hidden });
+    const api = anonymous ? { ...deps.api, live: (id: string) => deps.api.live(id, true) } : deps.api;
+    const next = createRoomController({
+      auctionId: deps.auctionId,
+      api,
+      socket: null,
+      timers,
+      hidden: () => document.hidden,
+      ...(seed === undefined ? {} : { initial: seed }),
+    });
     attach(next);
     void next.start();
   }
@@ -125,8 +133,11 @@ export function createRoomSession(deps: SessionDeps) {
 
   function switchToPolling(closedCode: number | null): void {
     if (mode === 'polling' || stopped) return;
+    // keep what the room showed; a revoked token (4004) or a refused one (4002) polls the public view
+    const last = controller?.getState();
     stopCurrent();
-    startPolling();
+    const seed = last === undefined ? undefined : { ...last, connection: 'polling' as const, subscribed: false, buffer: [], gapPending: false, pending: null };
+    startPolling(seed, closedCode === 4004 || closedCode === 4002);
     controller?.setConnection('polling', closedCode);
   }
 

@@ -1,10 +1,10 @@
 // English (India). Sentence case, plain verbs, the interface's voice (brief 10, section 14's
 // review checklist). Amounts arrive already formatted (money.ts), never as numbers.
-import type { Catalogue } from './catalogue';
+import { guardSentences, type Catalogue } from './catalogue';
 
 const plural = new Intl.PluralRules('en-IN');
 
-export const enIN = {
+export const enIN = guardSentences({
   locale: 'en-IN',
   app: {
     name: 'Real-Time Auction',
@@ -461,4 +461,4 @@ export const enIN = {
     4012: 'Live updates moved to another tab.',
   },
   unknownError: 'Something went wrong. Try again.',
-} satisfies Catalogue;
+} satisfies Catalogue);

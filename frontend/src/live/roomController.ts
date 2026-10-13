@@ -5,7 +5,7 @@
 // request_id rules (items 5, 13, 14). It exposes subscribe/getState for useSyncExternalStore.
 import type { Api, ApiError } from '../api/client';
 import { newRequestId, type BidRejected, type InboundFrame, type ProxyRejected } from '../lib/contract';
-import { initialRoom, roomReducer, type RoomAction, type RoomEffect, type Connection } from './room';
+import { initialRoom, roomReducer, type RoomAction, type RoomEffect, type RoomState, type Connection } from './room';
 import type { Socket, Timers } from './socket';
 
 export const POLL_MS = 2_000;
@@ -21,12 +21,14 @@ export type RoomDeps = {
   /** document.hidden: polling pauses while the tab is hidden (brief 11.5) */
   hidden: () => boolean;
   requestId?: () => string;
+  /** the state to start from (a switch to polling keeps what the room showed) */
+  initial?: RoomState;
 };
 
 export type RoomController = ReturnType<typeof createRoomController>;
 
 export function createRoomController(deps: RoomDeps) {
-  let state = initialRoom(deps.auctionId, deps.socket === null ? 'polling' : 'reconnecting');
+  let state = deps.initial ?? initialRoom(deps.auctionId, deps.socket === null ? 'polling' : 'reconnecting');
   const listeners = new Set<() => void>();
   const log: RoomAction[] = [];
   let refetching: Promise<void> | null = null;
