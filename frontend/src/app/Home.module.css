@@ -1,0 +1,14 @@
+.title {
+  font: var(--display-2);
+  letter-spacing: -0.01em;
+  margin: 0;
+  max-width: 24ch;
+  text-wrap: balance;
+}
+
+.lede {
+  font: var(--ui-lg);
+  color: var(--ink-2);
+  margin: 16px 0 0;
+  max-width: 60ch;
+}

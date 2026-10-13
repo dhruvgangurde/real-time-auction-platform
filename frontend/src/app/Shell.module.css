@@ -1,0 +1,84 @@
+/* The shell's header and layout, from the room mockup (design/mockups/room.html): a 72px header
+   on a rule, the mark in Spectral, the nav in Anek; 48px gutters on desktop, 16px on phones. */
+
+.wrap {
+  max-width: 1416px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 48px;
+  padding-right: 48px;
+}
+
+.header {
+  border-bottom: 1px solid var(--rule);
+}
+
+.header .wrap {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  height: 72px;
+}
+
+.mark {
+  font: 500 22px/1 var(--font-serif);
+  letter-spacing: -0.01em;
+  margin-right: auto;
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  gap: 28px;
+  font-weight: 500;
+}
+
+.nav a {
+  text-decoration: none;
+}
+
+.nav a[aria-current='page'] {
+  text-decoration: underline;
+  text-underline-offset: 6px;
+  text-decoration-thickness: 2px;
+}
+
+.main {
+  composes: wrap;
+  padding-top: 32px;
+  padding-bottom: 96px;
+}
+
+/* the skip link: visually hidden until it has focus (brief 11.4) */
+.skip {
+  position: absolute;
+  left: 16px;
+  top: -64px;
+  padding: 10px 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 4px;
+  font: var(--button);
+  text-decoration: none;
+  z-index: 50;
+}
+
+.skip:focus-visible {
+  top: 16px;
+}
+
+@media (max-width: 700px) {
+  .wrap {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .header .wrap {
+    height: 56px;
+    gap: 16px;
+  }
+
+  .nav {
+    gap: 16px;
+  }
+}
