@@ -194,7 +194,7 @@ def auction_closed_event(
 ) -> dict[str, Any]:
     """The room's last event (FR-62): outcome, final price and whether a reserve was met, never
     the reserve itself (BR-6). final_sequence_no equals the last bid's sequence, so clients
-    apply it regardless of the sequence rule."""
+    apply it regardless of the sequence rule. Published only by Closer.broadcast_closed."""
     return event(
         "auction_closed",
         auction_id=str(auction_id),
@@ -203,33 +203,6 @@ def auction_closed_event(
         reserve_met=reserve_met,
         final_sequence_no=final_sequence_no,
     )
-
-
-async def publish_auction_closed(
-    redis: Redis,
-    auction_id: UUID,
-    *,
-    outcome: str,
-    final_price: int | None,
-    reserve_met: bool | None,
-    final_sequence_no: int,
-) -> None:
-    """Administrator cancel; the closer goes through Closer._broadcast (once per marker)."""
-    payload = auction_closed_event(
-        auction_id,
-        outcome=outcome,
-        final_price=final_price,
-        reserve_met=reserve_met,
-        final_sequence_no=final_sequence_no,
-    )
-    try:
-        await redis.publish(room_channel(auction_id), json.dumps(payload))
-    except RedisError as exc:
-        # at-most-once: clients see the outcome from /live, served from Postgres once terminal
-        log.warning(
-            "auction_closed publish failed",
-            extra={"fields": {"auction_id": str(auction_id), "error": repr(exc)}},
-        )
 
 
 async def publish_notifications(redis: Redis, rows: Sequence[Any]) -> None:

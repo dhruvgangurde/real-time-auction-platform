@@ -105,8 +105,14 @@ class _Conflict(Exception):
 
 
 def reserve_met(auction: Auction) -> bool | None:
-    """For a settled auction: a reserve is met exactly when it sold (BR-5, BR-6)."""
-    return None if auction.reserve_price is None else auction.status == "closed_sold"
+    """None only without a reserve; otherwise whether it was met, never the reserve itself
+    (BR-5, BR-6). A settled auction met it exactly when it sold; a cancelled one reports its
+    committed price against it, as /live does."""
+    if auction.reserve_price is None:
+        return None
+    if auction.status in SETTLED:
+        return auction.status == "closed_sold"
+    return auction.current_price is not None and auction.current_price >= auction.reserve_price
 
 
 class Closer:
@@ -274,7 +280,7 @@ class Closer:
         try:
             flipped = await self._set_status(keys=keys[:1], args=["closing", auction.status, "0"])
             if flipped == "OK" or (flipped == "MISSING" and settled):
-                await self._broadcast(auction, settlement)
+                await self.broadcast_closed(auction, settlement.final_price)
             await self._cleanup(keys=keys)  # keeps anything still in use (cleanup_state.lua)
         except RedisError as exc:
             log.warning(
@@ -282,14 +288,15 @@ class Closer:
                 extra={"fields": {"auction_id": str(auction_id), "error": repr(exc)}},
             )
 
-    async def _broadcast(self, auction: Auction, settlement: Settlement) -> None:
-        """auction_closed at most once per marker lifetime (FR-62), from the committed rows,
-        never from live state. A Redis error loses this one event (pub/sub is at-most-once;
-        clients read the outcome from /live) and never fails the committed close."""
+    async def broadcast_closed(self, auction: Auction, final_price: int | None) -> None:
+        """auction_closed at most once per marker lifetime (FR-62), for a close and for an
+        administrator cancel, after their commit and from the committed rows, never from live
+        state. A Redis error loses this one event (pub/sub is at-most-once; clients read the
+        outcome from /live) and never fails what was committed."""
         payload = live_events.auction_closed_event(
             auction.id,
             outcome=auction.status,
-            final_price=settlement.final_price,
+            final_price=final_price,
             reserve_met=reserve_met(auction),
             final_sequence_no=auction.bid_count,
         )

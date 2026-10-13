@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.errors import AppError
 from app.services import admin as admin_module
 from app.services.bidding import BidService
-from app.services.closing import Closer, Outcome
+from app.services.closing import Closer, Outcome, closed_sent_key
 from app.services.denylist import resync
 from app.services.live_events import user_channel
 from app.services.live_state import from_ms, outbox_key, proxies_key, state_key
@@ -280,6 +280,68 @@ async def test_admin_cancel_of_live_auction(
     )
     assert not await redis.exists(state_key(auction_id), proxies_key(auction_id))
     assert (await bid_service.place_bid(auction_id, b1, 20_000, "b")).code == "AUCTION_CLOSED"
+
+
+async def test_admin_cancel_retry_broadcasts_once(
+    api: AsyncClient,
+    make_user: Any,
+    ended: Ended,
+    admin_service: admin_module.AdminService,
+    redis: Redis,
+) -> None:
+    """FR-62, BR-9: the cancel's broadcast step runs twice for one auction (a retried cancel);
+    the room gets one auction_closed, through the same closed_sent marker as a close."""
+    _, token = await make_user("admin")
+    auction_id = await ended(status="live", end_s=3600)
+    async with Room(auction_id) as room:
+        response = await api.post(
+            f"/api/v1/admin/auctions/{auction_id}/cancel", json=REASON, headers=bearer(token)
+        )
+        assert response.status_code == 200, response.text
+        await admin_service._after_cancel(auction_id)  # the broadcast step again
+    assert [(e["type"], e["outcome"]) for e in room.events] == [("auction_closed", "cancelled")]
+    assert await redis.ttl(closed_sent_key(auction_id)) > 0
+
+
+async def test_cancel_payload_shape(
+    api: AsyncClient,
+    make_user: Any,
+    ended: Ended,
+    bid_service: BidService,
+    db: asyncpg.Connection,
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """FR-62, BR-6: a cancel sends the close payload's keys with outcome cancelled and no final
+    price; reserve_met is the committed price against the reserve, as the auction detail shows
+    it, and no key naming the reserve carries an amount."""
+    _, token = await make_user("admin")
+    (b1,) = await _ids(db, await make_user())
+    closed_id = await ended(bids=[(b1, 10_000)])
+    async with Room(closed_id) as room:
+        assert await Closer(redis, sessions).close(closed_id) is Outcome.SETTLED
+    (closed,) = room.events
+
+    cancelled_id = await ended(status="live", end_s=3600, reserve=10_000)
+    assert (await bid_service.place_bid(cancelled_id, b1, 10_500, "a")).accepted
+    async with Room(cancelled_id) as room:
+        response = await api.post(
+            f"/api/v1/admin/auctions/{cancelled_id}/cancel", json=REASON, headers=bearer(token)
+        )
+        assert response.status_code == 200, response.text
+    (cancelled,) = room.events
+
+    assert cancelled.keys() == closed.keys()
+    assert (cancelled["outcome"], cancelled["final_price"], cancelled["final_sequence_no"]) == (
+        "cancelled",
+        None,
+        1,
+    )
+    assert cancelled["reserve_met"] is True  # 10,500 reached the reserve (drained before commit)
+    detail = await api.get(f"/api/v1/auctions/{cancelled_id}", headers=bearer(token))
+    assert detail.json()["reserve_met"] is cancelled["reserve_met"]
+    amounts = [v for k, v in cancelled.items() if "reserve" in k and type(v) is int]
+    assert amounts == []  # BR-6
 
 
 async def test_admin_cancel_retry_after_failure_between_redis_and_postgres(

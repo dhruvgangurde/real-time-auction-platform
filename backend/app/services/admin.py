@@ -29,7 +29,6 @@ from app.repositories import (
     SettlementRepository,
     UserRepository,
 )
-from app.services import live_events
 from app.services.auth import CurrentUser
 from app.services.closing import TERMINAL, Closer, Outcome, settlement_dict
 from app.services.ledger import persist_outbox
@@ -197,16 +196,9 @@ class AdminService:
         return {"auction_id": str(auction_id), "status": "cancelled"}
 
     async def _after_cancel(self, auction_id: UUID) -> None:
-        bid_count = (await self._load(auction_id)).bid_count
+        auction = await self._load(auction_id)  # the committed row: cancelled
         keys = [state_key(auction_id), outbox_key(auction_id), proxies_key(auction_id)]
-        await live_events.publish_auction_closed(
-            self._redis,
-            auction_id,
-            outcome="cancelled",
-            final_price=None,
-            reserve_met=None,
-            final_sequence_no=bid_count,
-        )
+        await self._closer.broadcast_closed(auction, final_price=None)  # once per marker (FR-62)
         try:
             await self._cleanup(keys=keys)  # Redis says cancelled, so nothing is kept
         except RedisError as exc:

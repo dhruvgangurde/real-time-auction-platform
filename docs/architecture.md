@@ -61,7 +61,7 @@ Only **live and closing** auctions have live state (D2). `init_live_state` refus
 | `auction:{id}:bids:dead` | stream | Dead letter for `SEQUENCE_COLLISION` entries (also written to `audit_log`). |
 | `auction:{id}:req:{bidder}:{request_id}` | string, 10 min TTL | Stored acceptance for idempotent retries. Only acceptances are stored. |
 | `auction:{id}:preq:{bidder}:{request_id}` | string, 10 min TTL | Stored proxy result (same pattern, separate namespace). |
-| `closed_sent:{id}` | string, 24 h TTL | `auction_closed` already broadcast (FR-62). Set with the publish in `publish_closed_once.lua`; outside the `auction:{id}:` prefix, so live-state cleanup never removes it. Losing it allows at most one more broadcast. |
+| `closed_sent:{id}` | string, 24 h TTL | `auction_closed` already broadcast, by a close or an administrator cancel (FR-62). Set with the publish in `publish_closed_once.lua`; outside the `auction:{id}:` prefix, so live-state cleanup never removes it. Losing it allows at most one more broadcast. |
 
 Status values mirror Postgres. Money is integer paise as decimal strings; every number the script returns is a string (cjson keeps 14 digits). `arm_seq` in the state hash is a counter incremented by every set or raise; equal maxima are won by the lower `arm_seq`, never by wall-clock time.
 
@@ -152,7 +152,7 @@ Every outbound event carries `server_time_ms`. Clients derive countdowns from `e
 | submitter | `error` | `code`, `message`, `request_id?` |
 | room | `bid_placed` | `auction_id`, `sequence_no`, `amount`, `bidder_alias`, `bid_type`, `end_time_ms`, `extended`, `extension_count` (one per accepted bid, automatic bids included) |
 | room | `timer_extended` | `auction_id`, `sequence_no`, `end_time_ms`, `extension_count`, `final` (true at the 10th extension, FR-54) |
-| room | `auction_closed` | `auction_id`, `outcome` (`closed_sold`, `closed_no_sale` or `cancelled`), `final_price` (null unless sold), `reserve_met` (null without a reserve and on cancel; never the reserve itself, BR-6), `final_sequence_no` (the last bid's sequence; 0 without bids). Sent once per auction (FR-62) |
+| room | `auction_closed` | `auction_id`, `outcome` (`closed_sold`, `closed_no_sale` or `cancelled`), `final_price` (null unless sold), `reserve_met` (null only without a reserve; on cancel, whether the committed price reached it, as the auction detail shows; never the reserve itself, BR-6), `final_sequence_no` (the last bid's sequence; 0 without bids). Sent once per auction (FR-62) |
 | room (local) | `presence` | `auction_id`, `participants`, `sequence_no`, `end_time_ms` |
 | user | `outbid_notice` | `auction_id`, `current_price`, `sequence_no` |
 | user | `notification` | `id`, `notification_type`, `auction_id`, `payload`, `created_at_ms`: a stored notification just created (FR-71); not sent for `outbid`, which `outbid_notice` already delivers live |
@@ -266,7 +266,7 @@ pending_payment, paid, no_sale. Only pending_payment to paid exists (a verified 
 
 A Redis status already `closing` at step 1 counts as flipped, so the call can be repeated after a failure between the flip and the commit. A closing auction skips steps 1 and 3's transition but still gets the audit row.
 
-**Admin cancel (BR-9).** For a live auction: `set_status.lua` live to cancelled (bids refused from then on), drain, then one transaction: conditional live to cancelled, maxima deactivated, audit with actor and reason; after the commit `auction_closed {outcome: cancelled}` and the live state is removed. A Redis status already `cancelled` counts as flipped (retry after a failure). Draft or scheduled: the transition and audit only; an auction that went live meanwhile is handled as live.
+**Admin cancel (BR-9).** For a live auction: `set_status.lua` live to cancelled (bids refused from then on), drain, then one transaction: conditional live to cancelled, maxima deactivated, audit with actor and reason; after the commit `auction_closed {outcome: cancelled}` from the committed row through `Closer.broadcast_closed` (the same `closed_sent` marker as a close, so a retried cancel sends it once) and the live state is removed. A Redis status already `cancelled` counts as flipped (retry after a failure). Draft or scheduled: the transition and audit only; an auction that went live meanwhile is handled as live.
 
 **Operator procedure: Redis sequence ahead of the ledger.** The close defers on every run and `UNRESOLVED_CLOSE` fires after the grace period (`SEQUENCE_GAP` usually fired earlier). Such an auction is never settled automatically. The operator:
 1. Takes the auction id from the alert; checks the outbox and dead-letter streams (`XLEN`/`XRANGE auction:{<id>}:bids` and `:bids:dead`) and the gap: Redis `sequence` against `SELECT max(sequence_no) FROM bids WHERE auction_id = ...`.
