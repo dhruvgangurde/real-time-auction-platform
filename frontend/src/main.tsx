@@ -1,6 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import './styles/tokens.css';
+import './styles/fonts.css';
+import './styles/base.css';
+
 function App() {
   return <main id="main" />;
 }

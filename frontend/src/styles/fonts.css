@@ -1,0 +1,79 @@
+/* Self-hosted OFL subsets (brief 3.4), Latin plus ₹ (U+20B9) and № (U+2116), each family with
+   its OFL.txt beside it under public/fonts. Spectral Regular and Anek Latin are preloaded in
+   index.html; the other Spectral weights and Fragment Mono load on use.
+
+   The fallback faces carry size-adjust and metric overrides measured with fontTools against the
+   real files (public/fonts/README.md has the recipe), so the swap from the local face to the web
+   face does not shift layout. Each fallback is its own family name: a browser skips a local()
+   that does not resolve and moves on to the next family in the stack. */
+
+@font-face {
+  font-family: 'Spectral';
+  src: url('/fonts/spectral/Spectral-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Spectral';
+  src: url('/fonts/spectral/Spectral-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Spectral';
+  src: url('/fonts/spectral/Spectral-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  /* instanced to width 75-100 and weight 400-700, the ranges the interface uses */
+  font-family: 'Anek Latin';
+  src: url('/fonts/anek-latin/AnekLatin.woff2') format('woff2');
+  font-weight: 400 700;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Fragment Mono';
+  src: url('/fonts/fragment-mono/FragmentMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* fallbacks, metric-matched to the web faces */
+
+@font-face {
+  font-family: 'Spectral Fallback';
+  src: local('Georgia');
+  size-adjust: 97.15%;
+  ascent-override: 109.01%;
+  descent-override: 47.66%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'Anek Latin Fallback Segoe';
+  src: local('Segoe UI');
+  size-adjust: 93.93%;
+  ascent-override: 95.82%;
+  descent-override: 21.29%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'Anek Latin Fallback Roboto';
+  src: local('Roboto');
+  size-adjust: 93.65%;
+  ascent-override: 96.1%;
+  descent-override: 21.36%;
+  line-gap-override: 0%;
+}

@@ -1,0 +1,64 @@
+/* Colour tokens, exactly brief section 4.1. The tokens are the only colours in the app;
+   components never use raw hex. Marigold is a fill only, never text, border or line (4.3).
+   Light is the default; dark follows prefers-color-scheme unless [data-theme="light"] is set;
+   [data-theme="dark"] forces dark. src/styles/tokens.test.ts checks every value against the
+   brief's table. */
+
+:root {
+  color-scheme: light;
+  --paper: #FFFFFF;
+  --paper-2: #F3F4F1;
+  --plate: #E8E9E5;
+  --ink: #162036;
+  --ink-2: #4A5466;
+  --ink-3: #5B6476;
+  --rule: #D5DAE2;
+  --rule-strong: #808B9D;
+  --marigold: #F5B400;
+  --on-marigold: #162036;
+  --red: #B42318;
+  --red-wash: #FCEBE9;
+  --green: #0F6B4B;
+  --green-wash: #E6F2EC;
+  --focus: #1D4ED8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #0D1424;
+    --paper-2: #131C2F;
+    --plate: #1A2438;
+    --ink: #E9EDF4;
+    --ink-2: #B3BDCC;
+    --ink-3: #929DB0;
+    --rule: #26324A;
+    --rule-strong: #6A7891;
+    --marigold: #FFC21A;
+    --on-marigold: #0D1424;
+    --red: #FF8B7B;
+    --red-wash: #3A1A1D;
+    --green: #5CD3A2;
+    --green-wash: #12291F;
+    --focus: #8DB2FF;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0D1424;
+  --paper-2: #131C2F;
+  --plate: #1A2438;
+  --ink: #E9EDF4;
+  --ink-2: #B3BDCC;
+  --ink-3: #929DB0;
+  --rule: #26324A;
+  --rule-strong: #6A7891;
+  --marigold: #FFC21A;
+  --on-marigold: #0D1424;
+  --red: #FF8B7B;
+  --red-wash: #3A1A1D;
+  --green: #5CD3A2;
+  --green-wash: #12291F;
+  --focus: #8DB2FF;
+}

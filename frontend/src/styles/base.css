@@ -1,0 +1,80 @@
+/* Base styles: reset, page colours, the focus ring, the type scale (brief 3.2) and the few
+   utilities every screen shares. Component styles live in CSS Modules beside their component. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+html {
+  /* type scale (brief 3.2): size / line height; mobile values first, desktop from 700px */
+  --font-serif: 'Spectral', 'Spectral Fallback', Georgia, serif;
+  --font-ui: 'Anek Latin', 'Anek Latin Fallback Segoe', 'Anek Latin Fallback Roboto', 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Fragment Mono', ui-monospace, Menlo, Consolas, monospace;
+  --display-1: 500 44px/45px var(--font-serif);
+  --display-2: 500 48px/52px var(--font-serif);
+  --title-1: 400 36px/42px var(--font-serif);
+  --title-2: 400 24px/30px var(--font-serif);
+  --title-3: 400 21px/28px var(--font-serif);
+  --body-serif: 400 18px/28px var(--font-serif);
+  --price-xl: 700 72px/68px var(--font-ui);
+  --price-m: 700 48px/48px var(--font-ui);
+  --clock: 600 36px/36px var(--font-ui);
+  --ui-lg: 400 21px/32px var(--font-ui);
+  --ui-md: 400 16px/24px var(--font-ui);
+  --ui-sm: 400 14px/20px var(--font-ui);
+  --label: 500 15px/20px var(--font-ui);
+  --button: 600 16px/20px var(--font-ui);
+  --mono: 400 15px/22px var(--font-mono);
+  --price-width: 78; /* Anek width axis for prices; 75 above eight figures (brief 3.3) */
+}
+
+@media (min-width: 700px) {
+  html {
+    --display-1: 500 72px/72px var(--font-serif);
+    --price-xl: 700 128px/120px var(--font-ui);
+  }
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: var(--ui-md);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* every price, sequence number, countdown and time (brief 3.3) */
+.tabular {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* the one focus treatment: 2px --focus, 2px offset (brief 11.4) */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+}
+
+/* visually hidden, still read by assistive technology (live regions, labels) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
