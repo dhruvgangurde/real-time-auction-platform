@@ -14,7 +14,7 @@ export default defineConfig({
       '/media': { target: 'http://localhost:8011' },
     },
   },
-  build: { outDir: 'dist', sourcemap: false },
+  build: { outDir: 'dist', sourcemap: false, manifest: true }, // the manifest feeds scripts/chunk-budget.mjs
   test: {
     environment: 'node',
     css: true,
