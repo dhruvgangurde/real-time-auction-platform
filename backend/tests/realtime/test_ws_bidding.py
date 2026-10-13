@@ -6,6 +6,7 @@ import asyncpg
 import pytest
 from redis.asyncio import Redis
 
+from app.services.bidding import BidService
 from app.services.live_events import alias
 from app.services.live_state import state_key
 from tests.auth.conftest import PASSWORD
@@ -252,11 +253,18 @@ async def test_every_bid_decision_is_logged_once(
     assert str(SECRET_MAX) not in caplog.text and alice_id != bob_id
 
 
+@pytest.mark.parametrize("first", ["place_bid", "set_proxy"])
 async def test_seller_bid_refused_over_websocket(
-    node: Instance, make_bidder, auction, db: asyncpg.Connection
+    node: Instance,
+    make_bidder,
+    auction,
+    db: asyncpg.Connection,
+    bid_service: BidService,
+    first: str,
 ) -> None:
-    """Decision 2026-10-13: the seller gets bid_rejected / proxy_rejected SELLER_CANNOT_BID;
-    the room sees nothing."""
+    """Decision 2026-10-13: the seller gets bid_rejected / proxy_rejected SELLER_CANNOT_BID in
+    either order (the first with the seller lookup cold, the second warm); the maximum is never
+    echoed (BR-7) and the room sees nothing."""
     a = await auction(start_price=10_000, min_increment=500)
     seller_id, seller_token = await make_bidder()
     await db.execute("UPDATE auctions SET seller_id = $2 WHERE id = $1", a, seller_id)
@@ -264,12 +272,19 @@ async def test_seller_bid_refused_over_websocket(
     watcher = await Client.open(node.ws, token=(await make_bidder())[1])
     await seller.subscribe(a)
     await watcher.subscribe(a)
-    await seller.send(_bid(a, 10_000, "own"))
-    rejected = await seller.expect("bid_rejected", request_id="own")
-    assert rejected["code"] == "SELLER_CANNOT_BID"
-    await seller.send(
-        {"type": "set_proxy", "auction_id": str(a), "max_amount": 50_000, "request_id": "max"}
-    )
-    refused = await seller.expect("proxy_rejected", request_id="max")
-    assert refused["code"] == "SELLER_CANNOT_BID" and "max_amount" not in refused
+    frames = {
+        "place_bid": (_bid(a, 10_000, "own"), "bid_rejected", "own"),
+        "set_proxy": (
+            {"type": "set_proxy", "auction_id": str(a), "max_amount": 50_000, "request_id": "max"},
+            "proxy_rejected",
+            "max",
+        ),
+    }
+    assert a not in bid_service._sellers  # cold
+    for kind in (first, "set_proxy" if first == "place_bid" else "place_bid"):
+        message, reply, request_id = frames[kind]
+        await seller.send(message)
+        refused = await seller.expect(reply, request_id=request_id)
+        assert refused["code"] == "SELLER_CANNOT_BID" and "max_amount" not in refused
+        assert bid_service._sellers[a] == seller_id  # warm from here on
     assert not [f for f in watcher.frames if f.get("type") == "bid_placed"]

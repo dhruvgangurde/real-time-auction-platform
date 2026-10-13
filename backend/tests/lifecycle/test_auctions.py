@@ -18,6 +18,7 @@ from app.core.redis import create_redis
 from app.core.storage import LocalStorage
 from app.services.auctions import AuctionService
 from app.services.auth import AuthService, CurrentUser
+from app.services.bidding import BidService
 from app.services.denylist import Denylist
 from app.services.users import UserService
 from tests.auth.conftest import PASSWORD, FakeClock
@@ -387,18 +388,25 @@ async def test_starting_price_below_gateway_minimum_refused_on_edit(
     assert ok.status_code == 200
 
 
-async def test_seller_bid_refused_over_rest(api: AsyncClient, make_user, seeded) -> None:
-    """Decision 2026-10-13: SELLER_CANNOT_BID (403) on the REST fallback for bids and maxima."""
+@pytest.mark.parametrize("first", ["bids", "proxy"])
+async def test_seller_bid_refused_over_rest(
+    api: AsyncClient, make_user, seeded, bid_service: BidService, first: str
+) -> None:
+    """Decision 2026-10-13: SELLER_CANNOT_BID (403) on the REST fallback for bids and maxima, in
+    either order: the first with the seller lookup cold, the second warm (cached)."""
     seller_id, token = await make_user("seller")
     auction_id = await seeded(seller_id, "live", start_in_s=-60)
-    for path, body in (
-        ("bids", {"amount": 10_000, "request_id": "own-1"}),
-        ("proxy", {"max_amount": 50_000, "request_id": "own-2"}),
-    ):
+    bodies = {
+        "bids": {"amount": 10_000, "request_id": "own-1"},
+        "proxy": {"max_amount": 50_000, "request_id": "own-2"},
+    }
+    assert auction_id not in bid_service._sellers  # cold
+    for path in (first, "proxy" if first == "bids" else "bids"):
         r = await api.post(
-            f"/api/v1/auctions/{auction_id}/{path}", json=body, headers=bearer(token)
+            f"/api/v1/auctions/{auction_id}/{path}", json=bodies[path], headers=bearer(token)
         )
         assert (r.status_code, _code(r)) == (403, "SELLER_CANNOT_BID")
+        assert bid_service._sellers[auction_id] == seller_id  # warm from here on
 
 
 async def test_image_upload_body_is_declared_in_openapi(api: AsyncClient) -> None:

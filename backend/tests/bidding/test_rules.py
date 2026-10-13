@@ -152,6 +152,7 @@ async def test_invalid_input_never_reaches_redis(
     assert await redis.dbsize() == 0
 
 
+@pytest.mark.parametrize("first", ["bid", "proxy"])
 async def test_seller_cannot_bid_or_arm_a_maximum_on_own_auction(
     service: BidService,
     auction,
@@ -159,17 +160,26 @@ async def test_seller_cannot_bid_or_arm_a_maximum_on_own_auction(
     redis: Redis,
     db: asyncpg.Connection,
     caplog: pytest.LogCaptureFixture,
+    first: str,
 ) -> None:
     """Decision 2026-10-13 (no shill bidding): the seller's bid and maximum are refused with
-    SELLER_CANNOT_BID before arbitration; nothing reaches the live state or the outbox; the
-    refusal is logged like any bid decision (FR-44). Another bidder is unaffected."""
+    SELLER_CANNOT_BID before arbitration, in either order: the first with the seller lookup cold
+    (read from Postgres), the second warm (cached). Nothing reaches the live state or the
+    outbox; each refusal is logged like any bid decision (FR-44). Another bidder is unaffected."""
     a = await auction()
     seller = await db.fetchval("SELECT seller_id FROM auctions WHERE id = $1", a)
+    calls = {
+        "bid": lambda: service.place_bid(a, seller, 10_000, "own-bid"),
+        "proxy": lambda: service.set_proxy(a, seller, 50_000, "own-max"),
+    }
+    second = "proxy" if first == "bid" else "bid"
+    assert a not in service._sellers  # cold
     with caplog.at_level(logging.INFO, logger="bidding"):
-        bid = await service.place_bid(a, seller, 10_000, "own-bid")
-        proxy = await service.set_proxy(a, seller, 50_000, "own-max")
-    assert (bid.accepted, bid.code) == (False, "SELLER_CANNOT_BID")
-    assert (proxy.armed, proxy.code) == (False, "SELLER_CANNOT_BID")
+        results = {first: await calls[first]()}
+        assert service._sellers[a] == seller  # warm
+        results[second] = await calls[second]()
+    assert (results["bid"].accepted, results["bid"].code) == (False, "SELLER_CANNOT_BID")
+    assert (results["proxy"].armed, results["proxy"].code) == (False, "SELLER_CANNOT_BID")
     assert (await redis.hget(state_key(a), "sequence")) == "0"
     assert await redis.xlen(outbox_key(a)) == 0
     assert await redis.hlen(proxies_key(a)) == 0
