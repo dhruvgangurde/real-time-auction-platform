@@ -12,6 +12,7 @@ services:
       RATE_LIMIT_REGISTER_IP: "100/3600"
       RATE_LIMIT_VERIFY_IP: "200/3600"
       RATE_LIMIT_LOGIN_IP: "100/60"
+      RATE_LIMIT_ANON_READ_IP: "2000/1"   # the e2e suite polls /live from one host address
   api-2:
     environment: *e2e-identity-limits
   postgres:

@@ -25,6 +25,15 @@ async function ok(call: Promise<APIResponse>): Promise<APIResponse> {
 
 export const bearer = (a: Account) => ({ authorization: `Bearer ${a.token}` });
 
+/** Sign in through the SPA so the browser context holds the app's own session and socket. */
+export async function signInUi(page: import('@playwright/test').Page, account: Account): Promise<void> {
+  await page.goto('/sign-in');
+  await page.getByLabel('Email').fill(account.email);
+  await page.getByLabel('Password').fill(account.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.waitForURL('http://localhost:8011/');
+}
+
 /** The token from the newest Mailpit message to this address whose text links to `path`. */
 export async function mailToken(api: APIRequestContext, email: string, path: 'verify-email' | 'reset-password'): Promise<string> {
   const pattern = new RegExp(`/${path}#token=([A-Za-z0-9_-]+)`);
@@ -141,4 +150,21 @@ export async function restBid(api: APIRequestContext, account: Account, id: stri
 
 export async function restProxy(api: APIRequestContext, account: Account, id: string, maxAmount: number): Promise<APIResponse> {
   return api.post(`${API}/auctions/${id}/proxy`, { headers: bearer(account), data: { max_amount: maxAmount, request_id: `e2e-${tag()}${tag()}` } });
+}
+
+/** Wait until the auction is within its antisnipe threshold of the end, then bid to extend it. */
+export async function bidInLastWindow(api: APIRequestContext, account: Account, id: string, amount: number, thresholdS: number): Promise<void> {
+  const until = Date.now() + 120_000;
+  while (Date.now() < until) {
+    const s = await live(api, id);
+    const remaining = Number(s.end_time_ms) - Number(s.server_time_ms);
+    if (s.status !== 'live') throw new Error(`auction ${id} is ${String(s.status)}, not live`);
+    if (remaining <= thresholdS * 1000) {
+      const r = await restBid(api, account, id, amount);
+      if (!r.ok()) throw new Error(`extend bid -> ${r.status()}: ${await r.text()}`);
+      return;
+    }
+    await new Promise((res) => setTimeout(res, 1000));
+  }
+  throw new Error(`auction ${id} never entered its last ${thresholdS}s`);
 }
