@@ -150,7 +150,6 @@ export type Catalogue = {
       waiting: string;
       youLeadWaiting: (seq: number) => string;
       reserveMet: string;
-      reserveMetWith: (seq: number) => string;
       reserveNotMet: string;
       hasReserve: string;
     };

@@ -92,7 +92,6 @@ export const enIN = {
       waiting: 'Waiting for the result.',
       youLeadWaiting: (seq) => `You lead with bid №${seq}. Waiting for the result.`,
       reserveMet: 'Reserve met',
-      reserveMetWith: (seq) => `Reserve met with bid №${seq}`,
       reserveNotMet: 'Reserve not met.',
       hasReserve: 'This lot has a reserve.',
     },

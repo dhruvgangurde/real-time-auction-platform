@@ -47,14 +47,6 @@ export function PriceBlock({
     setPrevText(text);
     setTick(prevText === '' ? null : { from: changedFrom(prevText, text), key: state.sequence });
   }
-  // the bid that met the reserve, while this room stays open
-  const [prevMet, setPrevMet] = useState(state.reserveMet);
-  const [metAt, setMetAt] = useState<number | null>(null);
-  if (prevMet !== state.reserveMet) {
-    setPrevMet(state.reserveMet);
-    setMetAt(prevMet === false && state.reserveMet === true ? state.sequence : null);
-  }
-
   const seq = state.sequence;
   const ext = state.extensionCount;
   let box = styles.priceBox;
@@ -122,7 +114,7 @@ export function PriceBlock({
       reserve = (
         <div className={styles.reserveMet}>
           <Check />
-          {metAt !== null ? r.reserveMetWith(metAt) : r.reserveMet}
+          {r.reserveMet}
         </div>
       );
     } else {

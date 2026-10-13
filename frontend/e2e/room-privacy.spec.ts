@@ -66,4 +66,7 @@ test('bob never sees the reserve amount or alice’s maximum, anywhere', async (
   expect(errors).toEqual([]);
   const hits = seen.filter((line) => SECRETS.some((s) => line.includes(s)));
   expect(hits, hits.slice(0, 5).join('\n---\n')).toEqual([]);
+  // fix 3 (BR-6): a bidder sees only "Reserve met", never which bid met it ("met with/at bid №N")
+  const metLeaks = seen.filter((line) => /met (with|at) bid/i.test(line));
+  expect(metLeaks, metLeaks.slice(0, 3).join(' / ')).toEqual([]);
 });
