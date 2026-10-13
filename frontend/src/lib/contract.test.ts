@@ -161,7 +161,7 @@ describe('REST guards', () => {
       title: 'K1000',
       description: 'A camera',
       category: { id: 3, name: 'Cameras', slug: 'cameras', parent_id: 1 },
-      images: [{ id: 'i1', url: '/media/x.jpg', position: 0 }],
+      images: [{ id: 1, url: '/media/x.jpg', position: 0 }],
       seller: { id: 's1', name: 'Demo seller' },
       start_time_ms: T - 1000,
       original_end_time_ms: 1791889807063,

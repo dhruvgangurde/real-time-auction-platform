@@ -32,19 +32,27 @@ export function Shell() {
             {s.app.name}
           </Link>
           <nav className={styles.nav} aria-label={s.app.mainNav}>
-            <NavLink to="/auctions">{s.nav.live}</NavLink>
+            <NavLink className={() => styles.deskOnly} to="/auctions">
+              {s.nav.live}
+            </NavLink>
             {signedIn ? (
               <>
-                <NavLink to="/watchlist">{s.nav.watchlist}</NavLink>
-                <NavLink to="/notifications">{s.nav.notifications}</NavLink>
+                <NavLink className={() => styles.deskOnly} to="/watchlist">
+                  {s.nav.watchlist}
+                </NavLink>
+                <NavLink className={() => styles.deskOnly} to="/notifications">
+                  {s.nav.notifications}
+                </NavLink>
                 <NavLink to="/account">{me.data?.full_name ?? s.nav.account}</NavLink>
                 <Suspense fallback={null}>
-                  <SignOutButton className={styles.signOut} />
+                  <SignOutButton className={`${styles.signOut} ${styles.deskOnly}`} />
                 </Suspense>
               </>
             ) : (
               <>
-                <NavLink to="/how-it-works">{s.nav.how}</NavLink>
+                <NavLink className={() => styles.deskOnly} to="/how-it-works">
+                  {s.nav.how}
+                </NavLink>
                 <NavLink to="/sign-in">{s.nav.signIn}</NavLink>
               </>
             )}

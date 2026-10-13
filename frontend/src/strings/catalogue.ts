@@ -114,7 +114,10 @@ export type Catalogue = {
   };
   /** the room's regions (brief 9.3; copy from design/mockups/room.html) */
   roomUi: {
+    labels: { live: string; lot: string; crumbs: string; help: string };
+    units: { minutes: (n: number) => string; seconds: (n: number) => string; minute: string };
     status: {
+      connecting: string;
       connected: (n: number) => string;
       polling: (n: number) => string;
       otherTab: string;
@@ -142,7 +145,7 @@ export type Catalogue = {
       wonLine: (seq: number, time: string, extensions: number) => string;
       lostLine: (seq: number, time: string, extensions: number, yourHighest: string | null) => string;
       noSaleLine: (time: string, seq: number) => string;
-      cancelledLine: (time: string, seq: number) => string;
+      cancelledLine: (seq: number) => string;
       waiting: string;
       youLeadWaiting: (seq: number) => string;
       reserveMet: string;
@@ -152,21 +155,20 @@ export type Catalogue = {
     };
     clock: {
       ends: (time: string) => string;
-      lastMinute: (extension: string) => string;
-      extendedWhy: (extension: string, n: number) => string;
+      endsLabel: string;
+      timeStop: (time: string) => string;
+      lastMinute: (window: string, extension: string) => string;
+      extendedWhy: (extension: string, window: string, n: number) => string;
+      extendedShort: (n: number) => string;
       cap: (time: string) => string;
       closing: string;
       mayExtended: string;
       untilOpens: (opens: string, ends: string) => string;
-      ended: string;
-      endedAt: (time: string, extensions: number) => string;
-      cancelled: string;
-      cancelledAt: (time: string) => string;
-      rulerLabel: (ends: string) => string;
+      rulerLabel: (ends: string, window: string) => string;
       now: string;
       rulerEnds: (time: string) => string;
       rulerWas: (time: string) => string;
-      keyLastMinute: (extension: string) => string;
+      keyLastMinute: (window: string, extension: string) => string;
       keyAdded: (extension: string, seq: number) => string;
     };
     ledger: {
@@ -177,12 +179,14 @@ export type Catalogue = {
       amount: string;
       decidedAt: string;
       you: string;
+      pendingSeq: string;
       byMaximum: string;
       sending: string;
       checking: string;
       none: string;
     };
     lot: {
+      listing: string;
       demo: string;
       category: string;
       seller: string;
@@ -195,7 +199,7 @@ export type Catalogue = {
       reserveNo: string;
       window: (start: string, end: string) => string;
       risingBy: (start: string, increment: string) => string;
-      softCloseText: (extension: string) => string;
+      softCloseText: (window: string, extension: string) => string;
       photoAlt: (title: string) => string;
     };
     banner: {
@@ -215,8 +219,8 @@ export type Catalogue = {
     open: (startPrice: string, endTime: string) => string;
     notPlaced: (reason: string) => string;
     minimumNow: (amount: string) => string;
-    extended: (minutes: number, n: number, endTime: string) => string;
-    capReached: (minutes: number, endTime: string) => string;
+    extended: (span: string, window: string, n: number, endTime: string) => string;
+    capReached: (span: string, endTime: string) => string;
     closing: (endTime: string) => string;
     won: (amount: string) => string;
     sold: (amount: string) => string;
@@ -227,6 +231,9 @@ export type Catalogue = {
     signedOut: string;
     maxSet: (amount: string, leading: boolean) => string;
     maxReached: (amount: string, outbidAt: string, minNext: string) => string;
+    /** countdown milestones at 5 min, 1 min, 30 s and 10 s (brief 11.4) */
+    minutesLeft: (n: number) => string;
+    secondsLeft: (n: number) => string;
   };
   common: {
     loading: string;

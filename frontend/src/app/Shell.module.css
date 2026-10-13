@@ -104,3 +104,11 @@
     gap: 16px;
   }
 }
+
+/* on phones the header stays one line: the mockup's compact header shows only the account or
+   sign-in affordance, so the secondary links are desktop-only (brief 5, design/mockups/room.html) */
+@media (max-width: 700px) {
+  .deskOnly {
+    display: none;
+  }
+}

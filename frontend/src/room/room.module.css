@@ -1,0 +1,706 @@
+/* The room (brief 9.3, 5, 6), from design/mockups/room.html: seven regions on a 7/5 grid on
+   desktop, the live column first on phones (NFR-35). Every colour is a token; marigold is a
+   fill only (4.3). Motion is reserved for live moments and switches off under reduced motion. */
+
+.crumbs {
+  display: flex;
+  gap: 8px;
+  padding: 0;
+  margin: -12px 0 0;
+  list-style: none;
+  font: var(--ui-sm);
+  font-size: 15px;
+  color: var(--ink-3);
+}
+
+.crumbs li + li::before {
+  content: '/';
+  margin-right: 8px;
+}
+
+.crumbs a {
+  text-decoration: none;
+}
+
+.banner {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  position: relative;
+  margin-top: 16px;
+  padding: 12px 16px 12px 28px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule-strong);
+  animation: bannerIn 200ms ease-out;
+}
+
+.banner::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  background: repeating-linear-gradient(135deg, var(--ink) 0 2px, transparent 2px 7px);
+}
+
+.banner b {
+  font-weight: 600;
+}
+
+.grow {
+  flex: 1;
+}
+
+.room {
+  display: grid;
+  grid-template-columns: 7fr 5fr;
+  column-gap: 48px;
+  padding-top: 24px;
+  align-items: start;
+}
+
+.lot {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.live {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* ---- lot */
+.figure {
+  margin: 0;
+}
+
+.plate {
+  background: var(--plate);
+}
+
+.plate img {
+  width: 100%;
+  height: auto;
+}
+
+.thumbs {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.thumbs img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  background: var(--plate);
+}
+
+.title {
+  font: var(--title-1);
+  margin: 28px 0 0;
+  text-wrap: balance;
+}
+
+.desc {
+  font: var(--body-serif);
+  margin: 20px 0 0;
+  max-width: 36em;
+  white-space: pre-line;
+}
+
+.facts {
+  margin: 20px 0 0;
+  border-top: 2px solid var(--ink);
+}
+
+.facts div {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.facts dt {
+  color: var(--ink-3);
+  font-size: 15px;
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.help {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  font-size: 15px;
+}
+
+/* a link-styled button for actions that stay on the page (help, use this tab) */
+.link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  cursor: pointer;
+}
+
+/* ---- status */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 15px;
+  color: var(--ink-3);
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--ink-3);
+}
+
+.dotLive {
+  composes: dot;
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.mHead {
+  display: none;
+}
+
+/* ---- price */
+.priceBox {
+  margin-top: 16px;
+  padding: 4px 0 0;
+}
+
+.priceBoxOut {
+  composes: priceBox;
+  position: relative;
+  padding: 12px;
+  background: var(--red-wash);
+}
+
+.priceBoxOut::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--red);
+  transform-origin: left;
+  animation: ruleIn 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.priceBoxOut .plabel,
+.priceBoxOut .price,
+.priceBoxOut .leadLine {
+  color: var(--red);
+}
+
+.priceBoxWon {
+  composes: priceBox;
+  padding: 12px;
+  background: var(--green-wash);
+}
+
+.plabel {
+  color: var(--ink-2);
+}
+
+.price {
+  font: var(--price-xl);
+  font-size: 112px;
+  line-height: 104px;
+  font-stretch: 78%;
+  letter-spacing: -0.01em;
+  margin: 4px 0 0;
+}
+
+.stale {
+  color: var(--ink-2);
+}
+
+.tick {
+  display: inline-block;
+  animation:
+    roll 180ms cubic-bezier(0.2, 0, 0, 1),
+    band 800ms ease-out forwards;
+}
+
+.leadLine {
+  font-size: 17px;
+  color: var(--ink-2);
+  margin-top: 8px;
+}
+
+.leadLine b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.youLead {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.ic {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  vertical-align: -3px;
+  margin-right: 6px;
+}
+
+.reserve {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  color: var(--ink-2);
+}
+
+.reserveMet {
+  composes: reserve;
+  color: var(--green);
+  font-weight: 600;
+}
+
+/* ---- clock and timeline */
+.clock {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.clockTime {
+  font: var(--clock);
+  font-size: 40px;
+  line-height: 40px;
+}
+
+.clockNote {
+  color: var(--ink-2);
+}
+
+.clockNoteFinal {
+  composes: clockNote;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.swap {
+  display: inline-block;
+  animation: drop 320ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ruler {
+  margin-top: 8px;
+}
+
+.ruler svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.rulerM {
+  display: none;
+}
+
+.rulerText {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  fill: var(--ink-2);
+}
+
+.rulerTextStrong {
+  composes: rulerText;
+  font-weight: 600;
+  fill: var(--ink);
+}
+
+.rulerKey {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: 2px 0 0;
+  font: var(--ui-sm);
+  color: var(--ink-3);
+}
+
+.rulerKey i {
+  display: inline-block;
+  width: 22px;
+  height: 10px;
+  margin-right: 6px;
+}
+
+.keyHatch {
+  background: repeating-linear-gradient(135deg, var(--rule-strong) 0 2px, transparent 2px 6px);
+}
+
+.keyBand {
+  background: var(--marigold);
+}
+
+/* ---- panels (the bid, proxy, seller and admin controls share these) */
+.panel {
+  margin-top: 24px;
+  padding: 18px;
+  background: var(--paper-2);
+}
+
+.panel h2 {
+  font: var(--button);
+  margin: 0 0 10px;
+}
+
+.hint {
+  font-size: 15px;
+  color: var(--ink-2);
+  margin: 8px 0 0;
+}
+
+/* ---- ledger */
+.ledgerWrap {
+  margin-top: 28px;
+}
+
+.ledgerHead {
+  display: flex;
+  justify-content: space-between;
+  font: var(--button);
+  margin: 0 0 10px;
+}
+
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ledger th {
+  text-align: left;
+  font: var(--ui-sm);
+  font-weight: 500;
+  color: var(--ink-3);
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--ink);
+}
+
+.ledger td {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.ledger.stale td {
+  color: var(--ink-2);
+}
+
+.seq {
+  color: var(--ink-3);
+  width: 46px;
+  padding-left: 6px;
+}
+
+.amt {
+  text-align: right;
+  font-weight: 600;
+}
+
+.t {
+  text-align: right;
+  color: var(--ink-3);
+  width: 128px;
+}
+
+.k {
+  color: var(--ink-3);
+  font-size: 14px;
+  margin-left: 4px;
+}
+
+.you {
+  font-weight: 600;
+}
+
+.row {
+  animation: rowIn 160ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation-delay: calc(var(--i, 0) * 120ms);
+}
+
+.rowNew {
+  composes: row;
+}
+
+.rowNew td {
+  animation: band 800ms ease-out forwards;
+}
+
+.rowStill {
+  animation: none;
+}
+
+.pending td {
+  color: var(--ink-2);
+  border-bottom: 2px solid var(--ink);
+  background: linear-gradient(90deg, transparent, var(--paper), transparent) no-repeat -30% 100% / 30% 2px;
+  animation: sweep 900ms linear infinite;
+}
+
+/* ---- motion (brief 6) */
+@keyframes roll {
+  from {
+    transform: translateY(0.25em);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes band {
+  0%,
+  25% {
+    background: var(--marigold);
+    color: var(--on-marigold);
+  }
+
+  100% {
+    background: transparent;
+    color: inherit;
+  }
+}
+
+@keyframes rowIn {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes ruleIn {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes drop {
+  from {
+    transform: translateY(-0.4em);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes bannerIn {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes sweep {
+  to {
+    background-position-x: 130%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick,
+  .rowNew td {
+    animation: bandStill 600ms step-end forwards;
+  }
+
+  .row,
+  .swap,
+  .banner,
+  .priceBoxOut::before,
+  .pending td {
+    animation: none;
+  }
+
+  @keyframes bandStill {
+    0%,
+    99% {
+      background: var(--marigold);
+      color: var(--on-marigold);
+    }
+
+    100% {
+      background: transparent;
+      color: inherit;
+    }
+  }
+}
+
+/* ---- phones: the live column first, the lot after (brief 5) */
+@media (max-width: 700px) {
+  .crumbs {
+    display: none;
+  }
+
+  .banner {
+    margin-top: 10px;
+    font-size: 15px;
+    padding: 10px 12px 10px 24px;
+  }
+
+  .room {
+    display: block;
+    padding-top: 10px;
+  }
+
+  .live {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .status {
+    order: -2;
+    font-size: 14px;
+  }
+
+  .mHead {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 8px;
+    order: -1;
+  }
+
+  .thumb {
+    width: 44px;
+    height: 44px;
+    flex: none;
+    background: var(--plate);
+  }
+
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .mTitle {
+    font: 400 19px/24px var(--font-serif);
+  }
+
+  .priceBox {
+    margin-top: 10px;
+  }
+
+  .price {
+    font-size: 64px;
+    line-height: 60px;
+  }
+
+  .leadLine {
+    font-size: 15px;
+    margin-top: 4px;
+  }
+
+  .reserve {
+    font-size: 15px;
+    margin-top: 4px;
+  }
+
+  .clock {
+    margin-top: 10px;
+    gap: 10px;
+  }
+
+  .clockTime {
+    font-size: 32px;
+    line-height: 32px;
+  }
+
+  .clockNote {
+    font-size: 15px;
+  }
+
+  .panel {
+    order: 1;
+    margin-top: 14px;
+    padding: 14px;
+  }
+
+  .ruler {
+    order: 2;
+    margin-top: 18px;
+  }
+
+  .rulerD {
+    display: none;
+  }
+
+  .rulerM {
+    display: block;
+  }
+
+  .proxyPanel {
+    order: 3;
+  }
+
+  .ledgerWrap {
+    order: 4;
+  }
+
+  .ledger .t {
+    display: none;
+  }
+
+  .lot {
+    margin-top: 36px;
+  }
+
+  .title {
+    font-size: 26px;
+    line-height: 32px;
+  }
+
+  .facts div {
+    grid-template-columns: 120px 1fr;
+  }
+}

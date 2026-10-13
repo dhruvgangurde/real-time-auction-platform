@@ -73,3 +73,41 @@ export function toUtcIso(localInput: string): string {
   }
   return date.toISOString();
 }
+
+const pad = (n: number, width = 2) => String(n).padStart(width, '0');
+
+/** "4:05", "0:09", "1:02:30": a span rounded up to whole seconds, for countdowns and extensions. */
+export function formatRemaining(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}
+
+export type SpanUnits = { minutes: (n: number) => string; seconds: (n: number) => string; minute: string };
+
+/** "2 minutes", "1 minute 30 seconds", "20 seconds" in the catalogue's words. */
+export function formatSpan(ms: number, units: SpanUnits): string {
+  const s = Math.round(ms / 1000);
+  const m = Math.floor(s / 60);
+  const rest = s % 60;
+  const parts: string[] = [];
+  if (m > 0) parts.push(units.minutes(m));
+  if (rest > 0 || m === 0) parts.push(units.seconds(rest));
+  return parts.join(' ');
+}
+
+/** The soft-close window as a phrase after "the last": "minute" for 60 s, else the span. */
+export function formatWindow(ms: number, units: SpanUnits): string {
+  return ms === 60_000 ? units.minute : formatSpan(ms, units);
+}
+
+/** "20:01:12.406": a decision time to the millisecond, in the viewer's zone (ledger rows). */
+export function formatDecided(ms: number, timeZone?: string): string {
+  return `${formatLocal(ms, timeZone ? { timeZone, seconds: true } : { seconds: true })}.${pad(ms % 1000, 3)}`;
+}
+
+/** "14 Oct": the day of an instant in the viewer's zone. */
+export function formatDay(ms: number, timeZone?: string): string {
+  return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', ...(timeZone ? { timeZone } : {}) }).format(new Date(ms));
+}

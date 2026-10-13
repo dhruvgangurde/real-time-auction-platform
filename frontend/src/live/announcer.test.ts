@@ -12,7 +12,7 @@ const A = 'a1';
 const IST = 5.5 * 3_600_000;
 const at = (h: number, m: number, sec = 0) => Date.UTC(2026, 9, 14, h, m, sec) - IST;
 const time = (ms: number) => new Date(ms + IST).toISOString().slice(11, 19);
-const deps = { catalogue: enIN, time };
+const deps = { catalogue: enIN, time, windowMs: () => 60_000 };
 const END = at(20, 30);
 
 function snapshot(over: Partial<LiveSnapshot> = {}): LiveSnapshot {

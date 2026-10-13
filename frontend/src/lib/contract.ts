@@ -61,7 +61,7 @@ export type AuctionDetail = LiveSnapshot & {
   title: string;
   description: string;
   category: { id: number; name: string; slug: string; parent_id: number | null } | null;
-  images: { id: string; url: string; position: number }[];
+  images: { id: number; url: string; position: number }[]; // auction_images.id is a bigint
   seller: { id: string; name: string | null };
   start_time_ms: number;
   original_end_time_ms: number;
@@ -375,7 +375,7 @@ export function parseAuctionDetail(v: unknown): AuctionDetail | null {
   }
   const images: AuctionDetail['images'] = [];
   for (const i of d.images) {
-    if (!isObj(i) || !isStr(i.id) || !isStr(i.url) || !isInt(i.position)) return null;
+    if (!isObj(i) || !isInt(i.id) || !isStr(i.url) || !isInt(i.position)) return null;
     images.push({ id: i.id, url: i.url, position: i.position });
   }
   const detail: AuctionDetail = {

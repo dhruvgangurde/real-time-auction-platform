@@ -4,8 +4,9 @@ import { createContext, useContext, useSyncExternalStore } from 'react';
 
 import type { Auth } from '../api/auth';
 import type { Api } from '../api/client';
+import type { ServerClock } from '../lib/clock';
 
-export type AppServices = { auth: Auth; api: Api };
+export type AppServices = { auth: Auth; api: Api; clock: ServerClock };
 
 const AppContext = createContext<AppServices | null>(null);
 export const AppProvider = AppContext.Provider;

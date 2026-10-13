@@ -168,8 +168,9 @@ export function createRoomController(deps: RoomDeps) {
       return refetch();
     },
 
-    setConnection(connection: Connection): void {
-      dispatch({ type: 'connection', state: connection });
+    /** closedCode: a terminal socket close (4004 signed out, 4012 another tab), for the banner */
+    setConnection(connection: Connection, closedCode: number | null = null): void {
+      dispatch({ type: 'connection', state: connection, closedCode });
     },
 
     placeBid(amount: number): string | null {

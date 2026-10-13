@@ -1,8 +1,9 @@
 // brief 13 item 12: offset from server_time_ms, the fastest round trip wins, countdowns from
 // end_time_ms; item 21: shown in the viewer's zone.
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
-import { ServerClock, formatLocal, toUtcIso } from './clock';
+import { enIN } from '../strings/en-IN';
+import { ServerClock, formatDay, formatDecided, formatLocal, formatRemaining, formatSpan, formatWindow, toUtcIso } from './clock';
 
 test('keeps the offset from the fastest round trip', () => {
   let local = 1_000_000;
@@ -58,4 +59,28 @@ test('a datetime-local value becomes UTC ISO and round-trips', () => {
     [2026, 9, 14, 20, 0],
   );
   expect(() => toUtcIso('not a date')).toThrow(RangeError);
+});
+
+describe('spans and labels (room time)', () => {
+  const units = enIN.roomUi.units;
+  test('formatRemaining rounds up to whole seconds and shows hours only when needed', () => {
+    expect(formatRemaining(245_001)).toBe('4:06');
+    expect(formatRemaining(9_000)).toBe('0:09');
+    expect(formatRemaining(0)).toBe('0:00');
+    expect(formatRemaining(-5)).toBe('0:00');
+    expect(formatRemaining(3_750_000)).toBe('1:02:30');
+  });
+  test('formatSpan and formatWindow use the catalogue words', () => {
+    expect(formatSpan(120_000, units)).toBe('2 minutes');
+    expect(formatSpan(90_000, units)).toBe('1 minute 30 seconds');
+    expect(formatSpan(20_000, units)).toBe('20 seconds');
+    expect(formatSpan(1_000, units)).toBe('1 second');
+    expect(formatWindow(60_000, units)).toBe('minute');
+    expect(formatWindow(20_000, units)).toBe('20 seconds');
+  });
+  test('formatDecided keeps the milliseconds; formatDay names the day', () => {
+    const ms = Date.UTC(2026, 9, 14, 14, 31, 12, 406); // 20:01:12.406 IST
+    expect(formatDecided(ms, 'Asia/Kolkata')).toBe('20:01:12.406');
+    expect(formatDay(ms, 'Asia/Kolkata')).toBe('14 Oct');
+  });
 });

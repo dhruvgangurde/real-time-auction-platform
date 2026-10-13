@@ -2,6 +2,7 @@
 // assertive only for the viewer's own outcomes. The strings are exactly those listed per state
 // in design/shots/03-room/index.md. PoliteQueue coalesces polite text to at most one
 // announcement every 3 s, always the latest.
+import { formatSpan, formatWindow } from '../lib/clock';
 import { formatINR } from '../lib/money';
 import type { Catalogue } from '../strings/catalogue';
 import type { RoomState } from './room';
@@ -13,6 +14,8 @@ export type AnnounceDeps = {
   catalogue: Catalogue;
   /** a UTC instant as HH:MM:SS in the viewer's zone (clock.ts formatLocal with seconds) */
   time: (ms: number) => string;
+  /** the auction's soft-close window (detail antisnipe_threshold_s), null until known */
+  windowMs: () => number | null;
 };
 
 export function announce(prev: RoomState, next: RoomState, deps: AnnounceDeps): Announcement {
@@ -60,8 +63,9 @@ export function announce(prev: RoomState, next: RoomState, deps: AnnounceDeps): 
     polite(a.price(price(next.price), next.leaderAlias, next.own.leading, next.reserveMet));
   }
   if (next.extensionCount > prev.extensionCount && next.endTimeMs !== null && next.previousEndMs !== null) {
-    const minutes = Math.round((next.endTimeMs - next.previousEndMs) / 60_000);
-    polite(next.finalExtension ? a.capReached(minutes, time(next.endTimeMs)) : a.extended(minutes, next.extensionCount, time(next.endTimeMs)));
+    const span = formatSpan(next.endTimeMs - next.previousEndMs, s.roomUi.units);
+    const window = formatWindow(deps.windowMs() ?? 60_000, s.roomUi.units);
+    polite(next.finalExtension ? a.capReached(span, time(next.endTimeMs)) : a.extended(span, window, next.extensionCount, time(next.endTimeMs)));
   }
   if (next.status === 'closing' && prev.status !== 'closing' && next.endTimeMs !== null) polite(a.closing(time(next.endTimeMs)));
   if (next.terminal !== null && prev.terminal === null) {
