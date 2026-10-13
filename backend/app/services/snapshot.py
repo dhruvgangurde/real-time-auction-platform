@@ -22,6 +22,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import settings
 from app.core.errors import AppError
 from app.models import Auction
 from app.repositories import AuctionRepository, BidRepository
@@ -147,6 +148,8 @@ async def live_snapshot(
         "recent_bids": await _recent_bids(auction_id, sessions, outbox, sequence),
         "degraded": False,
         "reserve_met": None if reserve is None else bool(sequence) and highest >= reserve,
+        # FR-38 as this auction enforces it: copied into its live state at init
+        "self_outbid_blocked": state.get("self_outbid") == "1",
         "server_time_ms": server_time_ms(),
     }
 
@@ -185,5 +188,6 @@ async def _postgres_snapshot(
         "recent_bids": recent,
         "degraded": degraded,
         "reserve_met": reserve_met(auction),  # the same value auction_closed carries
+        "self_outbid_blocked": settings.self_outbid_policy_enabled,  # FR-38, copied at go-live
         "server_time_ms": server_time_ms(),
     }
