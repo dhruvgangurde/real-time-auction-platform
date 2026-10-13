@@ -13,9 +13,10 @@ from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.logging import JsonFormatter, request_id_var
 from app.services import closing
 from app.services.bidding import BidService
-from app.services.closing import Closer, Outcome
+from app.services.closing import Closer, Outcome, closed_sent_key
 from app.services.live_state import outbox_key, proxies_key, state_key
 from app.services.scheduler import Scheduler
 from tests.bidding.conftest import PersistRecorder, redis_now_ms
@@ -377,6 +378,118 @@ async def test_settler_and_retry_finishing_together_broadcast_once(
             Closer(redis, sessions)._finish(auction_id, settled=False),
         )
     assert [e["type"] for e in room.events] == ["auction_closed"]
+
+
+async def test_retry_first_then_settler_broadcasts_once(
+    ended: Ended, db: asyncpg.Connection, redis: Redis, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    """FR-62: the retry flips, broadcasts and removes the live state; the settler then finds no
+    live state (MISSING) and, the marker being set, sends nothing."""
+    (b1,) = await _users(db, 1)
+    auction_id = await ended(bids=[(b1, 10_000)])
+    settler = Closer(redis, sessions)
+    assert await settler._settle(auction_id) is Outcome.SETTLED
+    async with Room(auction_id) as room:
+        await Closer(redis, sessions)._finish(auction_id, settled=False)
+        assert not await redis.exists(state_key(auction_id))
+        await settler._finish(auction_id, settled=True)
+    assert [e["type"] for e in room.events] == ["auction_closed"]
+
+
+async def test_settler_first_then_retry_broadcasts_once(
+    ended: Ended, db: asyncpg.Connection, redis: Redis, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    """FR-62: the settler flips and broadcasts; the retry finds no live state and is no settler."""
+    (b1,) = await _users(db, 1)
+    auction_id = await ended(bids=[(b1, 10_000)])
+    settler = Closer(redis, sessions)
+    assert await settler._settle(auction_id) is Outcome.SETTLED
+    async with Room(auction_id) as room:
+        await settler._finish(auction_id, settled=True)
+        await Closer(redis, sessions)._finish(auction_id, settled=False)
+    assert [e["type"] for e in room.events] == ["auction_closed"]
+
+
+async def test_marker_survives_live_state_cleanup(
+    ended: Ended, db: asyncpg.Connection, redis: Redis, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    """FR-62: after a full close the marker is there with its lifetime, outside the live-state
+    keys that cleanup removed."""
+    (b1,) = await _users(db, 1)
+    auction_id = await ended(bids=[(b1, 10_000)])
+    assert await Closer(redis, sessions).close(auction_id) is Outcome.SETTLED
+    assert 0 < await redis.ttl(closed_sent_key(auction_id)) <= closing.CLOSED_SENT_TTL_S
+    live = (state_key(auction_id), outbox_key(auction_id), proxies_key(auction_id))
+    assert await redis.exists(*live) == 0
+
+
+async def test_closed_payload_identical_both_paths(
+    ended: Ended, db: asyncpg.Connection, redis: Redis, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    """FR-62, BR-6: the OK-flip path and the no-live-state path send the same event for one
+    settlement, built from the committed rows (server_time_ms aside: every event is stamped
+    when it is built)."""
+    b1, b2 = await _users(db, 2)
+    auction_id = await ended(bids=[(b1, 80_000), (b2, 80_500)], reserve=RESERVE)
+    settler = Closer(redis, sessions)
+    assert await settler._settle(auction_id) is Outcome.SETTLED
+    async with Room(auction_id) as room:
+        await Closer(redis, sessions)._finish(auction_id, settled=False)  # OK flip
+        await redis.delete(closed_sent_key(auction_id))  # as if the marker had expired
+        await settler._finish(auction_id, settled=True)  # no live state left: MISSING
+    flipped, missing = ({k: v for k, v in e.items() if k != "server_time_ms"} for e in room.events)
+    assert flipped == missing
+    price, sequence = await db.fetchrow(
+        "SELECT s.final_price, a.bid_count FROM settlements s JOIN auctions a "
+        "ON a.id = s.auction_id WHERE s.auction_id = $1",
+        auction_id,
+    )
+    assert flipped == {
+        "type": "auction_closed",
+        "auction_id": str(auction_id),
+        "outcome": "closed_sold",
+        "final_price": price,
+        "reserve_met": True,
+        "final_sequence_no": sequence,
+    }
+    assert (price, sequence) == (80_500, 2)
+    assert str(RESERVE) not in json.dumps(room.events)  # BR-6
+
+
+async def test_broadcast_redis_error_does_not_fail_close(
+    ended: Ended,
+    db: asyncpg.Connection,
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """FR-62, NFR-32: the broadcast script fails; the close stays committed, the live state is
+    still removed and a warning carries the auction and the correlation id."""
+    (b1,) = await _users(db, 1)
+    auction_id = await ended(bids=[(b1, 10_000)])
+    closer = Closer(redis, sessions)
+
+    async def unreachable(*_: Any, **__: Any) -> int:
+        raise RedisConnectionError("redis down")
+
+    monkeypatch.setattr(closer, "_publish_once", unreachable)
+    token = request_id_var.set("corr-close-1")
+    try:
+        with caplog.at_level(logging.WARNING, logger="closing"):
+            assert await closer.close(auction_id) is Outcome.SETTLED
+        [record] = [r for r in caplog.records if r.msg == "auction_closed not broadcast"]
+        line = json.loads(JsonFormatter().format(record))
+    finally:
+        request_id_var.reset(token)
+    assert (line["level"], line["auction_id"], line["request_id"]) == (
+        "WARNING",
+        str(auction_id),
+        "corr-close-1",
+    )
+    assert await _status(db, auction_id) == "closed_sold"
+    assert len(await settlement_rows(db, auction_id)) == 1
+    assert await redis.exists(state_key(auction_id)) == 0  # the cleanup still ran
 
 
 async def test_redis_failure_after_commit_leaves_the_rest_to_the_sweep(

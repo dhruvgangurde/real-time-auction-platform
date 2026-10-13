@@ -22,12 +22,16 @@ closing. Safe to run any number of times, concurrently, and after a crash at any
       all commit together (FR-78) or not at all.
 3. After the commit: Redis follows (closing -> terminal through set_status.lua), auction_closed
    is broadcast with the outcome, final price and reserve_met, never the reserve (BR-6), and the
-   live state is removed. Exactly one caller broadcasts: the one whose closing -> terminal flip
-   returned OK, or, when there is no live state at all, the one that settled. A retry after a
-   crash between the commit and these steps finds the auction ALREADY_CLOSED with Redis still
-   closing and finishes them; a retry after everything succeeded does nothing.
+   live state is removed. Two callers may broadcast: the one whose closing -> terminal flip
+   returned OK and, when there is no live state, the one that settled. No live state can also
+   mean another caller already finished, so both go through publish_closed_once.lua, which sets
+   the closed_sent:{auction_id} marker and publishes in one atomic call: at most one
+   auction_closed per marker lifetime. A retry after a crash between the commit and these steps
+   finds the auction ALREADY_CLOSED with Redis still closing and finishes them; a retry after
+   everything succeeded does nothing.
 """
 
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -71,6 +75,12 @@ log = logging.getLogger("closing")
 SETTLED = frozenset({"closed_sold", "closed_no_sale"})
 TERMINAL = SETTLED | {"cancelled"}
 BATCH = 200  # auctions per sweep step; the rest wait for the next run
+CLOSED_SENT_TTL_S = 86_400  # outlives every retry and repair-sweep pass of one close
+
+
+def closed_sent_key(auction_id: UUID) -> str:
+    """Outside the auction:{id}: prefix: live-state cleanup never matches it."""
+    return f"closed_sent:{auction_id}"
 
 
 class Outcome(StrEnum):
@@ -108,6 +118,7 @@ class Closer:
         self._redis, self._sessions, self._use_lock = redis, sessions, use_lock
         self._set_status = redis.register_script(lua.source("set_status"))
         self._cleanup = redis.register_script(lua.source("cleanup_state"))
+        self._publish_once = redis.register_script(lua.source("publish_closed_once"))
 
     async def close(self, auction_id: UUID) -> Outcome:
         fields = {"auction_id": str(auction_id)}
@@ -263,19 +274,34 @@ class Closer:
         try:
             flipped = await self._set_status(keys=keys[:1], args=["closing", auction.status, "0"])
             if flipped == "OK" or (flipped == "MISSING" and settled):
-                await live_events.publish_auction_closed(
-                    self._redis,
-                    auction_id,
-                    outcome=auction.status,
-                    final_price=settlement.final_price,
-                    reserve_met=reserve_met(auction),
-                    final_sequence_no=auction.bid_count,
-                )
+                await self._broadcast(auction, settlement)
             await self._cleanup(keys=keys)  # keeps anything still in use (cleanup_state.lua)
         except RedisError as exc:
             log.warning(
                 "close committed; Redis steps left to the repair sweep",
                 extra={"fields": {"auction_id": str(auction_id), "error": repr(exc)}},
+            )
+
+    async def _broadcast(self, auction: Auction, settlement: Settlement) -> None:
+        """auction_closed at most once per marker lifetime (FR-62), from the committed rows,
+        never from live state. A Redis error loses this one event (pub/sub is at-most-once;
+        clients read the outcome from /live) and never fails the committed close."""
+        payload = live_events.auction_closed_event(
+            auction.id,
+            outcome=auction.status,
+            final_price=settlement.final_price,
+            reserve_met=reserve_met(auction),
+            final_sequence_no=auction.bid_count,
+        )
+        try:
+            await self._publish_once(
+                keys=[closed_sent_key(auction.id)],
+                args=[live_events.room_channel(auction.id), json.dumps(payload), CLOSED_SENT_TTL_S],
+            )
+        except RedisError as exc:
+            log.warning(  # the formatter adds the correlation id (request or worker task id)
+                "auction_closed not broadcast",
+                extra={"fields": {"auction_id": str(auction.id), "error": repr(exc)}},
             )
 
 

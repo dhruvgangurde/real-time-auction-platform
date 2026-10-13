@@ -184,6 +184,27 @@ async def publish_session_revoked(redis: Redis, user_id: UUID, sid: UUID | None)
         )
 
 
+def auction_closed_event(
+    auction_id: UUID,
+    *,
+    outcome: str,
+    final_price: int | None,
+    reserve_met: bool | None,
+    final_sequence_no: int,
+) -> dict[str, Any]:
+    """The room's last event (FR-62): outcome, final price and whether a reserve was met, never
+    the reserve itself (BR-6). final_sequence_no equals the last bid's sequence, so clients
+    apply it regardless of the sequence rule."""
+    return event(
+        "auction_closed",
+        auction_id=str(auction_id),
+        outcome=outcome,
+        final_price=final_price,
+        reserve_met=reserve_met,
+        final_sequence_no=final_sequence_no,
+    )
+
+
 async def publish_auction_closed(
     redis: Redis,
     auction_id: UUID,
@@ -193,12 +214,9 @@ async def publish_auction_closed(
     reserve_met: bool | None,
     final_sequence_no: int,
 ) -> None:
-    """The room's last event (FR-62): outcome, final price and whether a reserve was met, never
-    the reserve itself (BR-6). final_sequence_no equals the last bid's sequence, so clients
-    apply it regardless of the sequence rule."""
-    payload = event(
-        "auction_closed",
-        auction_id=str(auction_id),
+    """Administrator cancel; the closer goes through Closer._broadcast (once per marker)."""
+    payload = auction_closed_event(
+        auction_id,
         outcome=outcome,
         final_price=final_price,
         reserve_met=reserve_met,

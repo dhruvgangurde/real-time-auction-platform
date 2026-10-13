@@ -1,10 +1,10 @@
 from typing import Any
 
 from celery import Celery
-from celery.signals import setup_logging
+from celery.signals import setup_logging, task_prerun
 
 from app.core.config import settings
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, request_id_var
 
 celery_app = Celery("auction", broker=settings.celery_broker_url, include=["app.workers.tasks"])
 celery_app.conf.timezone = "UTC"
@@ -52,6 +52,13 @@ def _json_logging(**_: Any) -> None:
     """Worker and beat log the same JSON lines as the API, so alert fields such as
     UNRESOLVED_CLOSE and LEDGER_WRITE_FAILED reach the log with their auction ids (NFR-32)."""
     configure_logging(settings.log_level)
+
+
+@task_prerun.connect
+def _correlate(task_id: str, **_: Any) -> None:
+    """Worker log lines carry the task id as their correlation id (NFR-32); the runtime runs
+    each task's coroutine on this thread, so it sees the value."""
+    request_id_var.set(task_id)
 
 
 @celery_app.task(name="ping")
