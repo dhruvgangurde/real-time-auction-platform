@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     ws_presence_interval_s: float = 5.0
     # per user and message type, shared across instances; bid submission is the strictest (CI-3)
     rate_limit_ws_place_bid: str = "10/1"  # FR-44 default: 10 bid submissions per second
+    # reads of /live and bid history (brief 12.2 item 2): anonymous per client address,
+    # /live with a token per user; both fail open, since the reads have a Postgres fallback
+    rate_limit_anon_read_ip: str = "5/1"
+    rate_limit_auth_live_user: str = "10/1"
     rate_limit_ws_set_proxy: str = "5/1"
     rate_limit_ws_subscribe: str = "20/1"
     rate_limit_ws_unsubscribe: str = "20/1"

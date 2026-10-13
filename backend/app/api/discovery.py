@@ -7,7 +7,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import AwareDatetime
 
-from app.api.deps import current_user, get_catalog_service, optional_user, require_roles
+from app.api.deps import (
+    client_ip,
+    current_user,
+    get_catalog_service,
+    get_limiter,
+    optional_user,
+    require_roles,
+)
+from app.core.config import settings
+from app.core.ratelimit import RateLimit, RateLimiter
 from app.schemas.auctions import AdminReason, CategoryCreate, CategoryUpdate, ListedStatus
 from app.services.auth import CurrentUser
 from app.services.bidding import MAX_AMOUNT
@@ -58,8 +67,13 @@ async def bid_history(
     before: int | None = Query(default=None, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
     viewer: CurrentUser | None = Depends(optional_user),
+    ip: str = Depends(client_ip),
+    limiter: RateLimiter = Depends(get_limiter),
     catalog: CatalogService = Depends(get_catalog_service),
 ) -> dict[str, Any]:
+    if viewer is None:  # anonymous reads per client address (brief 12.2); history has a fallback
+        anon = RateLimit.parse(settings.rate_limit_anon_read_ip)
+        await limiter.hit("anon_bids", ip, anon, fail_open=True)
     return await catalog.bid_history(viewer, auction_id, before, limit)
 
 

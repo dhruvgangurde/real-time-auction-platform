@@ -45,6 +45,8 @@ def tuned(monkeypatch: pytest.MonkeyPatch) -> None:
         "ws_max_strikes": 3,
         "ws_max_messages_per_s": 100_000,
         **{f"rate_limit_ws_{kind}": "10000/1" for kind in MESSAGE_KINDS},
+        "rate_limit_anon_read_ip": "10000/1",
+        "rate_limit_auth_live_user": "10000/1",
         "allowed_origins": "http://localhost:5173",
     }.items():
         monkeypatch.setattr(settings, name, value)

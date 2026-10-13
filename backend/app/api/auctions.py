@@ -13,6 +13,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import (
+    client_ip,
     current_user,
     get_bid_service,
     get_limiter,
@@ -72,6 +73,8 @@ async def live(
     request: Request,
     response: Response,
     viewer: CurrentUser | None = Depends(optional_user),
+    ip: str = Depends(client_ip),
+    limiter: RateLimiter = Depends(get_limiter),
     redis: Redis = Depends(get_redis),
     sessions: async_sessionmaker[AsyncSession] = Depends(get_sessions),
 ) -> dict[str, Any]:
@@ -80,7 +83,15 @@ async def live(
     Anonymous means no Authorization header: a presented token must be valid (optional_user
     answers 401 otherwise), so no request skips both the cache and the anonymous limit. Anonymous
     bodies come from the per-instance 1 s cache; authenticated ones are always read fresh and
-    carry the viewer's own fields. server_time_ms is stamped per response, outside the cache."""
+    carry the viewer's own fields. server_time_ms is stamped per response, outside the cache.
+    Anonymous reads are limited per client address, authenticated ones per user (brief 12.2);
+    both limits fail open, because the snapshot has its own Redis-down fallback (NFR-13)."""
+    if viewer is None:
+        anon = RateLimit.parse(settings.rate_limit_anon_read_ip)
+        await limiter.hit("anon_live", ip, anon, fail_open=True)
+    else:
+        own = RateLimit.parse(settings.rate_limit_auth_live_user)
+        await limiter.hit("auth_live", str(viewer.id), own, fail_open=True)
     if viewer is None:
         cache: SnapshotCache = request.app.state.snapshot_cache
         body = await cache.get(auction_id, lambda: live_snapshot(auction_id, None, redis, sessions))
