@@ -64,6 +64,7 @@ class FakeAuction:
     def __init__(self, status: str) -> None:
         self.status = status
         self.seller_id = uuid4()  # never the bidder in these tests
+        self.reserve_price = None
 
 
 def fake_repo(auction: FakeAuction | None) -> type:

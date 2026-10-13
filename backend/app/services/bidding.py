@@ -34,6 +34,7 @@ from app.core.config import settings
 from app.repositories import AuctionRepository
 from app.services import live_state
 from app.services.live_state import (
+    LIVE_STATES,
     AuctionNotFound,
     AuctionNotLive,
     LiveStateUnavailable,
@@ -62,6 +63,7 @@ class AutomaticBid:
     end_time_ms: int
     extension_count: int
     placed_at_ms: int | None = None  # Redis TIME of acceptance (DC-3); None on an old replay
+    reserve_met: bool | None = None  # None without a reserve; never the reserve itself (BR-6)
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,7 @@ class BidResult:
     extended: bool = False
     extension_count: int | None = None
     placed_at_ms: int | None = None  # Redis TIME of acceptance (DC-3); None on an old replay
+    reserve_met: bool | None = None  # None without a reserve; never the reserve itself (BR-6)
     current_highest: int | None = None  # BID_TOO_LOW only, for the submitter alone
     min_next: int | None = None  # BID_TOO_LOW only
     automatic_bids: tuple[AutomaticBid, ...] = ()  # proxy responses, in sequence order
@@ -100,7 +103,11 @@ def _rejected(code: str) -> dict[str, Any]:
     return {"decision": "rejected", "code": code}
 
 
-def _autos(raw: dict[str, Any]) -> tuple[AutomaticBid, ...]:
+def _met(reserve: int | None, amount: int) -> bool | None:
+    return None if reserve is None else amount >= reserve
+
+
+def _autos(raw: dict[str, Any], reserve: int | None = None) -> tuple[AutomaticBid, ...]:
     return tuple(
         AutomaticBid(
             bidder_id=UUID(a["bidder_id"]),
@@ -110,6 +117,7 @@ def _autos(raw: dict[str, Any]) -> tuple[AutomaticBid, ...]:
             end_time_ms=int(a["end_time_ms"]),
             extension_count=int(a["extension_count"]),
             placed_at_ms=_opt(a, "accepted_at_ms"),
+            reserve_met=_met(reserve, int(a["amount"])),
         )
         for a in raw.get("automatic_bids", ())
     )
@@ -128,7 +136,7 @@ def _opt(raw: dict[str, Any], key: str) -> int | None:
     return int(raw[key]) if key in raw else None
 
 
-def _to_bid_result(raw: dict[str, Any]) -> BidResult:
+def _to_bid_result(raw: dict[str, Any], reserve: int | None = None) -> BidResult:
     if raw["decision"] == "accepted":
         return BidResult(
             accepted=True,
@@ -139,7 +147,8 @@ def _to_bid_result(raw: dict[str, Any]) -> BidResult:
             extension_count=int(raw["extension_count"]),
             # results stored by the previous script (up to bid_request_ttl_s) lack it
             placed_at_ms=_opt(raw, "accepted_at_ms"),
-            automatic_bids=_autos(raw),
+            reserve_met=_met(reserve, int(raw["amount"])),
+            automatic_bids=_autos(raw, reserve),
             **_internal(raw),
         )
     return BidResult(
@@ -150,14 +159,14 @@ def _to_bid_result(raw: dict[str, Any]) -> BidResult:
     )
 
 
-def _to_proxy_result(raw: dict[str, Any]) -> ProxyResult:
+def _to_proxy_result(raw: dict[str, Any], reserve: int | None = None) -> ProxyResult:
     if raw["decision"] == "armed":
         return ProxyResult(
             armed=True,
             max_amount=int(raw["max_amount"]),
             arm_seq=int(raw["arm_seq"]),
             active=bool(raw["active"]),
-            automatic_bids=_autos(raw),
+            automatic_bids=_autos(raw, reserve),
             **_internal(raw),
         )
     return ProxyResult(armed=False, code=raw["code"], min_next=_opt(raw, "min_next"))
@@ -235,7 +244,10 @@ class BidService:
         self.record_outbid = record_outbid
         self._place_bid = redis.register_script(lua.source("place_bid"))
         self._set_proxy = redis.register_script(lua.source("set_proxy"))
-        self._sellers: dict[UUID, UUID] = {}  # auction -> seller; a seller never changes
+        # auction -> seller and auction -> reserve, for live and closing auctions only: neither
+        # changes once an auction is live (the reserve is editable only while draft or scheduled)
+        self._sellers: dict[UUID, UUID] = {}
+        self._reserves: dict[UUID, int | None] = {}
 
     async def place_bid(
         self, auction_id: UUID, bidder_id: UUID, amount: int, request_id: str
@@ -251,8 +263,8 @@ class BidService:
                 amount,
             )
 
-        raw = await self._decide(auction_id, bidder_id, amount, request_id, arbitrate)
-        result = _to_bid_result(raw)
+        raw, reserve = await self._decide(auction_id, bidder_id, amount, request_id, arbitrate)
+        result = _to_bid_result(raw, reserve)
         self._after(auction_id, result.accepted or bool(result.automatic_bids))
         log_bid(auction_id, bidder_id, amount, request_id, result)
         return result
@@ -271,8 +283,8 @@ class BidService:
                 max_amount,
             )
 
-        raw = await self._decide(auction_id, bidder_id, max_amount, request_id, arbitrate)
-        result = _to_proxy_result(raw)
+        raw, reserve = await self._decide(auction_id, bidder_id, max_amount, request_id, arbitrate)
+        result = _to_proxy_result(raw, reserve)
         self._after(auction_id, result.armed)
         log_proxy(auction_id, bidder_id, request_id, result)
         return result
@@ -302,45 +314,54 @@ class BidService:
         amount: int,
         request_id: str,
         arbitrate: Callable[[], Awaitable[dict[str, Any]]],
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], int | None]:
+        """(script result, reserve). The reserve only feeds reserve_met in room events."""
         if not _valid(auction_id, bidder_id, amount, request_id):
-            return _rejected("VALIDATION_ERROR")
+            return _rejected("VALIDATION_ERROR"), None
+        reserve = None
         try:
-            if await self._seller_of(auction_id) == bidder_id:
-                return _rejected("SELLER_CANNOT_BID")  # no shill bidding, before arbitration
+            facts = await self._facts_of(auction_id)
+            if facts is not None:
+                seller, reserve = facts
+                if seller == bidder_id:  # no shill bidding, before arbitration
+                    return _rejected("SELLER_CANNOT_BID"), None
             raw = await arbitrate()
             if raw.get("code") == "NOT_INITIALISED":
                 raw = await self._rebuild_and_retry(auction_id, arbitrate)
         except AuctionNotFound:
             # the auction vanished between the existence check and the rebuild
-            return _rejected("NOT_FOUND")
+            return _rejected("NOT_FOUND"), None
         except AuctionNotLive:
             # the auction left live status between the status check and the rebuild
-            return _rejected("AUCTION_CLOSED")
+            return _rejected("AUCTION_CLOSED"), None
         except (RedisError, LiveStateUnavailable, SQLAlchemyError, OSError) as exc:
             # fail closed: nothing is accepted whose ordering cannot be established (FR-42)
             log.warning(
                 "bid path unavailable",
                 extra={"fields": {"auction_id": str(auction_id), "error": repr(exc)}},
             )
-            return _rejected("SERVICE_UNAVAILABLE")
-        return raw
+            return _rejected("SERVICE_UNAVAILABLE"), None
+        return raw, reserve
 
-    async def _seller_of(self, auction_id: UUID) -> UUID | None:
-        """The auction's seller, cached per process: only the first bid on an auction reads
-        Postgres, so the bid path keeps working on Redis alone afterwards. If that first read
-        fails the bid fails closed (SERVICE_UNAVAILABLE). None for an unknown auction, which the
-        arbitration path then reports."""
-        seller = self._sellers.get(auction_id)
-        if seller is None:
-            async with self._sessions() as session:
-                auction = await AuctionRepository(session).get(auction_id)
-            if auction is None:
-                return None
+    async def _facts_of(self, auction_id: UUID) -> tuple[UUID, int | None] | None:
+        """(seller, reserve), cached per process once the auction is live or closing: only the
+        first bid on a live auction reads Postgres, so the bid path keeps working on Redis alone
+        afterwards. A draft or scheduled row is not cached, since its reserve may still change.
+        If the read fails the bid fails closed (SERVICE_UNAVAILABLE). None for an unknown
+        auction, which the arbitration path then reports."""
+        if auction_id in self._sellers:
+            return self._sellers[auction_id], self._reserves[auction_id]
+        async with self._sessions() as session:
+            auction = await AuctionRepository(session).get(auction_id)
+        if auction is None:
+            return None
+        if auction.status in LIVE_STATES:
             if len(self._sellers) >= 10_000:  # shortcut: crude bound; an LRU if it ever matters
                 self._sellers.clear()
-            seller = self._sellers[auction_id] = auction.seller_id
-        return seller
+                self._reserves.clear()
+            self._reserves[auction_id] = auction.reserve_price
+            self._sellers[auction_id] = auction.seller_id
+        return auction.seller_id, auction.reserve_price
 
     async def _rebuild_and_retry(
         self, auction_id: UUID, arbitrate: Callable[[], Awaitable[dict[str, Any]]]

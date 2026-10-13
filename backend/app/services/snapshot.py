@@ -130,6 +130,7 @@ async def live_snapshot(
     sequence = int(state["sequence"])
     highest = int(state["highest_amount"])
     increment = int(state["min_increment"])
+    reserve = auction.reserve_price  # read here, never returned (BR-6)
     return {
         "auction_id": str(auction_id),
         "status": state["status"],
@@ -145,6 +146,7 @@ async def live_snapshot(
         "participants": participants,
         "recent_bids": await _recent_bids(auction_id, sessions, outbox, sequence),
         "degraded": False,
+        "reserve_met": None if reserve is None else bool(sequence) and highest >= reserve,
         "server_time_ms": server_time_ms(),
     }
 
@@ -158,6 +160,8 @@ async def _postgres_snapshot(
 ) -> dict[str, Any]:
     """From Postgres alone: every status without live state (D2), and the read-only fallback
     while Redis is unreachable (NFR-13, where the end time may lag, see the FR-58 note)."""
+    from app.services.closing import reserve_met  # closing imports this module
+
     recent = await _recent_bids(auction.id, sessions)
     top = recent[0] if recent else None
     sequence = top["sequence_no"] if top else 0
@@ -180,5 +184,6 @@ async def _postgres_snapshot(
         "participants": participants,
         "recent_bids": recent,
         "degraded": degraded,
+        "reserve_met": reserve_met(auction),  # the same value auction_closed carries
         "server_time_ms": server_time_ms(),
     }
