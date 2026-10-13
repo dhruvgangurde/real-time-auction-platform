@@ -174,7 +174,8 @@ class AuthService:
         await self._send_verification(email, raw)
 
     async def _send_verification(self, email: str, raw: str) -> None:
-        link = f"{settings.app_base_url}/verify-email?token={raw}"
+        # the fragment never leaves the browser, so no server or proxy log can hold it
+        link = f"{settings.app_base_url}/verify-email#token={raw}"
         await self._email.send(
             email,
             "Verify your email address",
@@ -297,7 +298,7 @@ class AuthService:
             await TokenRepository(session, PasswordResetToken).create(
                 user.id, digest, now + timedelta(seconds=settings.reset_token_ttl_s)
             )
-        link = f"{settings.app_base_url}/reset-password?token={raw}"
+        link = f"{settings.app_base_url}/reset-password#token={raw}"
         await self._email.send(
             email, "Reset your password", f"Set a new password within 1 hour:\n{link}\n"
         )

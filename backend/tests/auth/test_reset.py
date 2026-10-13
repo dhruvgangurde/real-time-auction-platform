@@ -45,7 +45,7 @@ async def test_forgot_is_identical_for_known_and_unknown(
             {"status": "accepted"},
         )
     )
-    assert len(email.sent) == before + 1 and "reset-password?token=" in email.sent[-1][2]
+    assert len(email.sent) == before + 1 and "reset-password#token=" in email.sent[-1][2]
 
 
 async def test_reset_revokes_old_sessions_and_new_login_works_immediately(

@@ -23,7 +23,7 @@ async def test_register_creates_pending_bidder_with_argon2id_hash(
     assert row["password_hash"].startswith("$argon2id$")  # FR-2: salted one-way hash
     assert PASSWORD not in row["password_hash"]
     assert [t for t, _, _ in email.sent] == [address]
-    assert "verify-email?token=" in email.sent[0][2]
+    assert "verify-email#token=" in email.sent[0][2]  # a fragment: never sent to a server
 
 
 async def test_email_is_normalised_and_unique_case_insensitively(
