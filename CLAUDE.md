@@ -141,4 +141,10 @@ curl localhost:8010/api/v1/health/ready        # readiness check (first api inst
 curl localhost:8011/api/v1/health/ready        # readiness through the web service (either instance)
 docker compose exec web nginx -t              # web service config check
 docker compose logs api api-2                 # both api instances (which one took a socket)
+cd frontend && npm ci                          # frontend deps (Node 24.19, .nvmrc; exact versions)
+cd frontend && npm run dev                     # Vite on 5173, /api proxied to the stack on 8011
+cd frontend && npm run build                   # tsc, then dist/ (served by the web service on 8011)
+cd frontend && npm test                        # Vitest (reducer, money, clock, strings, contract, lint rules)
+cd frontend && npm run lint                    # ESLint with the project rules
+cd frontend && npm run e2e                     # Playwright against 8011 only (real CSP), after a build
 ```
