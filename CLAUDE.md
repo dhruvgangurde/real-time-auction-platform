@@ -147,5 +147,6 @@ cd frontend && npm run typecheck               # tsc --noEmit
 cd frontend && npm run build                   # typecheck, vite build into dist/ (served on 8011), chunk budget
 cd frontend && npm test                        # Vitest (reducer, money, clock, strings, contract, lint rules)
 cd frontend && npm run lint                    # ESLint with the project rules
-cd frontend && npm run e2e                     # Playwright against 8011 only (real CSP), after a build
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e.yml up -d   # stack for e2e (raised limits, one host)
+cd frontend && npm run e2e                     # Playwright against 8011 only (real CSP), after a build; one worker
 ```

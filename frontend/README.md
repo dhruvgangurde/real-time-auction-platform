@@ -17,6 +17,17 @@ npm run e2e             # Playwright against http://localhost:8011 only (the rea
 
 Playwright never runs against the dev server: the content security policy only exists on 8011.
 
+Bring the stack up for e2e with the e2e compose file, which raises only the identity and
+anonymous-read rate limits that one host address running the whole suite would otherwise trip
+(the default `docker compose up` keeps the production limits):
+
+```
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e.yml up -d --build
+cd frontend && npm run build && npm run e2e
+```
+
+The suite runs one worker: `e2e/room-shots.spec.ts` pauses Redis to shoot the degraded state, which must not run beside the other specs.
+
 ## Dependencies
 
 Exact versions only (`.npmrc` has `save-exact`). A new version is taken only once it is at least seven days old. Everything in `package.json` is from brief 11.2; nothing else without a one-line reason in `docs/decisions.md`.

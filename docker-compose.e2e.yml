@@ -1,0 +1,14 @@
+# Used only by the Playwright run, never the default dev stack. The e2e suite registers, verifies
+# and signs in many accounts from one host address and polls /live heavily, which the production
+# identity and anonymous-read limits (brief 12.2, NFR-22) would throttle. Bring the stack up with
+# this file for e2e; the default `docker compose up` keeps the production limits.
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e.yml up -d
+services:
+  api:
+    environment: &e2e-limits
+      RATE_LIMIT_REGISTER_IP: "5000/3600"
+      RATE_LIMIT_VERIFY_IP: "5000/3600"
+      RATE_LIMIT_LOGIN_IP: "1000/60"
+      RATE_LIMIT_ANON_READ_IP: "2000/1"
+  api-2:
+    environment: *e2e-limits
