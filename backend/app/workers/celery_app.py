@@ -1,7 +1,8 @@
+from contextvars import Token
 from typing import Any
 
 from celery import Celery
-from celery.signals import setup_logging, task_prerun
+from celery.signals import setup_logging, task_failure, task_postrun, task_prerun
 
 from app.core.config import settings
 from app.core.logging import configure_logging, request_id_var
@@ -54,11 +55,24 @@ def _json_logging(**_: Any) -> None:
     configure_logging(settings.log_level)
 
 
+_tokens: dict[str, Token[str]] = {}  # task id -> the value to restore when it ends
+
+
 @task_prerun.connect
 def _correlate(task_id: str, **_: Any) -> None:
     """Worker log lines carry the task id as their correlation id (NFR-32); the runtime runs
     each task's coroutine on this thread, so it sees the value."""
-    request_id_var.set(task_id)
+    _tokens[task_id] = request_id_var.set(task_id)
+
+
+@task_failure.connect
+@task_postrun.connect
+def _uncorrelate(task_id: str, **_: Any) -> None:
+    """Once a task has finished or failed, code that runs before the next one logs without its
+    id. Failure comes first and postrun follows; popping the token makes the second a no-op."""
+    token = _tokens.pop(task_id, None)
+    if token is not None:
+        request_id_var.reset(token)
 
 
 @celery_app.task(name="ping")
