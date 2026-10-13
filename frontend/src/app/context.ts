@@ -21,3 +21,9 @@ export function useToken(): string | null {
   const { auth } = useApp();
   return useSyncExternalStore(auth.onChange, auth.getToken, () => null);
 }
+
+/** False until the load-time restore settled: a guard must not redirect before then. */
+export function useAuthReady(): boolean {
+  const { auth } = useApp();
+  return useSyncExternalStore(auth.onChange, auth.isRestored, () => false);
+}

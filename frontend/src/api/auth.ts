@@ -43,6 +43,7 @@ export type Auth = ReturnType<typeof createAuth>;
 export function createAuth(deps: AuthDeps) {
   let token: string | null = null;
   let expiresAtMs = 0;
+  let restored = false; // restoreOnLoad has settled: guards may decide (UI-2)
   const listeners = new Set<(token: string | null) => void>();
   const channel = deps.channel();
   let waitingForPeer: ((token: string) => void) | null = null;
@@ -129,18 +130,26 @@ export function createAuth(deps: AuthDeps) {
 
     /** On every load: a peer tab's token if one answers, otherwise a refresh under the lock. */
     async restoreOnLoad(): Promise<string | null> {
-      if (channel !== null) {
-        const fromPeer = new Promise<string | null>((resolve) => {
-          waitingForPeer = resolve;
-          post({ kind: 'who-has-token' });
-          void deps.sleep(deps.peerWaitMs ?? 150).then(() => resolve(null));
-        });
-        const peer = await fromPeer;
-        waitingForPeer = null;
-        if (peer !== null) return peer;
+      try {
+        if (channel !== null) {
+          const fromPeer = new Promise<string | null>((resolve) => {
+            waitingForPeer = resolve;
+            post({ kind: 'who-has-token' });
+            void deps.sleep(deps.peerWaitMs ?? 150).then(() => resolve(null));
+          });
+          const peer = await fromPeer;
+          waitingForPeer = null;
+          if (peer !== null) return peer;
+        }
+        return await refreshUnderLock();
+      } finally {
+        restored = true;
+        for (const listen of listeners) listen(token);
       }
-      return refreshUnderLock();
     },
+
+    /** Whether the load-time restore has settled, so a guard can tell anonymous from pending. */
+    isRestored: () => restored,
 
     /** After login: keep the token in memory and share it with the other tabs. */
     accept(accessToken: string, expiresInS: number): void {

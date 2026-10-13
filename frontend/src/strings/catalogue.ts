@@ -115,6 +115,14 @@ export type Catalogue = {
     required: string;
     back: string;
   };
+  guards: {
+    deniedTitle: string;
+    denied: (role: 'seller' | 'admin') => string;
+  };
+  placeholder: {
+    title: string;
+    body: string;
+  };
   auth: {
     register: {
       title: string;

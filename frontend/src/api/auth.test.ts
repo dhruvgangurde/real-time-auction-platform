@@ -114,6 +114,16 @@ describe('restore on load (item 22)', () => {
     expect(await auth.refresh()).toBeNull();
   });
 
+  test('isRestored turns true once the load-time restore settled, anonymous or not', async () => {
+    const auth = tab(new Bus(), fakeLocks(), [anonymous], []);
+    const seen: boolean[] = [];
+    auth.onChange(() => seen.push(auth.isRestored()));
+    expect(auth.isRestored()).toBe(false);
+    await auth.restoreOnLoad();
+    expect(auth.isRestored()).toBe(true);
+    expect(seen.at(-1)).toBe(true); // listeners heard it, so a guard re-renders
+  });
+
   test('works without the Locks API', async () => {
     const auth = tab(new Bus(), null, [ok('t-1')], []);
     expect(await auth.restoreOnLoad()).toBe('t-1');

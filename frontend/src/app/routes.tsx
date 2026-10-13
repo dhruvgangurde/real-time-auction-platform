@@ -4,6 +4,7 @@
 import { createBrowserRouter } from 'react-router';
 
 import { takeTokenFromHash } from '../auth/token';
+import { Placeholder, RequireAuth, RequireRole } from './guards';
 import { Home } from './Home';
 import { NotFound } from './NotFound';
 import { Shell } from './Shell';
@@ -23,6 +24,17 @@ export const router = createBrowserRouter([
       { path: 'sign-in', lazy: auth('SignIn') },
       { path: 'forgot-password', lazy: auth('ForgotPassword') },
       { path: 'reset-password', lazy: auth('ResetPassword'), loader: () => takeTokenFromHash() },
+      {
+        element: <RequireAuth />,
+        children: [
+          { path: 'account/*', element: <Placeholder /> },
+          { path: 'watchlist', element: <Placeholder /> },
+          { path: 'notifications', element: <Placeholder /> },
+          { path: 'auctions/:id/pay', element: <Placeholder /> },
+        ],
+      },
+      { element: <RequireRole role="admin" />, children: [{ path: 'admin/*', element: <Placeholder /> }] },
+      { element: <RequireRole role="seller" />, children: [{ path: 'sell/*', element: <Placeholder /> }] },
       { path: '*', element: <NotFound /> },
     ],
   },

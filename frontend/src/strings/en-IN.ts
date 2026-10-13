@@ -55,6 +55,14 @@ export const enIN = {
     required: 'This field is required.',
     back: 'Go to live auctions',
   },
+  guards: {
+    deniedTitle: 'You do not have access to this page',
+    denied: (role) => (role === 'admin' ? 'You need administrator access to open this.' : 'You need seller access to list items.'),
+  },
+  placeholder: {
+    title: 'This page is on its way',
+    body: 'It is built in a later slice. Live auctions and the auction room are ready now.',
+  },
   auth: {
     register: {
       title: 'Create your account',
