@@ -12,9 +12,17 @@ events received before `subscribed`, apply only those above snapshot.sequence_no
 
 If Redis is unreachable the snapshot is served from Postgres with `degraded: true`, so viewing
 keeps working read-only (NFR-13).
+
+Anonymous /live bodies are cached per process for 1 s with single flight (SnapshotCache, brief
+12.2), and a missing live state is rebuilt by one flight per auction per process, shared by every
+caller (anonymous, authenticated, `subscribed`). Waiters await the shared task through
+asyncio.shield, so a caller that disconnects never cancels the work for the others.
 """
 
+import asyncio
 import contextlib
+import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
@@ -135,7 +143,7 @@ async def live_snapshot(
         state, outbox, participants, own_max = await read_live(auction_id, redis, viewer_id)
         if not state or state.get("status") == "rebuilding":
             try:
-                await init_live_state(auction_id, redis, sessions)
+                await _rebuild(auction_id, redis, sessions)
             except (LiveStateUnavailable, AuctionNotLive) as exc:
                 raise AppError("SERVICE_UNAVAILABLE", "live state is being rebuilt", 503) from exc
             state, outbox, participants, own_max = await read_live(auction_id, redis, viewer_id)
@@ -177,6 +185,77 @@ async def live_snapshot(
         "self_outbid_blocked": state.get("self_outbid") == "1",
         "server_time_ms": server_time_ms(),
     }
+
+
+Flight = asyncio.Task[Any]
+_rebuilds: dict[tuple[int, UUID], Flight] = {}
+
+
+async def _rebuild(
+    auction_id: UUID, redis: Redis, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    """init_live_state, one flight per auction and Redis client in this process: concurrent
+    callers share it. Across processes init_state.lua still lets one writer win."""
+    key = (id(redis), auction_id)
+    task = _rebuilds.get(key)
+    if task is None or task.done() or task.get_loop() is not asyncio.get_running_loop():
+        task = asyncio.ensure_future(init_live_state(auction_id, redis, sessions))
+        _rebuilds[key] = task
+
+        def done(t: Flight) -> None:
+            if not t.cancelled():
+                t.exception()  # retrieved here too, in case every waiter was cancelled
+            if _rebuilds.get(key) is t:
+                del _rebuilds[key]
+
+        task.add_done_callback(done)
+    await asyncio.shield(task)
+
+
+class SnapshotCache:
+    """Anonymous /live bodies per auction for `ttl_s` after they are built, with single flight:
+    concurrent misses share one build (brief 12.2 item 1). Only bodies built without a viewer go
+    in, so no per-viewer field is ever cached. A failed build is shared by its waiters but not
+    kept. One per app instance (app.state), so reads per auction are bounded by instances."""
+
+    def __init__(self, ttl_s: float = 1.0, clock: Callable[[], float] = time.monotonic) -> None:
+        self._ttl_s, self._clock = ttl_s, clock
+        self._flights: dict[UUID, Flight] = {}
+        self._expires: dict[UUID, float] = {}  # set when a flight succeeds
+
+    async def get(self, auction_id: UUID, build: Callable[[], Awaitable[dict[str, Any]]]) -> Any:
+        task = self._flights.get(auction_id)
+        fresh = task is not None and (
+            not task.done() or self._clock() < self._expires.get(auction_id, 0.0)
+        )
+        if not fresh:
+            self._prune()
+            task = asyncio.ensure_future(build())
+            self._flights[auction_id] = task
+            self._expires.pop(auction_id, None)
+            task.add_done_callback(lambda t: self._settled(auction_id, t))
+        assert task is not None
+        return await asyncio.shield(task)  # a cancelled waiter leaves the flight running
+
+    def _settled(self, auction_id: UUID, task: Flight) -> None:
+        if self._flights.get(auction_id) is not task:
+            return
+        if task.cancelled() or task.exception() is not None:
+            del self._flights[auction_id]  # never keep a failure
+        else:
+            self._expires[auction_id] = self._clock() + self._ttl_s
+
+    def clear(self) -> None:
+        """Forget every cached body (tests only). A flight in progress keeps running for its
+        waiters; the next request starts a new one."""
+        self._flights.clear()
+        self._expires.clear()
+
+    def _prune(self) -> None:
+        now = self._clock()
+        for key in [k for k, until in self._expires.items() if until <= now]:
+            del self._expires[key]
+            self._flights.pop(key, None)
 
 
 async def _postgres_snapshot(

@@ -129,7 +129,26 @@ def _provide(value: Any) -> Callable[[], Any]:
 
 
 @pytest.fixture
+def started_instances() -> list["Instance"]:
+    """Every instance started in the current test."""
+    return []
+
+
+@pytest.fixture
+def clear_snapshot_cache(started_instances: list["Instance"]) -> Callable[[], None]:
+    """Forget the cached anonymous /live bodies (brief 12.2 item 1) on every instance of the
+    test, so the next anonymous read is built afresh without waiting out the 1 s."""
+
+    def clear() -> None:
+        for instance in started_instances:
+            instance.app.state.snapshot_cache.clear()
+
+    return clear
+
+
+@pytest.fixture
 async def start_instance(
+    started_instances: list["Instance"],
     auth_service: AuthService,
     user_service: UserService,
     bid_service: BidService,
@@ -138,7 +157,7 @@ async def start_instance(
     limiter: RateLimiter,
     clock: FakeClock,
 ) -> AsyncIterator[StartInstance]:
-    started: list[Instance] = []
+    started = started_instances
 
     async def start(
         redis_url: str = TEST_REDIS_URL,

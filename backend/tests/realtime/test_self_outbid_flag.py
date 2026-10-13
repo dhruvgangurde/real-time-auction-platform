@@ -8,7 +8,7 @@ from app.core.config import settings
 
 
 async def test_live_reports_the_self_outbid_policy(
-    start_instance, auction, monkeypatch: pytest.MonkeyPatch
+    start_instance, auction, monkeypatch: pytest.MonkeyPatch, clear_snapshot_cache
 ) -> None:
     node = await start_instance()
     on = await auction(self_outbid=True)
@@ -18,6 +18,7 @@ async def test_live_reports_the_self_outbid_policy(
     async with httpx.AsyncClient(base_url=node.http) as http:
 
         async def flag(auction_id: object) -> bool:
+            clear_snapshot_cache()  # each anonymous read reflects the setting at that moment
             return (await http.get(f"/api/v1/auctions/{auction_id}/live")).json()[
                 "self_outbid_blocked"
             ]

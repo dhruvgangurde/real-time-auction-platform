@@ -21,6 +21,7 @@ from app.core.middleware import RequestIdMiddleware
 from app.core.redis import create_redis
 from app.core.security import check_startup_config
 from app.core.storage import MEDIA_URL_PREFIX
+from app.services.snapshot import SnapshotCache
 
 
 @asynccontextmanager
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
     check_startup_config()
     app = FastAPI(title="Real-Time Auction Platform", docs_url="/api/v1/docs", lifespan=lifespan)
+    app.state.snapshot_cache = SnapshotCache()  # anonymous /live, per instance (brief 12.2)
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
     app.include_router(health_router)

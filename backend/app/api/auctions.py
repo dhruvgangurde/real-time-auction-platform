@@ -7,7 +7,7 @@ the acknowledgement; room and user events are published after it is sent (FR-40)
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -35,7 +35,7 @@ from app.services.bidding import (
     log_bid,
     log_proxy,
 )
-from app.services.snapshot import live_snapshot
+from app.services.snapshot import SnapshotCache, live_snapshot
 
 router = APIRouter(prefix="/api/v1/auctions", tags=["auctions"])
 
@@ -69,12 +69,27 @@ def _rejection(code: str, min_next: int | None) -> AppError:
 @router.get("/{auction_id}/live")
 async def live(
     auction_id: UUID,
+    request: Request,
+    response: Response,
     viewer: CurrentUser | None = Depends(optional_user),
     redis: Redis = Depends(get_redis),
     sessions: async_sessionmaker[AsyncSession] = Depends(get_sessions),
 ) -> dict[str, Any]:
-    """Public snapshot from live state (FR-26); drafts only for their seller or an admin."""
-    return await live_snapshot(auction_id, viewer, redis, sessions)
+    """Public snapshot from live state (FR-26); drafts only for their seller or an admin.
+
+    Anonymous means no Authorization header: a presented token must be valid (optional_user
+    answers 401 otherwise), so no request skips both the cache and the anonymous limit. Anonymous
+    bodies come from the per-instance 1 s cache; authenticated ones are always read fresh and
+    carry the viewer's own fields. server_time_ms is stamped per response, outside the cache."""
+    if viewer is None:
+        cache: SnapshotCache = request.app.state.snapshot_cache
+        body = await cache.get(auction_id, lambda: live_snapshot(auction_id, None, redis, sessions))
+        response.headers["Cache-Control"] = "public, max-age=1"
+    else:
+        body = await live_snapshot(auction_id, viewer, redis, sessions)
+        response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization"  # a cached anonymous body never answers a token
+    return body | {"server_time_ms": live_events.server_time_ms()}
 
 
 @router.post("/{auction_id}/bids")

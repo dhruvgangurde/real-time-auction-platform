@@ -23,7 +23,7 @@ def _auth(token: str) -> dict[str, str]:
 
 
 async def test_live_snapshot_rebuilds_and_includes_unpersisted_bids(
-    node: Instance, make_bidder, auction, redis: Redis
+    node: Instance, make_bidder, auction, redis: Redis, clear_snapshot_cache
 ) -> None:
     a = await auction(start_price=10_000, min_increment=500, self_outbid=False)
     _, token = await make_bidder()
@@ -42,6 +42,7 @@ async def test_live_snapshot_rebuilds_and_includes_unpersisted_bids(
         assert "bidder_id" not in str(snap) and snap["degraded"] is False
 
         await redis.delete(state_key(a))  # live state lost; outbox still pending
+        clear_snapshot_cache()  # the next anonymous read must not be the cached body
         r = await http.get(f"/api/v1/auctions/{a}/live")
         assert r.status_code == 503  # rebuild refused until the outbox is persisted (FR-43)
 

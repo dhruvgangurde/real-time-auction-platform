@@ -22,7 +22,7 @@ def _numbers(value: Any) -> list[tuple[str, Any]]:
 
 
 async def test_reserve_met_in_live_and_bid_placed(
-    start_instance, make_bidder, auction, db, redis: Redis
+    start_instance, make_bidder, auction, db, redis: Redis, clear_snapshot_cache
 ) -> None:
     node = await start_instance()
     a = await auction(start_price=9_000, min_increment=500, self_outbid=False)
@@ -35,6 +35,7 @@ async def test_reserve_met_in_live_and_bid_placed(
     async with httpx.AsyncClient(base_url=node.http) as http:
 
         async def live(auction_id: Any) -> dict[str, Any]:
+            clear_snapshot_cache()  # each anonymous read reflects the bids so far
             body = (await http.get(f"/api/v1/auctions/{auction_id}/live")).json()
             seen.append(body)
             return body
