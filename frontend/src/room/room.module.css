@@ -429,6 +429,12 @@
   font-weight: 600;
 }
 
+/* the amount and decided-at headers sit over their right-aligned columns (polish) */
+.ledger th.amt,
+.ledger th.t {
+  text-align: right;
+}
+
 .t {
   text-align: right;
   color: var(--ink-3);
