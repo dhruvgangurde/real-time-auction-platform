@@ -47,6 +47,23 @@ describe('strings only come from the catalogue (OR-11)', () => {
   });
 });
 
+describe('money never passes through a float (item 20)', () => {
+  test('parseFloat is banned', async () => {
+    expect(await messages("parseFloat('1');", 'src/sample.ts')).toContainEqual(
+      expect.stringMatching(/no-restricted-syntax.*parseRupees/),
+    );
+    expect(await messages("Number.parseFloat('1');", 'src/sample.ts')).toContainEqual(
+      expect.stringMatching(/no-restricted-syntax.*parseRupees/),
+    );
+  });
+
+  test('toFixed is banned', async () => {
+    expect(await messages('export const a = (1.5).toFixed(2);', 'src/sample.ts')).toContainEqual(
+      expect.stringMatching(/no-restricted-syntax.*formatINR/),
+    );
+  });
+});
+
 describe('privacy and safety rules', () => {
   test('console is banned (item 19)', async () => {
     expect(await messages('console.log(1);', 'src/sample.ts')).toContainEqual(

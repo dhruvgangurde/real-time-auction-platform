@@ -31,5 +31,6 @@ Exact versions only (`.npmrc` has `save-exact`). A new version is taken only onc
 | `no-console` | 13 item 19: a maximum never reaches the console |
 | `dangerouslySetInnerHTML` banned | 13 item 24: user text is rendered as text |
 | No string literal in JSX: text between tags, a string or template in braces, or `alt`, `title`, `placeholder`, `aria-label`, `aria-description`, `aria-valuetext` | OR-11: strings come from `useStrings()` |
+| `parseFloat` and `toFixed` banned | 13 item 20: money is integer paise; `lib/money.ts` formats and parses |
 
 `src/lint.test.ts` runs ESLint on small samples and proves each rule fires.

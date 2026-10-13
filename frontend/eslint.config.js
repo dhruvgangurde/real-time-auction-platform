@@ -23,6 +23,15 @@ export const restrictedSyntax = [
     selector: `JSXAttribute[name.name=${TEXT_ATTRS}] > JSXExpressionContainer > :matches(Literal, TemplateLiteral)`,
     message: CATALOGUE,
   },
+  // item 20: money is integer paise; never a float on the way in or out
+  {
+    selector: 'CallExpression[callee.name="parseFloat"], CallExpression[callee.property.name="parseFloat"]',
+    message: 'Never parseFloat money: parseRupees in lib/money.ts (brief 13 item 20).',
+  },
+  {
+    selector: 'CallExpression[callee.property.name="toFixed"]',
+    message: 'Never toFixed money: formatINR in lib/money.ts (brief 13 item 20).',
+  },
 ];
 
 export default defineConfig([
