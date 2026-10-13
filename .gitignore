@@ -17,3 +17,6 @@ design/refs/
 
 # Superdesign scratch HTML (never committed)
 .superdesign/tmp/
+
+# rendered mockup frames: re-made from the committed mockup HTML (01 and 02 stay tracked)
+design/shots/**/*.png
