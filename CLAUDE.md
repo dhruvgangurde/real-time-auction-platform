@@ -30,12 +30,13 @@ This file is read at the start of every session. Follow it for all work in this 
 
 | Service | Host port | Container port |
 |---|---|---|
-| API | 8010 | 8000 |
+| Web (nginx: SPA, `/api`, WebSocket, `/media`) | 8011 | 80 |
+| API, first instance only (dev only: Swagger, curl) | 8010 | 8000 |
 | Postgres | 5442 | 5432 |
 | Redis | 6389 | 6379 |
 | Mailpit web UI (dev only) | 8025 | 8025 |
 
-Ports 5432 and 8000 are used by another project on this machine. Never bind them. Mailpit (dev SMTP sink) exists only in `docker-compose.override.yml`; its UI port is `MAILPIT_UI_HOST_PORT`. Containers talk to each other on the container ports. API, Postgres and Redis host mappings exist only in `docker-compose.override.yml` (the API mapping reaches the first instance only). Host ports are configurable through `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`. Compose project name is `auction`; never use `container_name`.
+Ports 5432 and 8000 are used by another project on this machine. Never bind them. Mailpit (dev SMTP sink) exists only in `docker-compose.override.yml`; its UI port is `MAILPIT_UI_HOST_PORT`. Containers talk to each other on the container ports. API, Postgres and Redis host mappings exist only in `docker-compose.override.yml` (the API mapping reaches the first instance only). Host ports are configurable through `WEB_HOST_PORT`, `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`. Compose project name is `auction`; never use `container_name`.
 
 ## 5. Repo layout
 
@@ -136,5 +137,8 @@ docker compose exec api ruff check .           # lint
 docker compose exec api ruff format --check .  # format check
 docker compose exec api alembic upgrade head   # apply migrations (owner role, MIGRATION_DATABASE_URL)
 docker compose exec api alembic check          # models vs migrations drift check
-curl localhost:8010/api/v1/health/ready        # readiness check
+curl localhost:8010/api/v1/health/ready        # readiness check (first api instance, dev)
+curl localhost:8011/api/v1/health/ready        # readiness through the web service (either instance)
+docker compose exec web nginx -t              # web service config check
+docker compose logs api api-2                 # both api instances (which one took a socket)
 ```

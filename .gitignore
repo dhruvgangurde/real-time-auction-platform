@@ -20,3 +20,6 @@ design/refs/
 
 # rendered mockup frames: re-made from the committed mockup HTML (01 and 02 stay tracked)
 design/shots/**/*.png
+
+# the built SPA, served by the web service (Phase 10c builds it)
+frontend/dist/

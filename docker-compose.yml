@@ -34,7 +34,9 @@ services:
       postgres:
         condition: service_healthy
 
-  api:
+  # two api instances behind the web service (NFR-5): the hub, presence, sessions, limits and
+  # idempotency records are all in Redis, so either instance can take any request or socket
+  api: &api
     build: ./backend
     # X-Forwarded-For is trusted only from the web proxy's fixed address (NFR-22): a client that
     # reaches the api directly cannot choose the address its rate limits key on
@@ -42,9 +44,11 @@ services:
     env_file: .env
     environment:
       WATCHFILES_FORCE_POLLING: "true"
+      # the web origin joins the WebSocket Origin allowlist unless .env sets its own
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8011}
     volumes:
       - ./backend:/app
-      - media:/media  # re-encoded auction images (D10), served read-only under /media
+      - media:/media  # one volume for both instances: an upload is served by either (D10)
     networks: [default, edge]
     # no host port here: in development docker-compose.override.yml publishes API_HOST_PORT
     depends_on:
@@ -52,6 +56,26 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+
+  api-2: *api
+
+  # the front door (brief 12.5): the built SPA, and /api (with the WebSocket upgrade) and /media
+  # balanced across both api instances, with the CSP and security headers
+  web:
+    image: nginx:1.28.0-alpine
+    environment:
+      WEB_WS_ORIGIN: ${WEB_WS_ORIGIN:-ws://localhost:8011}
+    volumes:
+      - ./web/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro  # empty until the SPA is built (Phase 10c)
+    ports:
+      - "${WEB_HOST_PORT:-8011}:80"
+    networks:
+      edge:
+        ipv4_address: ${WEB_PROXY_IP:-10.201.0.10}  # the one address the api trusts
+    depends_on:
+      - api
+      - api-2
 
   worker:
     build: ./backend
