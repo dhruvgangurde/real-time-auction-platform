@@ -8,7 +8,8 @@ React + TypeScript (strict) with Vite. The design brief (`docs/design-brief.md`)
 nvm use                 # Node 24.19 (.nvmrc); engines refuse other majors
 npm ci                  # exact versions from the lockfile
 npm run dev             # Vite on 5173, /api and /media proxied to the compose stack (8011)
-npm run build           # tsc --noEmit, then vite build into dist/ (served by the web service on 8011)
+npm run typecheck       # tsc --noEmit
+npm run build           # typecheck, vite build into dist/ (served by the web service on 8011), chunk budget
 npm test                # Vitest: reducer, money, clock, strings, contract, client, socket, lint rules
 npm run lint            # ESLint, including the project rules below
 npm run e2e             # Playwright against http://localhost:8011 only (the real CSP), after npm run build
@@ -64,6 +65,10 @@ Reducer tests are in `src/live/room.test.ts`; the others name their file.
 | 28 | Parse frames defensively | Not a reducer rule. `contract.test.ts`: "unknown frame types are ignored", "frames missing or mistyping a required field are dropped", "invalid JSON and non-objects are dropped, never thrown". `socket.test.ts`: "malformed frames never reach the room". `roomController.test.ts`: "a malformed frame never reaches the reducer" |
 | 29 | One error envelope; catalogue message; fields onto inputs | Not a reducer rule. `client.test.ts`: "a non-2xx body becomes ApiError with code, message and fields". `strings.test.ts`: "every documented error code has a message, and no undocumented one" |
 | B1 | self_outbid_blocked: the leader bids again only when the policy is off | `room.test.ts`: "the leader may bid again only when the policy is off" |
+
+## Budgets (brief 11.5)
+
+`npm run build` ends with `scripts/chunk-budget.mjs`: it prints every JavaScript chunk's gzip size and fails when the entry chunk plus its static imports exceed 130 KB gzip. Routes beyond the shell load through dynamic imports, and `src/app/chunks.test.ts` fails if the entry ever imports `live/` or `room/` code statically. `e2e/budgets.spec.ts` sums every font file fetched before the load event on each route, at 390 and 1440, against 120 KB.
 
 ## Project lint rules
 
