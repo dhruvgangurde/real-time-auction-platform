@@ -29,6 +29,7 @@ from tests.conftest import TEST_REDIS_URL
 
 MESSAGE_KINDS = ("place_bid", "set_proxy", "subscribe", "unsubscribe", "authenticate", "ping")
 DEAD_REDIS_URL = "redis://redis:6399/15"  # nothing listens on this port
+WEB_PROXY_IP = "10.201.0.10"  # docker-compose.yml default: the only trusted X-Forwarded-For peer
 
 
 @pytest.fixture(autouse=True)
@@ -163,10 +164,13 @@ async def start_instance(
         redis_url: str = TEST_REDIS_URL,
         overrides: dict[Callable[..., Any], Any] | None = None,
         ws_ping_interval: float | None = None,
+        forwarded_allow_ips: str = WEB_PROXY_IP,
     ) -> Instance:
         """One uvicorn server. `overrides` replaces dependency providers (values are the
         instances to serve); `ws_ping_interval` turns on the protocol keepalive (the timeout
-        equals the interval), which production runs at 20 s."""
+        equals the interval), which production runs at 20 s. X-Forwarded-For is trusted only from
+        `forwarded_allow_ips`, as in compose; the test clients connect from 127.0.0.1, so by
+        default their header is ignored (uvicorn alone would trust 127.0.0.1)."""
         app = app_main.create_app()
         app.state.redis_url = redis_url
         services: dict[Callable[..., Any], Any] = {
@@ -191,6 +195,8 @@ async def start_instance(
             ws_max_size=65536,
             ws_ping_interval=ws_ping_interval,
             ws_ping_timeout=ws_ping_interval,
+            proxy_headers=True,
+            forwarded_allow_ips=forwarded_allow_ips,
         )
         server = uvicorn.Server(config)
         task = asyncio.create_task(server.serve())

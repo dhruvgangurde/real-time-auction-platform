@@ -35,7 +35,7 @@ This file is read at the start of every session. Follow it for all work in this 
 | Redis | 6389 | 6379 |
 | Mailpit web UI (dev only) | 8025 | 8025 |
 
-Ports 5432 and 8000 are used by another project on this machine. Never bind them. Mailpit (dev SMTP sink) exists only in `docker-compose.override.yml`; its UI port is `MAILPIT_UI_HOST_PORT`. Containers talk to each other on the container ports. Postgres and Redis host mappings exist only in `docker-compose.override.yml`. Host ports are configurable through `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`. Compose project name is `auction`; never use `container_name`.
+Ports 5432 and 8000 are used by another project on this machine. Never bind them. Mailpit (dev SMTP sink) exists only in `docker-compose.override.yml`; its UI port is `MAILPIT_UI_HOST_PORT`. Containers talk to each other on the container ports. API, Postgres and Redis host mappings exist only in `docker-compose.override.yml` (the API mapping reaches the first instance only). Host ports are configurable through `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`. Compose project name is `auction`; never use `container_name`.
 
 ## 5. Repo layout
 

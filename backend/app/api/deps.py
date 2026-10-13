@@ -146,7 +146,8 @@ def get_notification_service() -> NotificationService:
 
 
 def client_ip(request: Request) -> str:
-    # shortcut: direct peer address; a reverse proxy deployment needs forwarded-header handling
+    # uvicorn rewrites the peer from X-Forwarded-For only when the request comes from the web
+    # proxy (--forwarded-allow-ips, docker-compose.yml); anyone else gets their real peer address
     return request.client.host if request.client else "unknown"
 
 
