@@ -36,6 +36,19 @@ def _set_refresh_cookie(response: Response, tokens: Tokens) -> TokenResponse:
     return TokenResponse(access_token=tokens.access_token, expires_in=tokens.expires_in)
 
 
+def _cleared_refresh_cookie() -> str:
+    """The Set-Cookie value that removes the refresh cookie (same name, path and flags)."""
+    cleared = Response()
+    cleared.delete_cookie(
+        REFRESH_COOKIE,
+        path=COOKIE_PATH,
+        secure=settings.cookie_secure,
+        httponly=True,
+        samesite="strict",
+    )
+    return cleared.headers["set-cookie"]
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserProfile)
 async def register(
     body: RegisterRequest,
@@ -77,17 +90,32 @@ async def login(
     return _set_refresh_cookie(response, tokens)
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    responses={204: {"description": "No refresh cookie: an anonymous visitor, nothing to refresh"}},
+)
 async def refresh(
     response: Response,
     refresh_token: str | None = Cookie(default=None),
     x_requested_with: str | None = Header(default=None),
     auth: AuthService = Depends(get_auth_service),
-) -> TokenResponse:
+) -> TokenResponse | Response:
     # a custom header is something a cross-site form post cannot add (NFR-21)
     if not x_requested_with:
         raise AppError("FORBIDDEN", "X-Requested-With header required", 403)
-    tokens = await auth.refresh(refresh_token)
+    if refresh_token is None:
+        # no cookie at all: the app calls this on every load, and an anonymous visitor is not
+        # an error (no body, no cookie set)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    try:
+        tokens = await auth.refresh(refresh_token)
+    except AppError as exc:
+        if (
+            exc.status == 401
+        ):  # invalid, expired or revoked: clear it, one 401 rather than one per load
+            exc.headers = {**exc.headers, "set-cookie": _cleared_refresh_cookie()}
+        raise
     return _set_refresh_cookie(response, tokens)
 
 
