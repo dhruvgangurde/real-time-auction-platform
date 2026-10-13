@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test';
 
 export const FONT_BUDGET = 120 * 1024;
 // grows as routes land: each slice-2 commit that adds a route adds it here
-export const ROUTES = ['/', '/nothing-here'];
+export const ROUTES = ['/', '/nothing-here', '/sign-in', '/register'];
 
 for (const width of [1440, 390]) {
   for (const route of ROUTES) {

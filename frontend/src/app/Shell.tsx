@@ -1,11 +1,14 @@
 // The app shell: skip link, header, main landmark and the two live regions (brief 9.1, 11.4).
 // Every string comes from the catalogue; every colour from the tokens.
 import { useQuery } from '@tanstack/react-query';
+import { lazy, Suspense } from 'react';
 import { Link, NavLink, Outlet } from 'react-router';
 
 import { useStrings } from '../strings/catalogue';
 import { useApp, useToken } from './context';
 import styles from './Shell.module.css';
+
+const SignOutButton = lazy(() => import('../auth/screens').then((m) => ({ default: m.SignOutButton })));
 
 export function Shell() {
   const s = useStrings();
@@ -35,6 +38,9 @@ export function Shell() {
                 <NavLink to="/watchlist">{s.nav.watchlist}</NavLink>
                 <NavLink to="/notifications">{s.nav.notifications}</NavLink>
                 <NavLink to="/account">{me.data?.full_name ?? s.nav.account}</NavLink>
+                <Suspense fallback={null}>
+                  <SignOutButton className={styles.signOut} />
+                </Suspense>
               </>
             ) : (
               <>
@@ -46,7 +52,9 @@ export function Shell() {
         </div>
       </header>
       <main id="main" className={styles.main} tabIndex={-1} aria-label={s.app.main}>
-        <Outlet />
+        <Suspense fallback={<p className={styles.loading}>{s.common.loading}</p>}>
+          <Outlet />
+        </Suspense>
       </main>
       <div className="sr-only" aria-live="polite" id="live-polite" />
       <div className="sr-only" aria-live="assertive" id="live-assertive" />

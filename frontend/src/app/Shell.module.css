@@ -37,6 +37,15 @@
   text-decoration: none;
 }
 
+.signOut {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .nav a[aria-current='page'] {
   text-decoration: underline;
   text-underline-offset: 6px;
@@ -47,6 +56,19 @@
   composes: wrap;
   padding-top: 32px;
   padding-bottom: 96px;
+}
+
+/* a lazy chunk still loading: shown only after 300 ms so the shell never flashes */
+.loading {
+  color: var(--ink-2);
+  opacity: 0;
+  animation: appear 0s linear 300ms forwards;
+}
+
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
 }
 
 /* the skip link: visually hidden until it has focus (brief 11.4) */

@@ -16,8 +16,9 @@ export const restrictedSyntax = [
   },
   // OR-11: no string literal reaches the screen except through the catalogue
   { selector: 'JSXText[value=/\\S/]', message: CATALOGUE },
-  { selector: 'JSXExpressionContainer > Literal[raw=/^[\'"]/][value=/\\S/]', message: CATALOGUE },
-  { selector: 'JSXExpressionContainer > TemplateLiteral', message: CATALOGUE },
+  // literals rendered as children; a template in an id or class attribute is not text
+  { selector: ':matches(JSXElement, JSXFragment) > JSXExpressionContainer > Literal[raw=/^[\'"]/][value=/\\S/]', message: CATALOGUE },
+  { selector: ':matches(JSXElement, JSXFragment) > JSXExpressionContainer > TemplateLiteral', message: CATALOGUE },
   { selector: `JSXAttribute[name.name=${TEXT_ATTRS}] > Literal`, message: CATALOGUE },
   {
     selector: `JSXAttribute[name.name=${TEXT_ATTRS}] > JSXExpressionContainer > :matches(Literal, TemplateLiteral)`,

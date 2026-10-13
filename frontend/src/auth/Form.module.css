@@ -1,0 +1,51 @@
+.field {
+  display: grid;
+  gap: 6px;
+  margin-top: 20px;
+}
+
+.field label {
+  font: var(--label);
+}
+
+.field input {
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: var(--ui-md);
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--red);
+}
+
+.hint {
+  margin: 0;
+  font: var(--ui-sm);
+  color: var(--ink-2);
+}
+
+.fieldError {
+  margin: 0;
+  font: var(--ui-sm);
+  color: var(--red);
+}
+
+.error {
+  margin-top: 20px;
+  padding: 12px 14px;
+  background: var(--red-wash);
+  color: var(--red);
+  border-radius: 4px;
+}
+
+.error p {
+  margin: 0;
+}
+
+.error a {
+  color: inherit;
+}

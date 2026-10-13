@@ -110,6 +110,68 @@ export type Catalogue = {
     reserveMet: string;
     reserveNotMet: string;
   };
+  common: {
+    loading: string;
+    required: string;
+    back: string;
+  };
+  auth: {
+    register: {
+      title: string;
+      name: string;
+      email: string;
+      password: string;
+      passwordHint: string;
+      submit: string;
+      haveAccount: string;
+      signIn: string;
+    };
+    checkEmail: {
+      title: string;
+      body: (email: string) => string;
+      bodyNoEmail: string;
+      resend: string;
+      resent: string;
+    };
+    verify: {
+      title: string;
+      verifying: string;
+      done: string;
+      signIn: string;
+      incomplete: string;
+      resendTitle: string;
+    };
+    signIn: {
+      title: string;
+      email: string;
+      password: string;
+      submit: string;
+      forgot: string;
+      noAccount: string;
+      register: string;
+      notVerifiedResend: string;
+      rateLimited: (seconds: number) => string;
+    };
+    forgot: {
+      title: string;
+      body: string;
+      email: string;
+      submit: string;
+      done: string;
+    };
+    reset: {
+      title: string;
+      password: string;
+      submit: string;
+      done: string;
+      signIn: string;
+      incomplete: string;
+    };
+    signOut: {
+      label: string;
+      failed: string;
+    };
+  };
   errors: Record<ErrorCode, string>;
   close: Record<CloseCode, string>;
   unknownError: string;

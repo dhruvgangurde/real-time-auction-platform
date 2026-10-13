@@ -10,12 +10,14 @@ import {
   parseErrorEnvelope,
   parseFrame,
   parseLiveSnapshot,
+  parseTokenResponse,
   parseUserProfile,
   type AuctionDetail,
   type BidAccepted,
   type BidHistoryPage,
   type LiveSnapshot,
   type ProxyArmed,
+  type TokenResponse,
   type UserProfile,
 } from '../lib/contract';
 import type { Sample } from '../lib/clock';
@@ -127,6 +129,28 @@ export function createApi(deps: ApiDeps) {
 
     async me(): Promise<UserProfile> {
       return parsed(await request('GET', '/users/me', { auth: 'required' }), parseUserProfile);
+    },
+
+    // identity (brief 9.10); the refresh cookie is set by the login response itself
+    async register(email: string, password: string, fullName: string): Promise<UserProfile> {
+      const body = { email, password, full_name: fullName };
+      return parsed(await request('POST', '/auth/register', { auth: 'none', body }), parseUserProfile);
+    },
+    async verifyEmail(token: string): Promise<void> {
+      await request('POST', '/auth/verify-email', { auth: 'none', body: { token } });
+    },
+    async resendVerification(email: string): Promise<void> {
+      await request('POST', '/auth/resend-verification', { auth: 'none', body: { email } });
+    },
+    async login(email: string, password: string): Promise<TokenResponse> {
+      const body = { email, password };
+      return parsed(await request('POST', '/auth/login', { auth: 'none', body }), parseTokenResponse);
+    },
+    async forgotPassword(email: string): Promise<void> {
+      await request('POST', '/auth/forgot-password', { auth: 'none', body: { email } });
+    },
+    async resetPassword(token: string, password: string): Promise<void> {
+      await request('POST', '/auth/reset-password', { auth: 'none', body: { token, password } });
     },
 
     async placeBid(auctionId: string, amount: number, requestId: string): Promise<BidAccepted> {
