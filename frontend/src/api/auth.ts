@@ -139,23 +139,36 @@ export function createAuth(deps: AuthDeps) {
     },
 
     /** Revoke the session on the server, then forget the token everywhere. Returns whether the
-     * server confirmed the revocation (204, or 401 for a session already dead); on false the
-     * refresh cookie may still be alive and the UI must say the sign-out did not go through. */
+     * revocation went through: 204 from the server, or a refresh that found no live session.
+     * A 401 only says the access token was refused (it may have expired while the refresh
+     * session is still alive), so it refreshes and revokes again with the new token. On false
+     * the refresh cookie may still be alive and the UI must say the sign-out did not go through. */
     async logout(): Promise<boolean> {
-      const current = token;
-      let revoked = current === null; // nothing to revoke
-      if (current !== null) {
+      const revoke = async (bearer: string): Promise<number> => {
         try {
           const response = await deps.fetch(`${BASE}/auth/logout`, {
             method: 'POST',
             credentials: 'same-origin',
-            headers: { Authorization: `Bearer ${current}` },
+            headers: { Authorization: `Bearer ${bearer}` },
           });
-          revoked = response.status === 204 || response.status === 401;
+          return response.status;
         } catch {
-          revoked = false;
+          return 0; // network: unknown, so not revoked
+        }
+      };
+      let revoked = false;
+      const current = token;
+      let status = current === null ? 401 : await revoke(current);
+      if (status === 401) {
+        // the bearer was refused or absent: ask the server for a live session first
+        const fresh = await refresh();
+        if (fresh === null) {
+          revoked = true; // 204 or 401 on refresh: there is no session to revoke
+        } else {
+          status = await revoke(fresh);
         }
       }
+      revoked = revoked || status === 204;
       set(null);
       post({ kind: 'logout' });
       return revoked;

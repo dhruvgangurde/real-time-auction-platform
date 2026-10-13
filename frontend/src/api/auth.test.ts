@@ -166,9 +166,31 @@ describe('tabs (item 3)', () => {
     expect(calls[0]?.url).toBe('/api/v1/auth/logout');
     expect(calls[0]?.init.headers).toMatchObject({ Authorization: 'Bearer t-login' });
     expect(a.getToken()).toBeNull();
-    // anonymous: nothing to revoke, nothing sent
+  });
+
+  test('an expired bearer on logout refreshes and revokes again with the new token', async () => {
+    const calls: Call[] = [];
+    const a = tab(new Bus(), fakeLocks(), [dead, ok('t-2'), () => new Response(null, { status: 204 })], calls);
+    a.accept('t-old', 900);
     expect(await a.logout()).toBe(true);
-    expect(calls).toHaveLength(1);
+    expect(calls.map((c) => c.url)).toEqual(['/api/v1/auth/logout', '/api/v1/auth/refresh', '/api/v1/auth/logout']);
+    expect(calls[2]?.init.headers).toMatchObject({ Authorization: 'Bearer t-2' });
+    expect(a.getToken()).toBeNull();
+  });
+
+  test('a 401 is never taken as revoked by itself: only a refresh that finds no session is', async () => {
+    const calls: Call[] = [];
+    // the bearer is refused and the refresh cookie is still alive, but the second revoke fails
+    const stillAlive = tab(new Bus(), fakeLocks(), [dead, ok('t-2'), () => new Response(null, { status: 503 })], calls);
+    stillAlive.accept('t-old', 900);
+    expect(await stillAlive.logout()).toBe(false);
+    // the bearer is refused and the refresh finds no session: nothing left to revoke
+    const gone = tab(new Bus(), fakeLocks(), [dead, anonymous], []);
+    gone.accept('t-old', 900);
+    expect(await gone.logout()).toBe(true);
+    // anonymous: the refresh says 204, nothing to revoke
+    const anon = tab(new Bus(), fakeLocks(), [anonymous], []);
+    expect(await anon.logout()).toBe(true);
   });
 
   test('a newer token replaces an older one; an older one is ignored', async () => {
