@@ -325,6 +325,21 @@ export type Catalogue = {
     required: string;
     back: string;
   };
+  history: {
+    title: string;
+    toRoom: string;
+    no: string;
+    bidder: string;
+    amount: string;
+    decidedAt: string;
+    you: string;
+    byMaximum: string;
+    showMore: string;
+    loading: string;
+    empty: string;
+    degraded: string;
+    error: string;
+  };
   guards: {
     deniedTitle: string;
     denied: (role: 'seller' | 'admin') => string;

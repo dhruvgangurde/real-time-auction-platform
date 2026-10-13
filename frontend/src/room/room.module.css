@@ -997,3 +997,24 @@
     padding: 20px;
   }
 }
+
+/* ---- the full bid history page (FR-27) */
+.historyPage {
+  max-width: 760px;
+}
+
+.historyTitle {
+  font: var(--title-1);
+  margin: 8px 0 20px;
+}
+
+@media (max-width: 700px) {
+  .historyPage .t,
+  .historyPage th.t {
+    display: table-cell;
+  }
+
+  .historyPage .t {
+    font-size: 14px;
+  }
+}
