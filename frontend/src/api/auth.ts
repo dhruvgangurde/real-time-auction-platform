@@ -138,18 +138,27 @@ export function createAuth(deps: AuthDeps) {
       post({ kind: 'token', token: accessToken, expiresAtMs });
     },
 
-    async logout(): Promise<void> {
+    /** Revoke the session on the server, then forget the token everywhere. Returns whether the
+     * server confirmed the revocation (204, or 401 for a session already dead); on false the
+     * refresh cookie may still be alive and the UI must say the sign-out did not go through. */
+    async logout(): Promise<boolean> {
       const current = token;
+      let revoked = current === null; // nothing to revoke
+      if (current !== null) {
+        try {
+          const response = await deps.fetch(`${BASE}/auth/logout`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { Authorization: `Bearer ${current}` },
+          });
+          revoked = response.status === 204 || response.status === 401;
+        } catch {
+          revoked = false;
+        }
+      }
       set(null);
       post({ kind: 'logout' });
-      if (current === null) return;
-      await deps
-        .fetch(`${BASE}/auth/logout`, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { Authorization: `Bearer ${current}` },
-        })
-        .catch(() => undefined);
+      return revoked;
     },
 
     onChange(listen: (token: string | null) => void): () => void {

@@ -152,10 +152,23 @@ describe('tabs (item 3)', () => {
     a.accept('t-login', 900);
     await new Promise((r) => setTimeout(r, 5));
     expect(b.getToken()).toBe('t-login');
-    await a.logout();
+    expect(await a.logout()).toBe(true);
     await new Promise((r) => setTimeout(r, 5));
     expect(a.getToken()).toBeNull();
     expect(b.getToken()).toBeNull();
+  });
+
+  test('a logout the server did not confirm reports false and still forgets the token', async () => {
+    const calls: Call[] = [];
+    const a = tab(new Bus(), fakeLocks(), [() => new Response(null, { status: 503 })], calls);
+    a.accept('t-login', 900);
+    expect(await a.logout()).toBe(false);
+    expect(calls[0]?.url).toBe('/api/v1/auth/logout');
+    expect(calls[0]?.init.headers).toMatchObject({ Authorization: 'Bearer t-login' });
+    expect(a.getToken()).toBeNull();
+    // anonymous: nothing to revoke, nothing sent
+    expect(await a.logout()).toBe(true);
+    expect(calls).toHaveLength(1);
   });
 
   test('a newer token replaces an older one; an older one is ignored', async () => {
