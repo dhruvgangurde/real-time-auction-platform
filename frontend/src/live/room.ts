@@ -217,8 +217,11 @@ function applySnapshot(state: RoomState, action: Extract<RoomAction, { type: 'sn
   ) {
     return done(state);
   }
+  // fix: an accepted result must not outlive the lead it reported (a fresh you_lead=false wins)
+  const lostLead = body.viewer !== null && !body.viewer.you_lead && state.last?.kind === 'accepted';
   let next: RoomState = {
     ...state,
+    last: lostLead ? null : state.last,
     status: body.status,
     terminal: state.terminal ?? outcomeOf(body.status),
     sequence: body.sequence_no,
@@ -296,7 +299,7 @@ function applyFrame(state: RoomState, frame: InboundFrame): Step {
     case 'outbid_notice':
       if (frame.auction_id !== state.auctionId) return done(state);
       // a maximum holder is told only when the trigger exhausted it (arch 4): the maximum is spent
-      return done({ ...state, own: { ...state.own, leading: false, outbidAt: frame.current_price, maximumActive: false } });
+      return done({ ...state, last: null, own: { ...state.own, leading: false, outbidAt: frame.current_price, maximumActive: false } });
     case 'bid_placed':
     case 'timer_extended':
     case 'auction_started':

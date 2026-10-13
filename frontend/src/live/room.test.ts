@@ -371,4 +371,16 @@ describe('slice-2 review fixes: own status and panels', () => {
     expect(fresh.own.leading).toBe(true);
     expect(fresh.own.outbidAt).toBeNull();
   });
+
+  test('fix 2: the accepted result clears when the viewer is outbid', () => {
+    const lead = lead3();
+    expect(lead.last).toEqual({ kind: 'accepted', sequence: 3, amount: 1050000 });
+    const outbid = run(lead, frame({ type: 'outbid_notice', auction_id: A, current_price: 1100000, sequence_no: 4, server_time_ms: T })).state;
+    expect(outbid.last).toBeNull();
+  });
+
+  test('fix 2: the accepted result clears when a snapshot shows the viewer no longer leading', () => {
+    const lost = run(lead3('r2'), { type: 'snapshot', source: 'fetch', body: snapshot({ sequence_no: 4, viewer: { you_lead: false, your_max: null, your_result: null } }) }).state;
+    expect(lost.last).toBeNull();
+  });
 });
