@@ -21,7 +21,7 @@
 }
 
 .mark {
-  font: 500 22px/1 var(--font-serif);
+  font: 400 22px/1 var(--font-serif);
   letter-spacing: -0.01em;
   margin-right: auto;
   text-decoration: none;

@@ -10,9 +10,7 @@ const CSP =
   "connect-src 'self' ws://localhost:8011; font-src 'self'; object-src 'none'; base-uri 'none'; " +
   "form-action 'self'; frame-ancestors 'none'";
 const PAPER = { light: 'rgb(255, 255, 255)', dark: 'rgb(13, 20, 36)' } as const;
-// brief 11.5: at most 120 KB of WOFF2 on first paint, the two preloaded files; the other weights
-// load on use (Spectral Medium for titles) and are not part of the first-paint budget
-const FONT_BUDGET = 120 * 1024;
+// the font budget itself (every font before load, per route) is e2e/budgets.spec.ts
 const PRELOADED = ['/fonts/spectral/Spectral-Regular.woff2', '/fonts/anek-latin/AnekLatin.woff2'];
 
 declare global {
@@ -24,17 +22,14 @@ declare global {
 async function load(page: Page, path = '/') {
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
-  let fontBytes = 0;
   const fontFiles: string[] = [];
   page.on('console', (m) => {
     if (m.type() === 'error') consoleErrors.push(m.text());
   });
   page.on('pageerror', (e) => pageErrors.push(e.message));
-  page.on('response', async (r) => {
+  page.on('response', (r) => {
     const path = new URL(r.url()).pathname;
-    if (!path.startsWith('/fonts/')) return;
-    fontFiles.push(path);
-    if (PRELOADED.includes(path)) fontBytes += (await r.body()).length;
+    if (path.startsWith('/fonts/')) fontFiles.push(path);
   });
   await page.addInitScript(() => {
     window.cspViolations = [];
@@ -46,7 +41,7 @@ async function load(page: Page, path = '/') {
   const response = await page.goto(path);
   await page.getByRole('main').waitFor();
   await page.evaluate(() => document.fonts.ready);
-  return { response, refresh: await refresh, consoleErrors, pageErrors, fontBytes: () => fontBytes, fontFiles };
+  return { response, refresh: await refresh, consoleErrors, pageErrors, fontFiles };
 }
 
 for (const theme of ['light', 'dark'] as const) {
@@ -80,8 +75,6 @@ for (const theme of ['light', 'dark'] as const) {
       expect(loaded).toContain('Spectral');
       expect(loaded).toContain('Anek Latin');
       for (const file of PRELOADED) expect(run.fontFiles).toContain(file);
-      expect(run.fontBytes()).toBeLessThanOrEqual(FONT_BUDGET);
-      expect(run.fontBytes()).toBeGreaterThan(0);
 
       // no horizontal scroll (brief 11.4), no errors, no CSP violations
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

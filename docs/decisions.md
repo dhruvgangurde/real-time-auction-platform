@@ -2,6 +2,9 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-14 Phase 10c slice 2
+- Above-the-fold serif text is Spectral 400 (`display-1`, `display-2`, the header mark), not 500: the 120 KB first-paint font budget (brief 11.5) is measured as every font file fetched before the load event on every route, at 390 and 1440 (`e2e/budgets.spec.ts`), and Spectral Medium (35 KB) on top of the two preloads (101 KB) broke it. Medium and SemiBold stay for text below the fold. Brief 3.2 amended.
+
 ## 2026-10-13 Frontend scaffold choices (Phase 10c slice 1, F1)
 - Dependencies are exactly those of brief 11.2 (react, react-dom, react-router, @tanstack/react-query; dev: vite, @vitejs/plugin-react, typescript, the two React type packages, vitest, @playwright/test, eslint, @eslint/js, typescript-eslint, eslint-plugin-react-hooks). Every version is pinned exactly (`save-exact`), and a version is taken only once it is at least seven days old (a supply-chain cool-down): on 2026-10-13 that gave vite 8.3.2, vitest 5.0.3, @tanstack/react-query 5.104.1, @playwright/test 1.63.0 and typescript-eslint 8.71.1 rather than the newest releases. `engines.node` is `>=24.19.0 <25` with `engine-strict`, and `.nvmrc` is 24.19.0: a Node patch update never breaks `npm ci`, another major is refused.
 - TypeScript 6.0.3, not 7: typescript-eslint supports TypeScript below 6.1 only.

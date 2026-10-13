@@ -17,8 +17,8 @@ html {
   --font-serif: 'Spectral', 'Spectral Fallback', Georgia, serif;
   --font-ui: 'Anek Latin', 'Anek Latin Fallback Segoe', 'Anek Latin Fallback Roboto', 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Fragment Mono', ui-monospace, Menlo, Consolas, monospace;
-  --display-1: 500 44px/45px var(--font-serif);
-  --display-2: 500 48px/52px var(--font-serif);
+  --display-1: 400 44px/45px var(--font-serif);
+  --display-2: 400 48px/52px var(--font-serif);
   --title-1: 400 36px/42px var(--font-serif);
   --title-2: 400 24px/30px var(--font-serif);
   --title-3: 400 21px/28px var(--font-serif);
@@ -37,7 +37,7 @@ html {
 
 @media (min-width: 700px) {
   html {
-    --display-1: 500 72px/72px var(--font-serif);
+    --display-1: 400 72px/72px var(--font-serif);
     --price-xl: 700 128px/120px var(--font-ui);
   }
 }
