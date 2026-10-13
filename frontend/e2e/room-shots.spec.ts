@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
-import { ROOT, bidInLastWindow, newAccount, newAuction, restBid, signInUi, waitForStatus } from './fixtures/stack';
+import { ROOT, bidInLastWindow, live, newAccount, newAuction, restBid, signInUi, waitForStatus } from './fixtures/stack';
 
 const OUT = fileURLToPath(new URL('../../design/shots/04-room-built', import.meta.url));
 mkdirSync(OUT, { recursive: true });
@@ -32,8 +32,6 @@ async function shoot(page: Page, state: string, theme: 'light' | 'dark', note?: 
 
 const field = (page: Page) => page.getByLabel(enIN.roomUi.bid.fieldLabel);
 
-test.describe.configure({ mode: 'serial' });
-
 test('live family, light: idle, rejected, accepted, outbid, proxy', async ({ browser, request }) => {
   test.setTimeout(180_000);
   const seller = await newAccount(request, 'seller', 'seller');
@@ -48,6 +46,17 @@ test('live family, light: idle, rejected, accepted, outbid, proxy', async ({ bro
   await expect(field(page)).toBeVisible();
   await shoot(page, '04-idle', 'light');
 
+  // 32 keyboard focus: the field holds the 2 px focus ring, reachable from the price (NFR-35)
+  await field(page).focus();
+  await shoot(page, '32-keyboard-focus', 'light');
+
+  // 31 over-3x: an amount above three times the current bid confirms inline (role=alertdialog, BR-14)
+  await field(page).fill('70,000');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('alertdialog')).toBeVisible({ timeout: 10_000 });
+  await shoot(page, '31-confirm-3x', 'light');
+  await page.getByRole('button', { name: enIN.roomUi.bid.changeAmount }).click();
+
   await field(page).fill('8,000');
   await page.keyboard.press('Enter');
   await expect(page.locator('#live-assertive')).toContainText('Bid not placed', { timeout: 10_000 });
@@ -57,6 +66,10 @@ test('live family, light: idle, rejected, accepted, outbid, proxy', async ({ bro
   await page.keyboard.press('Enter');
   await expect(page.locator('#live-assertive')).toHaveText(enIN.room.accepted('₹9,000'), { timeout: 10_000 });
   await shoot(page, '06-accepted', 'light');
+
+  // 09 leading: the settled lead once the highlight band has faded
+  await page.waitForTimeout(1700);
+  await shoot(page, '09-leading', 'light');
 
   await (await restBid(request, bob, id, 950000)).json();
   await expect(page.locator('#live-assertive')).toContainText('been outbid', { timeout: 10_000 });
@@ -68,8 +81,8 @@ test('live family, light: idle, rejected, accepted, outbid, proxy', async ({ bro
   await expect(page.getByText(enIN.roomUi.proxy.only)).toBeVisible({ timeout: 10_000 });
   await shoot(page, '11-proxy-active', 'light');
 
-  // reserve met once alice's proxy answered above ₹9,500
-  await expect(page.getByText(/Reserve met/)).toBeVisible();
+  // reserve met once alice's proxy answered above ₹9,500 (exact avoids the polite region)
+  await expect(page.getByText(enIN.roomUi.price.reserveMet, { exact: true })).toBeVisible();
   await shoot(page, '19-reserve-met', 'light');
   await ctx.close();
 });
@@ -296,8 +309,156 @@ test('degraded, then recover (Redis paused); light and dark', async ({ browser, 
   expect(logs).not.toContain('UNRESOLVED_CLOSE');
 });
 
+test('proxy exhausted, light', async ({ browser, request }) => {
+  test.setTimeout(120_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { endInS: 600, startingPrice: 900000, minIncrement: 50000, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await signInUi(page, alice);
+  await page.goto(`/auctions/${id}`);
+  // alice leads, arms a low maximum; bob bids past it, so the maximum is reached and spent
+  await (await restBid(request, alice, id, 900000)).json();
+  await expect(page.getByText(/You're the highest bidder/).first()).toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: enIN.roomUi.proxy.setAction, exact: true }).click();
+  await page.getByLabel(enIN.roomUi.proxy.fieldLabel).fill('10,000');
+  await page.getByRole('button', { name: enIN.roomUi.proxy.confirm }).click();
+  await expect(page.getByText(enIN.roomUi.proxy.only)).toBeVisible({ timeout: 10_000 });
+  await (await restBid(request, bob, id, 1100000)).json(); // above the maximum: it cannot answer
+  await expect(page.getByText(enIN.roomUi.proxy.reached)).toBeVisible({ timeout: 10_000 });
+  await shoot(page, '12-proxy-exhausted', 'light');
+  await ctx.close();
+});
+
+test('extension cap, light (antisnipe 10 s / 10 s)', async ({ browser, request }) => {
+  test.setTimeout(240_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { endInS: 20, thresholdS: 10, extensionS: 10, startingPrice: 900000, minIncrement: 50000, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await signInUi(page, alice);
+  await page.goto(`/auctions/${id}`);
+  // alternate bids, each landing in the last 10 s, so each adds 10 s; after 10 the cap is reached.
+  // wait for each extension to push the end back out (the anonymous /live cache lags ~1 s) before
+  // the next bid, so a stale read never fires a bid outside the real window
+  for (let i = 0; i < 10; i += 1) {
+    await bidInLastWindow(request, i % 2 === 0 ? bob : alice, id, 900000 + i * 50000, 10);
+    const until = Date.now() + 20_000;
+    while (Date.now() < until) {
+      const s = await live(request, id, alice); // authenticated: fresh
+      if (s.status !== 'live' || Number(s.end_time_ms) - Number(s.server_time_ms) > 11_000) break;
+      await new Promise((res) => setTimeout(res, 500));
+    }
+  }
+  await expect(page.getByText(/No further extensions/).first()).toBeVisible({ timeout: 15_000 });
+  await shoot(page, '14-cap-reached', 'light');
+  await ctx.close();
+});
+
+test('closing, light', async ({ browser, request }) => {
+  test.setTimeout(90_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { endInS: 14, thresholdS: 10, extensionS: 10, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+  await (await restBid(request, bob, id, 900000)).json();
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await signInUi(page, alice);
+  await page.goto(`/auctions/${id}`);
+  // the server-derived countdown reaches zero: "Closing" until the result snapshot arrives
+  await expect(page.getByText(enIN.roomUi.clock.closing)).toBeVisible({ timeout: 30_000 });
+  await shoot(page, '15-closing', 'light');
+  await ctx.close();
+});
+
+test('scheduled to live, light', async ({ browser, request }) => {
+  test.setTimeout(90_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const alice = await newAccount(request, 'alice');
+  const id = await newAuction(request, seller, { startInS: 8, endInS: 90, reservePrice: 1025000 });
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await signInUi(page, alice);
+  await page.goto(`/auctions/${id}`);
+  // the server takes the room live; the banner appears after auction_started, never the local clock
+  await expect(page.getByText(enIN.roomUi.banner.open, { exact: true })).toBeVisible({ timeout: 30_000 });
+  await shoot(page, '03-scheduled-to-live', 'light');
+  await ctx.close();
+});
+
+test('reconnecting, light (browser offline)', async ({ browser, request }) => {
+  test.setTimeout(90_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { endInS: 600, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+  await (await restBid(request, bob, id, 900000)).json();
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await signInUi(page, alice);
+  await page.goto(`/auctions/${id}`);
+  await expect(field(page)).toBeVisible();
+  await ctx.setOffline(true);
+  try {
+    await expect(page.getByText(enIN.roomUi.banner.reconnecting).first()).toBeVisible({ timeout: 20_000 });
+    await shoot(page, '22-reconnecting', 'light');
+  } finally {
+    await ctx.setOffline(false);
+  }
+  await ctx.close();
+});
+
+test('suspended and signed out, light (session revoked, 4004)', async ({ browser, request }) => {
+  test.setTimeout(140_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const admin = await newAccount(request, 'admin', 'admin');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { endInS: 600, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+  await (await restBid(request, bob, id, 900000)).json();
+
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const t1 = await ctx.newPage();
+  await signInUi(t1, alice);
+  await t1.goto(`/auctions/${id}`);
+  const t2 = await ctx.newPage();
+  await t2.goto(`/auctions/${id}`);
+  const u1 = t1.getByRole('button', { name: enIN.roomUi.status.useThisTab });
+  const u2 = t2.getByRole('button', { name: enIN.roomUi.status.useThisTab });
+  await expect(async () => {
+    const [c1, c2] = await Promise.all([u1.count(), u2.count()]);
+    expect(c1 + c2).toBeGreaterThan(0);
+  }).toPass({ timeout: 15_000 });
+  const polling = (await u1.count()) > 0 ? t1 : t2;
+  const socketTab = polling === t1 ? t2 : t1;
+
+  // admin suspends alice: every session is revoked (SESSION_REVOKED = 4004)
+  await request.post(`http://localhost:8011/api/v1/admin/users/${alice.id}/suspend`, { headers: { authorization: `Bearer ${admin.token}` }, data: { reason: 'shot: suspend the viewer' } });
+
+  // the socket tab is closed 4004 and shows the signed-out banner
+  await expect(socketTab.getByText(enIN.roomUi.banner.signedOut).first()).toBeVisible({ timeout: 20_000 });
+  await shoot(socketTab, '24-signed-out', 'light');
+
+  // the polling tab still has a field; a bid now returns ACCOUNT_SUSPENDED over REST
+  await polling.getByLabel(enIN.roomUi.bid.fieldLabel).fill('9,500');
+  await polling.keyboard.press('Enter');
+  await expect(polling.getByRole('heading', { name: enIN.roomUi.bid.suspendedHead })).toBeVisible({ timeout: 15_000 });
+  await shoot(polling, '26-suspended', 'light', 'socket close code 4004 SESSION_REVOKED');
+  await ctx.close();
+});
+
 test.afterAll(async () => {
-  const order = ['01-anonymous', '02-scheduled', '04-idle', '06-accepted', '07-rejected', '10-outbid', '11-proxy-active', '13-extending', '16-closed-won', '17-closed-lost', '18-no-sale', '19-reserve-met', '20-cancelled', '21-degraded', '23-other-tab', '28-seller', '29-admin-force-close', '30-draft'];
+  const order = ['01-anonymous', '02-scheduled', '03-scheduled-to-live', '04-idle', '06-accepted', '07-rejected', '09-leading', '10-outbid', '11-proxy-active', '12-proxy-exhausted', '13-extending', '14-cap-reached', '15-closing', '16-closed-won', '17-closed-lost', '18-no-sale', '19-reserve-met', '20-cancelled', '21-degraded', '22-reconnecting', '23-other-tab', '24-signed-out', '26-suspended', '28-seller', '29-admin-force-close', '30-draft', '31-confirm-3x', '32-keyboard-focus'];
   rows.sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state) || a.theme.localeCompare(b.theme) || a.file.localeCompare(b.file));
   const esc = (s: string) => s.replace(/\|/g, '\\|').trim();
   const lines = [
@@ -316,12 +477,10 @@ test.afterAll(async () => {
     '',
     '## Not shot here',
     '',
-    '- **Pending, accepted-tick, closing** are sub-second transitions; the two-bidder, keyboard and mobile specs exercise them in motion.',
-    '- **Retrying and reconnecting** need a mid-flight Redis or socket drop; the degraded shot covers the fail-closed banner, and `room.test.ts` covers the retry reducer path.',
-    '- **Signed out elsewhere (4004)** needs another device to revoke the session mid-view.',
-    '- **Not verified** is unreachable in the room: the backend refuses login until the email is verified (`EMAIL_NOT_VERIFIED`), so a signed-in viewer is always verified. The sign-in screen carries that state instead (`e2e/auth.spec.ts`).',
-    '- **Rate limited** is timing-dependent (a burst races the leader state) and is covered by the reducer tests; not a stable frame.',
-    '- **Suspended** and the **extension cap (10 of 10)** are reachable but slow to drive; left for a later pass.',
+    '- **Pending** is the sub-second window while a bid is in flight; the two-bidder, keyboard and mobile specs exercise it in motion.',
+    '- **Retrying** needs a Redis blip mid-bid (SERVICE_UNAVAILABLE, same request_id); `room.test.ts` covers the retry reducer path.',
+    '- **Rate limited** is timing-dependent (the burst races the leader state) and is covered by the reducer and client tests; not a stable frame.',
+    '- **Not verified** is unreachable in the room: the backend refuses login until the email is verified (`EMAIL_NOT_VERIFIED`), so a signed-in viewer is always verified. The sign-in screen carries that state (`e2e/auth.spec.ts`).',
     '',
   ];
   writeFileSync(`${OUT}/index.md`, lines.join('\n'));

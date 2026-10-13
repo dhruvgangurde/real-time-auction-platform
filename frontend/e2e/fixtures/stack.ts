@@ -156,7 +156,7 @@ export async function restProxy(api: APIRequestContext, account: Account, id: st
 export async function bidInLastWindow(api: APIRequestContext, account: Account, id: string, amount: number, thresholdS: number): Promise<void> {
   const until = Date.now() + 120_000;
   while (Date.now() < until) {
-    const s = await live(api, id);
+    const s = await live(api, id, account); // authenticated: fresh, bypasses the 1 s anonymous cache
     const remaining = Number(s.end_time_ms) - Number(s.server_time_ms);
     if (s.status !== 'live') throw new Error(`auction ${id} is ${String(s.status)}, not live`);
     if (remaining <= thresholdS * 1000) {
