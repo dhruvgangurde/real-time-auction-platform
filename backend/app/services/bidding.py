@@ -61,6 +61,7 @@ class AutomaticBid:
     extended: bool
     end_time_ms: int
     extension_count: int
+    placed_at_ms: int | None = None  # Redis TIME of acceptance (DC-3); None on an old replay
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,7 @@ class BidResult:
     end_time_ms: int | None = None
     extended: bool = False
     extension_count: int | None = None
+    placed_at_ms: int | None = None  # Redis TIME of acceptance (DC-3); None on an old replay
     current_highest: int | None = None  # BID_TOO_LOW only, for the submitter alone
     min_next: int | None = None  # BID_TOO_LOW only
     automatic_bids: tuple[AutomaticBid, ...] = ()  # proxy responses, in sequence order
@@ -107,6 +109,7 @@ def _autos(raw: dict[str, Any]) -> tuple[AutomaticBid, ...]:
             extended=bool(a["extended"]),
             end_time_ms=int(a["end_time_ms"]),
             extension_count=int(a["extension_count"]),
+            placed_at_ms=_opt(a, "accepted_at_ms"),
         )
         for a in raw.get("automatic_bids", ())
     )
@@ -134,6 +137,8 @@ def _to_bid_result(raw: dict[str, Any]) -> BidResult:
             end_time_ms=int(raw["end_time_ms"]),
             extended=bool(raw["extended"]),
             extension_count=int(raw["extension_count"]),
+            # results stored by the previous script (up to bid_request_ttl_s) lack it
+            placed_at_ms=_opt(raw, "accepted_at_ms"),
             automatic_bids=_autos(raw),
             **_internal(raw),
         )

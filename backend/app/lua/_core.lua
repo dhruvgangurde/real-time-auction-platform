@@ -111,6 +111,8 @@ local function accept(bid_bidder, bid_amount, bid_type)
     extended = extended,
     end_time_ms = int(end_time),
     extension_count = int(extension_count),
+    -- the arbitration time (DC-3), the same value the ledger stores as created_at
+    accepted_at_ms = int(now),
   }
 end
 

@@ -77,6 +77,7 @@ local result = {
   extended = own.extended,
   end_time_ms = own.end_time_ms,
   extension_count = own.extension_count,
+  accepted_at_ms = own.accepted_at_ms,
 }
 if #autos > 0 then
   result.automatic_bids = autos

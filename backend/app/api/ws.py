@@ -495,6 +495,7 @@ class LiveSession:
                 end_time_ms=result.end_time_ms,
                 extended=result.extended,
                 extension_count=result.extension_count,
+                placed_at_ms=result.placed_at_ms,
             )
         return event(
             "proxy_armed",

@@ -65,7 +65,7 @@ def bid_events(
     auction_id: UUID, submitter: UUID, result: BidResult | ProxyResult
 ) -> tuple[list[dict[str, Any]], dict[UUID, dict[str, Any]]]:
     """(room events, {user_id: outbid_notice}) for an accepted bid or an armed maximum."""
-    bids: list[tuple[UUID, int, int, str, int, bool, int]] = []
+    bids: list[tuple[UUID, int, int, str, int, bool, int, int | None]] = []
     if isinstance(result, BidResult) and result.accepted:
         assert result.sequence_no and result.amount and result.end_time_ms is not None
         bids.append(
@@ -77,6 +77,7 @@ def bid_events(
                 result.end_time_ms,
                 result.extended,
                 result.extension_count or 0,
+                result.placed_at_ms,
             )
         )
     for a in result.automatic_bids:
@@ -89,10 +90,11 @@ def bid_events(
                 a.end_time_ms,
                 a.extended,
                 a.extension_count,
+                a.placed_at_ms,
             )
         )
     room: list[dict[str, Any]] = []
-    for bidder, amount, seq, kind, end_ms, extended, ext_count in bids:
+    for bidder, amount, seq, kind, end_ms, extended, ext_count, placed_at in bids:
         room.append(
             event(
                 "bid_placed",
@@ -104,6 +106,7 @@ def bid_events(
                 end_time_ms=end_ms,
                 extended=extended,
                 extension_count=ext_count,
+                placed_at_ms=placed_at,  # arbitration time (DC-3); automatic bids share it
             )
         )
         if extended:

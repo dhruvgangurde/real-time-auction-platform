@@ -145,12 +145,12 @@ Every outbound event carries `server_time_ms`. Clients derive countdowns from `e
 | submitter | `authenticated` | `user_id`, `expires_at_ms` |
 | submitter | `subscribed` | `auction_id`, `your_alias`, `snapshot` (same shape as `/live`) |
 | submitter | `unsubscribed`, `pong` | |
-| submitter | `bid_accepted` | `request_id`, `auction_id`, `sequence_no`, `amount`, `end_time_ms`, `extended`, `extension_count` |
+| submitter | `bid_accepted` | `request_id`, `auction_id`, `sequence_no`, `amount`, `end_time_ms`, `extended`, `extension_count`, `placed_at_ms` (the Redis TIME of acceptance, DC-3; equals the ledger's `created_at`; null only on a replay of a result stored before this field existed) |
 | submitter | `bid_rejected` | `request_id`, `auction_id`, `code`, `message`, `current_highest?`, `min_next?` |
 | submitter | `proxy_armed` | `request_id`, `auction_id`, `max_amount` (own only, FR-51), `active` |
 | submitter | `proxy_rejected` | `request_id`, `auction_id`, `code`, `message`, `min_next?` |
 | submitter | `error` | `code`, `message`, `request_id?` |
-| room | `bid_placed` | `auction_id`, `sequence_no`, `amount`, `bidder_alias`, `bid_type`, `end_time_ms`, `extended`, `extension_count` (one per accepted bid, automatic bids included) |
+| room | `bid_placed` | `auction_id`, `sequence_no`, `amount`, `bidder_alias`, `bid_type`, `end_time_ms`, `extended`, `extension_count`, `placed_at_ms` (as in `bid_accepted`; automatic bids share their trigger's time) (one per accepted bid, automatic bids included) |
 | room | `timer_extended` | `auction_id`, `sequence_no`, `end_time_ms`, `extension_count`, `final` (true at the 10th extension, FR-54) |
 | room | `auction_closed` | `auction_id`, `outcome` (`closed_sold`, `closed_no_sale` or `cancelled`), `final_price` (null unless sold), `reserve_met` (exactly three values: null when the auction has no reserve; true when it was met: `closed_sold`, or on cancel a committed price at or above it; false otherwise: `closed_no_sale` with a reserve, or a cancel below it. The cancel value is what the auction detail shows. The reserve amount itself is in no payload, BR-6), `final_sequence_no` (the last bid's sequence; 0 without bids). Sent once per auction (FR-62) |
 | room (local) | `presence` | `auction_id`, `participants`, `sequence_no`, `end_time_ms` |
@@ -177,7 +177,7 @@ Pub/sub is at-most-once and events from different instances can arrive out of or
 
 ### REST
 
-- `GET /api/v1/auctions/{id}/live` (public; drafts only for their seller or an admin, FR-30): status, current price, leader alias, sequence, bid count, min next, end time, extension count, participants, last 20 bids (ledger merged with unpersisted outbox entries, never above the sequence) and `server_time_ms`. Live and closing auctions are read from Redis live state (state, outbox and presence in one MULTI) and rebuilt when missing (FR-26); every other status is served from Postgres with `degraded: false` and writes nothing to Redis (D2). With Redis unreachable it is served from Postgres with `degraded: true` (NFR-13).
+- `GET /api/v1/auctions/{id}/live` (public; drafts only for their seller or an admin, FR-30): status, current price, leader alias, sequence, bid count, min next, end time, extension count, participants, last 20 bids (ledger merged with unpersisted outbox entries, never above the sequence; each with `sequence_no`, `amount`, `bidder_alias`, `bid_type`, `placed_at_ms`: `created_at` once persisted, the outbox's `accepted_at_ms` before) and `server_time_ms`. Live and closing auctions are read from Redis live state (state, outbox and presence in one MULTI) and rebuilt when missing (FR-26); every other status is served from Postgres with `degraded: false` and writes nothing to Redis (D2). With Redis unreachable it is served from Postgres with `degraded: true` (NFR-13).
 - `POST /api/v1/auctions/{id}/bids` and `/proxy` (bidder role): the REST fallback (DC-9, UC-01 2a). Same service, same `request_id` contract, same per-user rate limit; the response is the acknowledgement and events are published after it is sent. Rejections: 409 with the arbitration code, 422, 429, 503.
 
 Lifecycle and discovery (Phase 7; `api/lifecycle.py`, `api/discovery.py`, services `AuctionService`, `CatalogService`):

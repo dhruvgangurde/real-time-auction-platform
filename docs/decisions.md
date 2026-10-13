@@ -2,6 +2,9 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-13 Phase 10 B1: backend for the room and landing (brief 12.6 B1)
+- `placed_at_ms` comes from the script result: `accept()` in `_core.lua` returns the Redis TIME it already writes to the outbox as `accepted_at_ms`, and `place_bid.lua` copies it into its result, so the acknowledgement needs no extra read and automatic bids inherit their trigger's time. Arbitration logic is unchanged. Results stored by the previous script (up to `bid_request_ttl_s`, 600 s, after deploy) replay without it, so the field is null on such a replay.
+
 ## 2026-10-13 "Try to break it" is anonymous (deviation from NFR-21)
 NFR-21 asks every state-changing endpoint to require the access token in a request header. That rule exists to stop a cross-site page from acting as a signed-in user whose cookie the browser sends along. `POST /api/v1/demo/stress` (design brief 12.4) has no user, no session and no cookie, so there is nothing to forge, and anyone can call it directly anyway; requiring sign-in would lose most of the visitors the demo is for. It stays anonymous and keeps the `X-Requested-With` header, so a plain cross-site form cannot trigger it. The controls are the single global run, a 60 s cooldown after the previous run settles, 3 starts per IP per hour, at most 50 bots and 20 submissions per bot, and an env kill switch.
 

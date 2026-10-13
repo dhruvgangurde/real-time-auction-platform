@@ -69,18 +69,28 @@ async def _recent_bids(
     """Ledger merged with not-yet-persisted outbox bids, newest first, at most `upto`."""
     async with sessions() as session:
         rows = await BidRepository(session).recent(auction_id, RECENT_BIDS)
-    merged = {r.sequence_no: (str(r.bidder_id), r.amount, r.bid_type) for r in rows}
+    # placed_at_ms is the Redis TIME of acceptance: created_at once persisted (ledger.py),
+    # accepted_at_ms while still in the outbox (DC-3)
+    merged = {
+        r.sequence_no: (str(r.bidder_id), r.amount, r.bid_type, to_ms(r.created_at)) for r in rows
+    }
     for _, f in outbox or []:
         if f.get("kind", "bid") == "bid":
-            merged[int(f["sequence_no"])] = (f["bidder_id"], int(f["amount"]), f["bid_type"])
+            merged[int(f["sequence_no"])] = (
+                f["bidder_id"],
+                int(f["amount"]),
+                f["bid_type"],
+                int(f["accepted_at_ms"]),
+            )
     return [
         {
             "sequence_no": seq,
             "amount": amount,
             "bidder_alias": alias(auction_id, bidder),
             "bid_type": kind,
+            "placed_at_ms": placed_at,
         }
-        for seq, (bidder, amount, kind) in sorted(merged.items(), reverse=True)
+        for seq, (bidder, amount, kind, placed_at) in sorted(merged.items(), reverse=True)
         if upto is None or seq <= upto
     ][:RECENT_BIDS]
 

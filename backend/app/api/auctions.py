@@ -140,6 +140,7 @@ def _bid_ack(auction_id: UUID, request_id: str, r: BidResult) -> dict[str, Any]:
         end_time_ms=r.end_time_ms,
         extended=r.extended,
         extension_count=r.extension_count,
+        placed_at_ms=r.placed_at_ms,
     )
 
 
