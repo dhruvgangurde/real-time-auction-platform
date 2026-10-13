@@ -20,11 +20,16 @@ Playwright never runs against the dev server: the content security policy only e
 
 Exact versions only (`.npmrc` has `save-exact`). A new version is taken only once it is at least seven days old. Everything in `package.json` is from brief 11.2; nothing else without a one-line reason in `docs/decisions.md`.
 
+## Strings
+
+`src/strings/catalogue.ts` declares the `Catalogue` type: nested groups of strings, functions for interpolation (`room.minNext(amount)`, `nav.unread(n)`), and `errors` and `close` as `Record`s over every documented error and close code, so a missing message fails `tsc`. `src/strings/en-IN.ts` is the English (India) catalogue. Components call `const s = useStrings()` and render `{s.nav.live}`; non-React code takes a `Catalogue` argument. A second locale is one more file that satisfies the type.
+
 ## Project lint rules
 
 | Rule | Brief |
 |---|---|
 | `no-console` | 13 item 19: a maximum never reaches the console |
 | `dangerouslySetInnerHTML` banned | 13 item 24: user text is rendered as text |
+| No string literal in JSX: text between tags, a string or template in braces, or `alt`, `title`, `placeholder`, `aria-label`, `aria-description`, `aria-valuetext` | OR-11: strings come from `useStrings()` |
 
 `src/lint.test.ts` runs ESLint on small samples and proves each rule fires.
