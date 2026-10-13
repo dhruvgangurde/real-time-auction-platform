@@ -8,3 +8,6 @@ celerybeat-schedule*
 
 # Playwright MCP browser artifacts (snapshots, screenshots, console logs)
 .playwright-mcp/
+
+# local session notes, never committed
+docs/context-transfer.md

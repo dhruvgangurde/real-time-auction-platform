@@ -316,6 +316,40 @@ async def test_outcome_by_reserve(
         assert "reserve_price" not in text
 
 
+@pytest.mark.parametrize(
+    ("reserve", "amount", "status", "reserve_met"),
+    [
+        (None, 10_000, "closed_sold", None),  # no reserve
+        (10_500, 10_500, "closed_sold", True),  # reserve met
+        (RESERVE, 10_000, "closed_no_sale", False),  # reserve not met
+    ],
+)
+async def test_auction_closed_reserve_met_values(
+    ended: Ended,
+    db: asyncpg.Connection,
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+    reserve: int | None,
+    amount: int,
+    status: str,
+    reserve_met: bool | None,
+) -> None:
+    """BR-5, BR-6, FR-62: reserve_met is null only without a reserve, true or false otherwise;
+    no key naming the reserve holds a number, in auction_closed or the close notifications."""
+    (b1,) = await _users(db, 1)
+    auction_id = await ended(bids=[(b1, amount)], reserve=reserve)
+    async with Room(auction_id) as room:
+        assert await Closer(redis, sessions).close(auction_id) is Outcome.SETTLED
+    (closed,) = room.events
+    assert (closed["outcome"], closed["reserve_met"]) == (status, reserve_met)
+    rows = await db.fetch("SELECT payload FROM notifications WHERE auction_id = $1", auction_id)
+    payloads = [closed, *(json.loads(r["payload"]) for r in rows)]
+    assert len(payloads) > 1
+    for payload in payloads:
+        assert payload["reserve_met"] is reserve_met
+        assert [k for k, v in payload.items() if "reserve" in k and type(v) in (int, float)] == []
+
+
 async def test_equal_amounts_resolve_by_sequence(
     ended: Ended, db: asyncpg.Connection, redis: Redis, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
