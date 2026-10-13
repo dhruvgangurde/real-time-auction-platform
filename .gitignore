@@ -11,3 +11,6 @@ celerybeat-schedule*
 
 # local session notes, never committed
 docs/context-transfer.md
+
+# third-party reference screenshots for design research (kept local, not redistributed)
+design/refs/
