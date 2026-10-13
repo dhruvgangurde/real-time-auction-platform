@@ -131,7 +131,7 @@ export function PriceBlock({
     <div className={box}>
       <div className={styles.plabel}>{label}</div>
       <p className={priceClass}>
-        {tick === null || outbid ? (
+        {tick === null || outbid || isStale(state) || state.terminal !== null ? (
           text
         ) : (
           <>
