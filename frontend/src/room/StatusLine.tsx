@@ -1,7 +1,7 @@
 // Room status (brief 9.3): a connection state, never "Live"; the participant count; "Use this
 // tab" when another tab of this browser holds the socket (section 13 item 3).
 import { formatLocal } from '../lib/clock';
-import type { RoomState } from '../live/room';
+import { isStale, type RoomState } from '../live/room';
 import { useStrings } from '../strings/catalogue';
 import styles from './room.module.css';
 import type { RoomSession } from './session';
@@ -19,7 +19,8 @@ export function StatusLine({
 }) {
   const s = useStrings().roomUi.status;
   const n = state.participants ?? 0;
-  const live = (state.connection === 'connected' || state.connection === 'reconnected') && state.subscribed;
+  // the green dot means genuinely live; degraded or stale shows a hollow dot, the word carries the state
+  const live = !isStale(state) && (state.connection === 'connected' || state.connection === 'reconnected') && state.subscribed;
   let text: string;
   let useTab = false;
   if (state.status === null) text = s.connecting;
