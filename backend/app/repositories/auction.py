@@ -52,6 +52,11 @@ class AuctionRepository(BaseRepository):
         stmt = select(Auction.id).where(Auction.status == "live")
         return list((await self.session.execute(stmt)).scalars())
 
+    async def live_started_since(self, since: datetime) -> list[UUID]:
+        """Live auctions whose start time is at or after `since` (auction_started repair)."""
+        stmt = select(Auction.id).where(Auction.status == "live", Auction.start_time >= since)
+        return list((await self.session.execute(stmt)).scalars())
+
     async def statuses(self, auction_ids: list[UUID]) -> dict[UUID, str]:
         """Status per auction; unknown ids are absent."""
         stmt = select(Auction.id, Auction.status).where(Auction.id.in_(auction_ids))
