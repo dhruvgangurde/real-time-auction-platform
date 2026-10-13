@@ -12,12 +12,14 @@ import { NotFound } from '../app/NotFound';
 import { HelpDrawer } from '../help/HelpDrawer';
 import { errorMessage, useStrings, type HelpTopic } from '../strings/catalogue';
 import { Banner } from './Banner';
+import { AdminPanel } from './AdminPanel';
 import { BidControl } from './BidControl';
 import { Countdown } from './Countdown';
 import { Ledger } from './Ledger';
 import { Lot } from './Lot';
 import { PriceBlock } from './PriceBlock';
 import { ProxyControl } from './ProxyControl';
+import { SellerPanel } from './SellerPanel';
 import styles from './room.module.css';
 import { StatusLine } from './StatusLine';
 import { useRoom } from './useRoom';
@@ -37,6 +39,7 @@ export function RoomPage() {
   const closeHelp = useCallback(() => setHelpTopic(null), []);
   const d = detail.data;
   const isSeller = d !== undefined && me.data !== undefined && d.seller.id === me.data.id;
+  const isAdmin = me.data?.roles.includes('admin') ?? false;
   const resend = () => {
     if (me.data !== undefined) void api.resendVerification(me.data.email);
   };
@@ -81,7 +84,11 @@ export function RoomPage() {
             windowMs={d.antisnipe_threshold_s * 1000}
             extensionMs={d.antisnipe_extension_s * 1000}
           />
-          {isSeller ? null : (
+          {isSeller ? (
+            <SellerPanel detail={d} state={state} />
+          ) : isAdmin ? (
+            <AdminPanel state={state} />
+          ) : (
             <>
               <BidControl state={state} session={session} profile={me.data} signedIn={token !== null} startTimeMs={d.start_time_ms} onResend={resend} />
               {token === null ? null : <ProxyControl state={state} session={session} startTimeMs={d.start_time_ms} />}

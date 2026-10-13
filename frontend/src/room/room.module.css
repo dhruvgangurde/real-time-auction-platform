@@ -920,3 +920,80 @@
 .form {
   margin-top: 14px;
 }
+
+/* ---- the admin confirmation dialog (UI-8): a native modal <dialog>, one overlay shadow (brief 5) */
+.dialog {
+  max-width: 520px;
+  width: calc(100% - 32px);
+  padding: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow:
+    0 1px 2px rgb(22 32 54 / 0.08),
+    0 8px 24px rgb(22 32 54 / 0.12);
+}
+
+.dialog::backdrop {
+  background: rgb(13 20 36 / 0.55);
+}
+
+.dialogTitle {
+  font: 400 28px/34px var(--font-serif);
+  margin: 0;
+}
+
+.dialogBody p {
+  margin: 12px 0 0;
+  color: var(--ink-2);
+}
+
+.dialogLabel {
+  display: block;
+  font-weight: 600;
+  margin-top: 18px;
+}
+
+.textarea {
+  display: block;
+  width: 100%;
+  height: 96px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: var(--ui-md);
+  resize: none;
+}
+
+.textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.dialogNote {
+  margin-top: 6px;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .dialog {
+    box-shadow: none;
+    border: 1px solid var(--rule-strong);
+  }
+}
+
+:root[data-theme='dark'] .dialog {
+  box-shadow: none;
+  border: 1px solid var(--rule-strong);
+}
+
+@media (max-width: 700px) {
+  .dialog {
+    padding: 20px;
+  }
+}

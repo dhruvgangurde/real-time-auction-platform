@@ -166,6 +166,14 @@ export function createApi(deps: ApiDeps) {
       });
     },
 
+    // admin actions (UI-8, FR-63): each carries a reason written to the audit log
+    async adminForceClose(auctionId: string, reason: string): Promise<void> {
+      await request('POST', `/admin/auctions/${auctionId}/force-close`, { auth: 'required', body: { reason } });
+    },
+    async adminCancel(auctionId: string, reason: string): Promise<void> {
+      await request('POST', `/admin/auctions/${auctionId}/cancel`, { auth: 'required', body: { reason } });
+    },
+
     async setProxy(auctionId: string, maxAmount: number, requestId: string): Promise<ProxyArmed> {
       checkRequestId(requestId);
       return withRetries(async () => {

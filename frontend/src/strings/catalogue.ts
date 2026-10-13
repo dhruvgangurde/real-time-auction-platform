@@ -269,6 +269,34 @@ export type Catalogue = {
       placeholder: (amount: string) => string;
       confirm: string;
     };
+    seller: {
+      heading: string;
+      reserveBadge: string;
+      reserveValue: (amount: string) => string;
+      met: string;
+      notMet: string;
+      cantBid: string;
+      biddersSee: string;
+    };
+    admin: {
+      heading: string;
+      note: string;
+      forceClose: string;
+      cancel: string;
+      forceTitle: string;
+      forceBody: string;
+      current: (amount: string, seq: number, reserve: string) => string;
+      reserveMet: string;
+      reserveNotMet: string;
+      noBidsYet: string;
+      cannotUndo: string;
+      cancelTitle: string;
+      cancelBody: string;
+      reasonLabel: string;
+      reasonNote: string;
+      keepOpen: string;
+      failed: string;
+    };
   };
   /** the live-region text (brief 11.4), exactly as design/shots/03-room/index.md lists it */
   announce: {
