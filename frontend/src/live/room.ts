@@ -52,6 +52,10 @@ export type RoomState = {
   subscribed: boolean;
   buffer: RoomFrame[];
   gapPending: boolean;
+  /** the end before the latest extension, for the timeline's "was" mark and the announcement */
+  previousEndMs: number | null;
+  /** a terminal socket close (4004 signed out, 4012 another tab), for the banner */
+  closedCode: number | null;
   yourAlias: string | null;
   isSeller: boolean;
   own: {
@@ -75,7 +79,9 @@ export type RoomAction =
   | { type: 'bidSent'; requestId: string; amount: number; kind: 'bid' | 'proxy' }
   | { type: 'gapTimeout' }
   | { type: 'rateLimitOver' }
-  | { type: 'connection'; state: Connection }
+  | { type: 'connection'; state: Connection; closedCode?: number | null }
+  /** the server-derived countdown reached zero: Closing until a snapshot or extension says otherwise */
+  | { type: 'countdownZero' }
   | { type: 'seller'; isSeller: boolean };
 
 export type RoomEffect =
@@ -110,6 +116,8 @@ export function initialRoom(auctionId: string, connection: Connection = 'reconne
     subscribed: false,
     buffer: [],
     gapPending: false,
+    previousEndMs: null,
+    closedCode: null,
     yourAlias: null,
     isSeller: false,
     own: { leading: false, sequences: [], outbidAt: null, maximum: null, maximumActive: false, result: null },
@@ -180,7 +188,9 @@ export function roomReducer(state: RoomState, action: RoomAction): Step {
     case 'rateLimitOver':
       return done({ ...state, rateLimited: false });
     case 'connection':
-      return done({ ...state, connection: action.state });
+      return done({ ...state, connection: action.state, closedCode: action.closedCode ?? null });
+    case 'countdownZero':
+      return done(state.status === 'live' && state.terminal === null ? { ...state, status: 'closing' } : state);
     case 'seller':
       return done({ ...state, isSeller: action.isSeller });
   }
@@ -280,7 +290,8 @@ function applyFrame(state: RoomState, frame: InboundFrame): Step {
     }
     case 'outbid_notice':
       if (frame.auction_id !== state.auctionId) return done(state);
-      return done({ ...state, own: { ...state.own, leading: false, outbidAt: frame.current_price } });
+      // a maximum holder is told only when the trigger exhausted it (arch 4): the maximum is spent
+      return done({ ...state, own: { ...state.own, leading: false, outbidAt: frame.current_price, maximumActive: false } });
     case 'bid_placed':
     case 'timer_extended':
     case 'auction_started':
@@ -403,8 +414,12 @@ function place(state: RoomState, frame: BidPlaced): RoomState {
     placed_at_ms: frame.placed_at_ms,
   };
   const increment = state.minIncrement ?? 0;
+  const extended = state.endTimeMs !== null && frame.end_time_ms > state.endTimeMs;
   return {
     ...state,
+    // a bid inside the last minute reopens a locally closing room (brief 9.3 "closing")
+    status: extended && state.status === 'closing' ? 'live' : state.status,
+    previousEndMs: extended ? state.endTimeMs : state.previousEndMs,
     sequence: frame.sequence_no,
     price: frame.amount,
     leaderAlias: frame.bidder_alias,
@@ -421,8 +436,11 @@ function extend(state: RoomState, frame: TimerExtended): RoomState {
   if (state.endTimeMs !== null && frame.end_time_ms <= state.endTimeMs && frame.extension_count <= state.extensionCount) {
     return state; // already applied through its bid
   }
+  const extended = state.endTimeMs !== null && frame.end_time_ms > state.endTimeMs;
   return {
     ...state,
+    status: extended && state.status === 'closing' ? 'live' : state.status,
+    previousEndMs: extended ? state.endTimeMs : state.previousEndMs,
     endTimeMs: Math.max(state.endTimeMs ?? 0, frame.end_time_ms),
     extensionCount: Math.max(state.extensionCount, frame.extension_count),
     finalExtension: state.finalExtension || frame.final || frame.extension_count >= FINAL_EXTENSION,

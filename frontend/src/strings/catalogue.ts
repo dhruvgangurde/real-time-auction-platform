@@ -112,6 +112,122 @@ export type Catalogue = {
     reserveMet: string;
     reserveNotMet: string;
   };
+  /** the room's regions (brief 9.3; copy from design/mockups/room.html) */
+  roomUi: {
+    status: {
+      connected: (n: number) => string;
+      polling: (n: number) => string;
+      otherTab: string;
+      useThisTab: string;
+      reconnecting: string;
+      lastUpdate: (time: string) => string;
+      opens: (time: string, n: number) => string;
+      draft: string;
+    };
+    price: {
+      current: string;
+      starting: string;
+      outbid: string;
+      wonAt: string;
+      soldFor: string;
+      highest: string;
+      lastBid: string;
+      leads: (alias: string, seq: number, byMaximum: boolean) => string;
+      youLead: (seq: number, byMaximum: boolean) => string;
+      nextAtLeast: (amount: string) => string;
+      noBids: (start: string) => string;
+      opens: (time: string) => string;
+      outbidLine: (amount: string, minNext: string) => string;
+      maxReachedLine: (max: string, amount: string, minNext: string) => string;
+      wonLine: (seq: number, time: string, extensions: number) => string;
+      lostLine: (seq: number, time: string, extensions: number, yourHighest: string | null) => string;
+      noSaleLine: (time: string, seq: number) => string;
+      cancelledLine: (time: string, seq: number) => string;
+      waiting: string;
+      youLeadWaiting: (seq: number) => string;
+      reserveMet: string;
+      reserveMetWith: (seq: number) => string;
+      reserveNotMet: string;
+      hasReserve: string;
+    };
+    clock: {
+      ends: (time: string) => string;
+      lastMinute: (extension: string) => string;
+      extendedWhy: (extension: string, n: number) => string;
+      cap: (time: string) => string;
+      closing: string;
+      mayExtended: string;
+      untilOpens: (opens: string, ends: string) => string;
+      ended: string;
+      endedAt: (time: string, extensions: number) => string;
+      cancelled: string;
+      cancelledAt: (time: string) => string;
+      rulerLabel: (ends: string) => string;
+      now: string;
+      rulerEnds: (time: string) => string;
+      rulerWas: (time: string) => string;
+      keyLastMinute: (extension: string) => string;
+      keyAdded: (extension: string, seq: number) => string;
+    };
+    ledger: {
+      title: string;
+      history: string;
+      no: string;
+      bidder: string;
+      amount: string;
+      decidedAt: string;
+      you: string;
+      byMaximum: string;
+      sending: string;
+      checking: string;
+      none: string;
+    };
+    lot: {
+      demo: string;
+      category: string;
+      seller: string;
+      bidding: string;
+      startingBid: string;
+      softClose: string;
+      reserve: string;
+      reserveYes: string;
+      reserveOwn: (amount: string) => string;
+      reserveNo: string;
+      window: (start: string, end: string) => string;
+      risingBy: (start: string, increment: string) => string;
+      softCloseText: (extension: string) => string;
+      photoAlt: (title: string) => string;
+    };
+    banner: {
+      open: string;
+      openDetail: (start: string, end: string) => string;
+      degraded: string;
+      degradedDetail: string;
+      reconnecting: string;
+      reconnectingDetail: string;
+      signedOut: string;
+      signedOutDetail: string;
+    };
+  };
+  /** the live-region text (brief 11.4), exactly as design/shots/03-room/index.md lists it */
+  announce: {
+    price: (amount: string, leader: string | null, youLead: boolean, reserveMet: boolean | null) => string;
+    open: (startPrice: string, endTime: string) => string;
+    notPlaced: (reason: string) => string;
+    minimumNow: (amount: string) => string;
+    extended: (minutes: number, n: number, endTime: string) => string;
+    capReached: (minutes: number, endTime: string) => string;
+    closing: (endTime: string) => string;
+    won: (amount: string) => string;
+    sold: (amount: string) => string;
+    noSale: string;
+    cancelled: string;
+    degraded: string;
+    reconnecting: string;
+    signedOut: string;
+    maxSet: (amount: string, leading: boolean) => string;
+    maxReached: (amount: string, outbidAt: string, minNext: string) => string;
+  };
   common: {
     loading: string;
     required: string;
