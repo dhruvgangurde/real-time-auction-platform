@@ -191,6 +191,22 @@ describe('tabs (item 3)', () => {
     // anonymous: the refresh says 204, nothing to revoke
     const anon = tab(new Bus(), fakeLocks(), [anonymous], []);
     expect(await anon.logout()).toBe(true);
+    // the bearer is refused and the refresh cannot be served: the session may be alive
+    const unavailable = tab(new Bus(), fakeLocks(), [dead, () => new Response(null, { status: 503 })], []);
+    unavailable.accept('t-old', 900);
+    expect(await unavailable.logout()).toBe(false);
+    // the bearer is refused and the network is down: unknown, so not revoked
+    const offline = tab(new Bus(), fakeLocks(), [dead, () => { throw new TypeError('Failed to fetch'); }], []);
+    offline.accept('t-old', 900);
+    expect(await offline.logout()).toBe(false);
+  });
+
+  test('a refresh the server cannot serve keeps the token in memory', async () => {
+    const a = tab(new Bus(), fakeLocks(), [ok('t-1'), () => new Response(null, { status: 503 }), () => new Response('{}', { status: 200 })], []);
+    await a.restoreOnLoad();
+    expect(await a.refresh()).toBe('t-1'); // 503: keep what we have
+    expect(await a.refresh()).toBe('t-1'); // a malformed body: keep what we have
+    expect(a.getToken()).toBe('t-1');
   });
 
   test('a newer token replaces an older one; an older one is ignored', async () => {

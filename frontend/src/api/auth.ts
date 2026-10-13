@@ -72,6 +72,12 @@ export function createAuth(deps: AuthDeps) {
     };
   }
 
+  /** What the last refresh learned: a token; anonymous (204); the session is dead (401); or
+   * the server could not say (network, 5xx, a malformed body), in which case the token in
+   * memory is kept. Only anonymous and dead mean there is no session on the server. */
+  type RefreshOutcome = 'token' | 'anonymous' | 'dead' | 'unavailable';
+  let lastRefresh: RefreshOutcome = 'unavailable';
+
   /** POST /auth/refresh: 200 a new token, 204 anonymous, 401 the session is gone. */
   async function refresh(): Promise<string | null> {
     let response: Response;
@@ -82,21 +88,25 @@ export function createAuth(deps: AuthDeps) {
         headers: { 'X-Requested-With': REQUESTED_WITH, Accept: 'application/json' },
       });
     } catch {
+      lastRefresh = 'unavailable';
       return token; // offline: keep what we have
     }
     if (response.status === 204) {
+      lastRefresh = 'anonymous';
       set(null);
       return null;
     }
-    if (!response.ok) {
-      set(null); // 401: the refresh cookie is invalid, expired or revoked
+    if (response.status === 401) {
+      lastRefresh = 'dead'; // the refresh cookie is invalid, expired or revoked
+      set(null);
       return null;
     }
-    const parsed = parseTokenResponse(await response.json().catch(() => undefined));
+    const parsed = response.ok ? parseTokenResponse(await response.json().catch(() => undefined)) : null;
     if (parsed === null) {
-      set(null);
-      return null;
+      lastRefresh = 'unavailable'; // a 5xx or a body this client does not understand
+      return token;
     }
+    lastRefresh = 'token';
     set(parsed.access_token, deps.now() + parsed.expires_in * 1000);
     post({ kind: 'token', token: parsed.access_token, expiresAtMs });
     return parsed.access_token;
@@ -160,13 +170,16 @@ export function createAuth(deps: AuthDeps) {
       const current = token;
       let status = current === null ? 401 : await revoke(current);
       if (status === 401) {
-        // the bearer was refused or absent: ask the server for a live session first
-        const fresh = await refresh();
-        if (fresh === null) {
-          revoked = true; // 204 or 401 on refresh: there is no session to revoke
-        } else {
+        // the bearer was refused or absent: ask the server for a live session, under the lock
+        // like every refresh (two tabs must never rotate the cookie at once)
+        const fresh = await refreshUnderLock();
+        if (fresh !== null && fresh !== current) {
           status = await revoke(fresh);
+        } else if (fresh === null && (lastRefresh === 'anonymous' || lastRefresh === 'dead')) {
+          revoked = true; // the server has no session for this browser: nothing to revoke
         }
+        // otherwise the server could not say (unavailable) or gave back the same refused
+        // token: not revoked
       }
       revoked = revoked || status === 204;
       set(null);
