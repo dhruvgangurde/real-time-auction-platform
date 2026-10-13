@@ -56,6 +56,9 @@ test('two bidders: outbid, a maximum answers, a soft-close extension on both scr
   await expect(alicePage.getByText(r.proxy.only)).toBeVisible();
   // fix 1: the maximum answered bob at once, so her price block shows she leads, not the outbid treatment
   await expect(alicePage.getByText(/You're the highest bidder with bid/)).toBeVisible({ timeout: 10_000 });
+  // fix 4: the row her maximum placed is labelled "You" by alias, not only her manual rows
+  const autoRow = alicePage.locator('tbody tr').filter({ hasText: r.ledger.byMaximum }).first();
+  await expect(autoRow).toContainText(r.ledger.you, { timeout: 10_000 });
 
   // bob bids again; the maximum answers one step above, so bob is outbid on his own screen
   await (await restBid(request, bob, id, 1050000)).json();

@@ -1,6 +1,7 @@
-// The bid feed (brief 9.3): the latest bids newest first, "You" by the viewer's own acks (item
-// 15), "by maximum" without any amount of a maximum (BR-7), the pending row without a sequence
-// number (UI-5), and the way to the full history (FR-27).
+// The bid feed (brief 9.3): the latest bids newest first; "You" labels a row placed by the
+// viewer, matched by its own ack sequence or by your_alias (a label only, never leading, item
+// 15), so rows the viewer's maximum placed are labelled too; "by maximum" without any amount of a
+// maximum (BR-7); the pending row without a sequence number (UI-5); the way to the full history.
 import type { CSSProperties } from 'react';
 import { Link } from 'react-router';
 
@@ -47,14 +48,15 @@ export function Ledger({ state }: { state: RoomState }) {
             </tr>
           )}
           {rows.map((b, i) => {
+            const mine = own.has(b.sequence_no) || (state.yourAlias !== null && b.bidder_alias === state.yourAlias);
             const newest = i === 0 && b.sequence_no === state.sequence && pending === null;
             const cls = i >= ANIMATED ? styles.rowStill : newest ? styles.rowNew : styles.row;
             return (
               <tr key={b.sequence_no} className={cls} style={{ '--i': i } as CSSProperties}>
                 <td className={styles.seq}>{b.sequence_no}</td>
                 <td>
-                  {own.has(b.sequence_no) ? <span className={styles.you}>{l.you}</span> : null}
-                  <span className={own.has(b.sequence_no) ? styles.k : undefined}>{b.bidder_alias}</span>
+                  {mine ? <span className={styles.you}>{l.you}</span> : null}
+                  <span className={mine ? styles.k : undefined}>{b.bidder_alias}</span>
                   {b.bid_type === 'automatic' ? <span className={styles.k}>{l.byMaximum}</span> : null}
                 </td>
                 <td className={styles.amt}>{formatINR(b.amount)}</td>
