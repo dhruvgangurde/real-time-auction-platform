@@ -25,7 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import settings
 from app.core.errors import AppError
 from app.models import Auction
-from app.repositories import AuctionRepository, BidRepository
+from app.repositories import (
+    AuctionRepository,
+    BidRepository,
+    ProxyBidRepository,
+    SettlementRepository,
+)
 from app.services.auth import CurrentUser
 from app.services.fanout import presence_key
 from app.services.live_events import alias, server_time_ms
@@ -35,6 +40,7 @@ from app.services.live_state import (
     LiveStateUnavailable,
     init_live_state,
     outbox_key,
+    proxies_key,
     state_key,
     to_ms,
 )
@@ -96,14 +102,19 @@ async def _recent_bids(
     ][:RECENT_BIDS]
 
 
-async def read_live(auction_id: UUID, redis: Redis) -> tuple[dict[str, str], Outbox, int]:
-    """State, outbox and participant count as of one instant (one MULTI)."""
+async def read_live(
+    auction_id: UUID, redis: Redis, viewer_id: UUID | None = None
+) -> tuple[dict[str, str], Outbox, int, str | None]:
+    """State, outbox, participant count and the viewer's own armed maximum ("max|arm_seq", or
+    None) as of one instant (one MULTI)."""
     async with redis.pipeline(transaction=True) as pipe:
         pipe.hgetall(state_key(auction_id))
         pipe.xrange(outbox_key(auction_id))
         pipe.zcount(presence_key(auction_id), server_time_ms(), "+inf")
-        state, outbox, participants = await pipe.execute()
-    return state, outbox, participants
+        if viewer_id is not None:
+            pipe.hget(proxies_key(auction_id), str(viewer_id))
+        state, outbox, participants, *own = await pipe.execute()
+    return state, outbox, participants, own[0] if own else None
 
 
 async def live_snapshot(
@@ -112,27 +123,41 @@ async def live_snapshot(
     redis: Redis,
     sessions: async_sessionmaker[AsyncSession],
 ) -> dict[str, Any]:
+    """The room snapshot. With a viewer (authenticated) it also carries that viewer's own
+    you_lead, your_max and your_result; without one it is the same for everyone. Per-viewer
+    fields never go into a room broadcast or a shared cache."""
     auction = await load_visible_auction(auction_id, viewer, sessions)
     if auction.status not in LIVE_STATES:
-        return await _postgres_snapshot(auction, sessions, redis, degraded=False)
+        snap = await _postgres_snapshot(auction, sessions, redis, degraded=False)
+        return snap | await _own_from_postgres(auction, viewer, sessions) if viewer else snap
+    viewer_id = viewer.id if viewer else None
     try:
-        state, outbox, participants = await read_live(auction_id, redis)
+        state, outbox, participants, own_max = await read_live(auction_id, redis, viewer_id)
         if not state or state.get("status") == "rebuilding":
             try:
                 await init_live_state(auction_id, redis, sessions)
             except (LiveStateUnavailable, AuctionNotLive) as exc:
                 raise AppError("SERVICE_UNAVAILABLE", "live state is being rebuilt", 503) from exc
-            state, outbox, participants = await read_live(auction_id, redis)
+            state, outbox, participants, own_max = await read_live(auction_id, redis, viewer_id)
             if not state or state.get("status") == "rebuilding":
                 raise AppError("SERVICE_UNAVAILABLE", "live state is being rebuilt", 503)
     except RedisError:
-        return await _postgres_snapshot(auction, sessions, None, degraded=True)
+        snap = await _postgres_snapshot(auction, sessions, None, degraded=True)
+        return snap | await _own_from_postgres(auction, viewer, sessions) if viewer else snap
 
     sequence = int(state["sequence"])
     highest = int(state["highest_amount"])
     increment = int(state["min_increment"])
     reserve = auction.reserve_price  # read here, never returned (BR-6)
-    return {
+    own: dict[str, Any] = {}
+    if viewer is not None:  # from the same MULTI as the state, so consistent with it
+        own = {
+            # exact, from the user id in the state, never from alias equality (brief 13 item 15)
+            "you_lead": bool(sequence) and state["highest_bidder"] == str(viewer.id),
+            "your_max": int(own_max.split("|")[0]) if own_max else None,  # the owner's own only
+            "your_result": None,  # only once the auction is closed
+        }
+    return own | {
         "auction_id": str(auction_id),
         "status": state["status"],
         "current_price": highest if sequence else None,
@@ -190,4 +215,28 @@ async def _postgres_snapshot(
         "reserve_met": reserve_met(auction),  # the same value auction_closed carries
         "self_outbid_blocked": settings.self_outbid_policy_enabled,  # FR-38, copied at go-live
         "server_time_ms": server_time_ms(),
+    }
+
+
+async def _own_from_postgres(
+    auction: Auction, viewer: CurrentUser, sessions: async_sessionmaker[AsyncSession]
+) -> dict[str, Any]:
+    """The viewer's own you_lead, your_max and your_result without live state. Maxima are
+    deactivated at close and on cancel (FR-51), so your_max is null afterwards; your_result is
+    "won" or "lost" once the auction sold, null otherwise (no sale, cancelled, never took part)."""
+    async with sessions() as session:
+        bids = BidRepository(session)
+        last = await bids.last_bid(auction.id)
+        active = await ProxyBidRepository(session).list_active(auction.id)
+        result = None
+        if auction.status == "closed_sold":
+            settlement = await SettlementRepository(session).for_auction(auction.id)
+            if settlement is not None and settlement.winner_id == viewer.id:
+                result = "won"
+            elif viewer.id in await bids.participant_ids(auction.id):
+                result = "lost"
+    return {
+        "you_lead": last is not None and last.bidder_id == viewer.id,
+        "your_max": next((m for bidder, m, _ in active if bidder == viewer.id), None),
+        "your_result": result,
     }

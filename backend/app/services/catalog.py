@@ -301,7 +301,7 @@ class CatalogService:
         upto, degraded = None, False
         if auction.status in LIVE_STATES:
             try:
-                state, outbox, _ = await read_live(auction_id, self._redis)
+                state, outbox, _, _ = await read_live(auction_id, self._redis)
                 if state and state.get("status") != "rebuilding":
                     upto = int(state["sequence"])
                     for _, f in outbox:
