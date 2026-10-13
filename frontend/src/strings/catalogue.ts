@@ -114,6 +114,7 @@ export type Catalogue = {
   };
   /** the room's regions (brief 9.3; copy from design/mockups/room.html) */
   roomUi: {
+    rupee: string;
     labels: { live: string; lot: string; crumbs: string; help: string };
     units: { minutes: (n: number) => string; seconds: (n: number) => string; minute: string };
     status: {
@@ -211,6 +212,62 @@ export type Catalogue = {
       reconnectingDetail: string;
       signedOut: string;
       signedOutDetail: string;
+    };
+    bid: {
+      heading: string;
+      anonHeading: string;
+      fieldLabel: string;
+      minHint: (amount: string) => string;
+      theMinimum: (amount: string) => string;
+      bid: (amount: string) => string;
+      sending: (amount: string) => string;
+      checking: (amount: string) => string;
+      opensAt: (time: string) => string;
+      youLead: string;
+      youLeadNote: string;
+      paused: string;
+      pausedNote: string;
+      ended: string;
+      signInToBid: string;
+      registerPrompt: string;
+      register: string;
+      pay: (amount: string) => string;
+      pendingNote: string;
+      retryingHead: string;
+      retryingNote: string;
+      acceptedHead: (seq: number, amount: string) => string;
+      rejectedMin: (amount: string) => string;
+      rateLimitedNote: (amount: string) => string;
+      over3x: (amount: string, current: string) => string;
+      over3xNote: (limit: string) => string;
+      confirm: (amount: string) => string;
+      changeAmount: string;
+      signedOutHead: string;
+      signedOutNote: string;
+      signInAgain: string;
+      verifyHead: string;
+      verifyNote: string;
+      resend: string;
+      suspendedHead: string;
+      suspendedNote: string;
+      invalid: string;
+      aboveLimit: (limit: string) => string;
+    };
+    proxy: {
+      set: string;
+      setAction: string;
+      raise: string;
+      yours: string;
+      reached: string;
+      setNew: string;
+      only: string;
+      intro: string;
+      activeNote: (amount: string) => string;
+      reachedNote: string;
+      scheduledNote: (time: string) => string;
+      fieldLabel: string;
+      placeholder: (amount: string) => string;
+      confirm: string;
     };
   };
   /** the live-region text (brief 11.4), exactly as design/shots/03-room/index.md lists it */
