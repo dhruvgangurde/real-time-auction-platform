@@ -72,3 +72,15 @@ test('a catalogue sentence never renders with an amount, time or other value mis
     }
   }
 });
+
+test('the 4004 copy never claims another device (4004 also follows suspension and password reset)', () => {
+  const texts: string[] = [];
+  const walk = (value: unknown): void => {
+    if (typeof value === 'string') texts.push(value);
+    else if (typeof value === 'function') texts.push(String((value as (...a: unknown[]) => unknown)(...Array.from({ length: value.length }, () => 'x'))));
+    else if (value !== null && typeof value === 'object') Object.values(value).forEach(walk);
+  };
+  walk(enIN);
+  expect(texts.filter((t) => /another device/i.test(t))).toEqual([]);
+  expect(`${enIN.roomUi.bid.signedOutHead}. ${enIN.roomUi.bid.signedOutNote}`).toBe('You were signed out. Sign in again to bid.');
+});

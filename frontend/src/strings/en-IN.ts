@@ -152,7 +152,7 @@ export const enIN = guardSentences({
       reconnecting: 'Reconnecting.',
       reconnectingDetail: 'This page updates every 2 s until the live connection is back, and bids still go through.',
       signedOut: 'You were signed out.',
-      signedOutDetail: 'This account was signed out on another device, so this page now updates every 2 s without bidding.',
+      signedOutDetail: 'This page now updates every 2 s.',
     },
     bid: {
       heading: 'Your bid',
@@ -184,8 +184,7 @@ export const enIN = guardSentences({
       confirm: (amount) => `Bid ${amount}`,
       changeAmount: 'Change amount',
       signedOutHead: 'You were signed out',
-      signedOutNote: 'This account was signed out on another device, so this page now updates every 2 s without bidding.',
-      signInAgain: 'Sign in again to bid',
+      signedOutNote: 'Sign in again to bid.',
       verifyHead: 'Verify your email to bid',
       verifyNote: 'Open the link we sent when you registered. It is valid for 24 hours.',
       resend: 'Send the link again',

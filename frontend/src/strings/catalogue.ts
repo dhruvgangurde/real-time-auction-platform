@@ -243,7 +243,6 @@ export type Catalogue = {
       changeAmount: string;
       signedOutHead: string;
       signedOutNote: string;
-      signInAgain: string;
       verifyHead: string;
       verifyNote: string;
       resend: string;

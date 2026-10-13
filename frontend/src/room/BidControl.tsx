@@ -118,7 +118,7 @@ export function BidControl({ state, session, profile, signedIn, startTimeMs, onR
     return panel(b.signedOutHead, b.signedOutNote, (
       <div className={styles.actions}>
         <Link className={styles.btnPrimary} to="/sign-in" state={{ from: `/auctions/${state.auctionId}` }}>
-          {b.signInAgain}
+          {s.nav.signIn}
         </Link>
       </div>
     ));

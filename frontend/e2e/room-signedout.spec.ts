@@ -30,6 +30,10 @@ test('after 4004 the room keeps its snapshot and polls anonymously', async ({ br
   await expect(main.getByText('₹9,000', { exact: true }).first()).toBeVisible(); // price block or ledger, not the lot facts
   await expect(page.getByText(/^Updates every 2 s, /)).toBeVisible();
   await expect(page.getByText(enIN.roomUi.status.connecting, { exact: true })).toHaveCount(0);
+  // the 4004 panel: "You were signed out. Sign in again to bid." (no "another device")
+  await expect(main.getByRole('heading', { name: 'You were signed out' })).toBeVisible();
+  await expect(main.getByText('Sign in again to bid.', { exact: true })).toBeVisible();
+  expect(await page.locator('body').innerText()).not.toMatch(/another device/i);
 
   // anonymous polling keeps it current: another bidder's bid shows within a couple of polls
   const next = await restBid(request, carol, id, 950000);
