@@ -5,21 +5,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router';
 
 import { ApiError } from '../api/client';
-import { useApp, useToken } from '../app/context';
+import { useApp, useToken, useViewerId } from '../app/context';
 import type { AuctionCard } from '../lib/contract';
 import { useStrings } from '../strings/catalogue';
 import styles from './watch.module.css';
 import { watchOptions } from './watch';
 
-export function useWatchlist() {
+/** The viewer's watchlist, one cache entry per user (not per token, which changes every refresh). */
+export function useWatchlist(refetchInterval: number | false = false) {
   const { api } = useApp();
   const token = useToken();
-  const key = ['watchlist', token] as const;
-  const list = useQuery({ queryKey: key, queryFn: () => api.watchlist(), enabled: token !== null, staleTime: 15_000 });
+  const key = ['watchlist', useViewerId()] as const;
+  const list = useQuery({ queryKey: key, queryFn: () => api.watchlist(), enabled: token !== null, staleTime: 15_000, refetchInterval });
   return { key, list, token };
 }
 
-export function WatchButton({ card, note }: { card: AuctionCard; note?: string }) {
+/** `again`: the watchlist page's label for an item removed during this visit. */
+export function WatchButton({ card, note, again = false }: { card: AuctionCard; note?: string; again?: boolean }) {
   const w = useStrings().watch;
   const { api } = useApp();
   const client = useQueryClient();
@@ -27,7 +29,7 @@ export function WatchButton({ card, note }: { card: AuctionCard; note?: string }
   const location = useLocation();
   const { key, list, token } = useWatchlist();
   const mutation = useMutation(watchOptions(client, api, key));
-  const watched = list.data?.items.some((c) => c.id === card.id) ?? false;
+  const watched = token !== null && (list.data?.items.some((c) => c.id === card.id) ?? false);
   if (!watched && card.status === 'cancelled') return null; // the server refuses it (ALREADY_CLOSED)
 
   const onClick = () => {
@@ -53,7 +55,7 @@ export function WatchButton({ card, note }: { card: AuctionCard; note?: string }
         <svg className={styles.icon} viewBox="0 0 16 16" aria-hidden="true">
           <path d="M8 13.5 2.6 8.3a3.2 3.2 0 0 1 4.5-4.6L8 4.6l.9-.9a3.2 3.2 0 0 1 4.5 4.6Z" />
         </svg>
-        {watched ? w.watching : w.watch}
+        {watched ? w.watching : again ? w.again : w.watch}
       </button>
       <p className={styles.message} role="status">
         {message}

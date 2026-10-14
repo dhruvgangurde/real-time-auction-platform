@@ -33,7 +33,7 @@ export const router = createBrowserRouter([
         element: <RequireAuth />,
         children: [
           { path: 'account/*', element: <Placeholder /> },
-          { path: 'watchlist', element: <Placeholder /> },
+          { path: 'watchlist', lazy: () => import('../watchlist/WatchlistPage') },
           { path: 'notifications', element: <Placeholder /> },
           { path: 'auctions/:id/pay', element: <Placeholder /> },
         ],

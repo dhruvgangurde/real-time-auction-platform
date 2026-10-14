@@ -282,10 +282,18 @@ export const enIN = guardSentences({
   watch: {
     watch: 'Watch',
     watching: 'Watching',
+    again: 'Watch again',
     note: 'We tell you 5 minutes before it ends.',
     cancelled: 'This auction was cancelled, so it cannot be watched.',
     addFailed: 'It was not added to your watchlist. Try again.',
     removeFailed: 'It was not removed from your watchlist. Try again.',
+  },
+  watchlist: {
+    title: 'Watchlist',
+    lede: 'The auctions you watch, ending soonest first. We tell you 5 minutes before each one ends.',
+    empty: 'Nothing on your watchlist yet.',
+    find: 'Find an auction to watch',
+    error: 'Your watchlist could not be loaded.',
   },
   discover: {
     title: 'Live auctions',

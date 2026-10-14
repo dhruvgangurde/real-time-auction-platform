@@ -343,10 +343,18 @@ export type Catalogue = {
   watch: {
     watch: string;
     watching: string;
+    again: string;
     note: string;
     cancelled: string;
     addFailed: string;
     removeFailed: string;
+  };
+  watchlist: {
+    title: string;
+    lede: string;
+    empty: string;
+    find: string;
+    error: string;
   };
   discover: {
     title: string;

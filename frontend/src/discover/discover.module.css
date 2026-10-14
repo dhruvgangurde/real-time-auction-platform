@@ -12,6 +12,17 @@
   margin: 0;
 }
 
+.lede {
+  font: var(--ui-lg);
+  color: var(--ink-2);
+  margin: 12px 0 0;
+  max-width: 60ch;
+}
+
+.listTop {
+  margin-top: 32px;
+}
+
 .searchRow {
   display: flex;
   gap: 8px;
