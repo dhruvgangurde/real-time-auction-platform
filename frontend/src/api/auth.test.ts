@@ -129,6 +129,21 @@ describe('restore on load (item 22)', () => {
     const auth = tab(new Bus(), null, [ok('t-1')], []);
     expect(await auth.restoreOnLoad()).toBe('t-1');
   });
+
+  // a guard waits on ready: it must settle (resolve, never reject) whatever the server does
+  test('a network error or a 5xx at load resolves ready to null and marks the restore settled', async () => {
+    const offline = () => {
+      throw new TypeError('Failed to fetch');
+    };
+    for (const answer of [offline, () => new Response(null, { status: 503 }), () => new Response('<html>', { status: 502 })]) {
+      const auth = tab(new Bus(), fakeLocks(), [answer], []);
+      const restoring = auth.restoreOnLoad();
+      await expect(auth.ready).resolves.toBeNull();
+      await expect(restoring).resolves.toBeNull();
+      expect(auth.isRestored()).toBe(true);
+      expect(auth.getToken()).toBeNull();
+    }
+  });
 });
 
 describe('tabs (item 3)', () => {
