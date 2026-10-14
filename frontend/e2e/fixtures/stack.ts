@@ -27,7 +27,11 @@ export const bearer = (a: Account) => ({ authorization: `Bearer ${a.token}` });
 
 /** Sign in through the SPA so the browser context holds the app's own session and socket. */
 export async function signInUi(page: import('@playwright/test').Page, account: Account): Promise<void> {
+  // submit only after the page's load-time restore answered, as a person would: a sign-in inside
+  // that window races the restore's refresh (docs/currentstate.md, Known issues)
+  const restored = page.waitForResponse((r) => r.url().endsWith('/api/v1/auth/refresh'));
   await page.goto('/sign-in');
+  await restored;
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Password').fill(account.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
