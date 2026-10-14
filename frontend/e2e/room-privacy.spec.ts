@@ -8,7 +8,7 @@
 import { expect, test } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
-import { newAccount, newAuction, restBid, restProxy, signInUi, waitForStatus } from './fixtures/stack';
+import { newAccount, newAuction, restBid, restProxy, signInUi, waitForStatus, waitForLive } from './fixtures/stack';
 
 const ALICE_MAX = 1234567; // ₹12,345.67: not start (900000) + k×50000
 const RESERVE = 1025000; // ₹10,250
@@ -41,6 +41,7 @@ test('bob never sees the reserve amount or alice’s maximum, anywhere', async (
   });
   await signInUi(page, bob);
   await page.goto(`/auctions/${id}`);
+  await waitForLive(page);
   await expect(page.getByLabel(enIN.roomUi.bid.fieldLabel)).toBeVisible();
 
   const snapshot = async () => seen.push(`dom ${await page.locator('body').innerText()}`);

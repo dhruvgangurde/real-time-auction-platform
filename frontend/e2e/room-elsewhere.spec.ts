@@ -4,7 +4,7 @@
 import { expect, test } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
-import { newAccount, newAuction, restBid, signInUi, waitForStatus } from './fixtures/stack';
+import { newAccount, newAuction, restBid, signInUi, waitForStatus, waitForLive } from './fixtures/stack';
 
 test("the viewer's own bid from elsewhere shows as the lead, not Outbid", async ({ browser, request }) => {
   test.setTimeout(120_000);
@@ -18,6 +18,7 @@ test("the viewer's own bid from elsewhere shows as the lead, not Outbid", async 
   const page = await ctx.newPage();
   await signInUi(page, alice);
   await page.goto(`/auctions/${id}`);
+  await waitForLive(page);
   await expect(page.getByLabel(enIN.roomUi.bid.fieldLabel)).toBeVisible();
 
   // alice leads from elsewhere, bob outbids her: this page shows the outbid treatment

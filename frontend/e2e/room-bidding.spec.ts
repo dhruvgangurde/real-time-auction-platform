@@ -4,7 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
-import { bidInLastWindow, newAccount, newAuction, restBid, signInUi, waitForStatus } from './fixtures/stack';
+import { bidInLastWindow, newAccount, newAuction, restBid, signInUi, waitForStatus, waitForLive } from './fixtures/stack';
 
 const r = enIN.roomUi;
 
@@ -33,7 +33,9 @@ test('two bidders: outbid, a maximum answers, a soft-close extension on both scr
   await signInUi(alicePage, alice);
   await signInUi(bobPage, bob);
   await alicePage.goto(`/auctions/${id}`);
+  await waitForLive(alicePage);
   await bobPage.goto(`/auctions/${id}`);
+  await waitForLive(bobPage);
 
   const aliceAssertive = alicePage.locator('#live-assertive');
   const bobAssertive = bobPage.locator('#live-assertive');

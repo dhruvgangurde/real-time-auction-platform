@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import type { APIRequestContext, APIResponse } from '@playwright/test';
+import { expect, type APIRequestContext, type APIResponse } from '@playwright/test';
 
 export const API = 'http://localhost:8011/api/v1';
 const MAILPIT = 'http://localhost:8025/api/v1';
@@ -24,6 +24,12 @@ async function ok(call: Promise<APIResponse>): Promise<APIResponse> {
 }
 
 export const bearer = (a: Account) => ({ authorization: `Bearer ${a.token}` });
+
+/** The room's socket is subscribed: from here socket-only frames (an outbid notice) reach the page.
+ * The bid field renders before that, so a spec that acts on such frames waits for this first. */
+export async function waitForLive(page: import('@playwright/test').Page): Promise<void> {
+  await expect(page.getByText(/^Connected, /)).toBeVisible({ timeout: 15_000 });
+}
 
 /** Sign in through the SPA so the browser context holds the app's own session and socket. */
 export async function signInUi(page: import('@playwright/test').Page, account: Account): Promise<void> {

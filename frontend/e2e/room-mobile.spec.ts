@@ -4,7 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
-import { bidInLastWindow, newAccount, newAuction, restBid, signInUi, waitForStatus } from './fixtures/stack';
+import { bidInLastWindow, newAccount, newAuction, restBid, signInUi, waitForStatus, waitForLive } from './fixtures/stack';
 
 const FOLD = 844;
 
@@ -36,6 +36,7 @@ test('the live column folds above 844 at 390, with no horizontal scroll', async 
   page.on('pageerror', (e) => errors.push(e.message));
   await signInUi(page, alice);
   await page.goto(`/auctions/${id}`);
+  await waitForLive(page);
 
   // idle: the prefilled bid control is above the fold
   await expect(page.getByLabel(enIN.roomUi.bid.fieldLabel)).toBeVisible();

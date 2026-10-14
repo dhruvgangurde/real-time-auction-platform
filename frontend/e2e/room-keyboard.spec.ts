@@ -4,7 +4,7 @@
 import { expect, test } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
-import { newAccount, newAuction, signInUi, waitForStatus } from './fixtures/stack';
+import { newAccount, newAuction, signInUi, waitForStatus, waitForLive } from './fixtures/stack';
 
 test('Enter submits a bid and focus stays in the field after a rejection', async ({ browser, request }) => {
   test.setTimeout(120_000);
@@ -20,6 +20,7 @@ test('Enter submits a bid and focus stays in the field after a rejection', async
   page.on('pageerror', (e) => errors.push(e.message));
   await signInUi(page, alice);
   await page.goto(`/auctions/${id}`);
+  await waitForLive(page);
 
   const field = page.getByLabel(enIN.roomUi.bid.fieldLabel);
   await field.focus();
