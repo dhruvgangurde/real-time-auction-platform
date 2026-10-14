@@ -5,6 +5,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 
 import { useApp, useAuthReady } from '../app/context';
 import { initialRoom, type RoomState } from '../live/room';
+import { announcePolite } from '../lib/polite';
 import { useStrings } from '../strings/catalogue';
 import { createRoomSession, type RoomSession } from './session';
 
@@ -23,7 +24,7 @@ export function useRoom(auctionId: string, enabled = true): { state: RoomState; 
             auth,
             clock,
             catalogue,
-            politeRegion: () => document.getElementById('live-polite'),
+            polite: announcePolite,
             assertiveRegion: () => document.getElementById('live-assertive'),
           })
         : null,

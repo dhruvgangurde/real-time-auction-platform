@@ -1,14 +1,13 @@
 // Live-region text (brief 11.4), from a diff of two room states: polite for room-wide changes,
 // assertive only for the viewer's own outcomes. The strings are exactly those listed per state
-// in design/shots/03-room/index.md. PoliteQueue coalesces polite text to at most one
-// announcement every 3 s, always the latest.
+// in design/shots/03-room/index.md. Polite text goes through the app's one queue (lib/polite.ts):
+// at most one announcement every 3 s, always the latest.
 import { formatSpan, formatWindow } from '../lib/clock';
 import { formatINR } from '../lib/money';
 import type { Catalogue } from '../strings/catalogue';
 import type { RoomState } from './room';
 
 export type Announcement = { polite?: string; assertive?: string };
-export const POLITE_GAP_MS = 3_000;
 
 export type AnnounceDeps = {
   catalogue: Catalogue;
@@ -75,39 +74,4 @@ export function announce(prev: RoomState, next: RoomState, deps: AnnounceDeps): 
     else polite(a.cancelled);
   }
   return out;
-}
-
-/** At most one polite announcement per 3 s; a text arriving inside the gap replaces the pending one. */
-export class PoliteQueue {
-  private lastAt = Number.NEGATIVE_INFINITY;
-  private pending: string | null = null;
-  private timer: unknown = null;
-
-  constructor(
-    private readonly emit: (text: string) => void,
-    private readonly now: () => number,
-    private readonly timers: { setTimeout: (fn: () => void, ms: number) => unknown; clearTimeout: (h: unknown) => void },
-  ) {}
-
-  offer(text: string): void {
-    const wait = this.lastAt + POLITE_GAP_MS - this.now();
-    if (wait <= 0 && this.pending === null) {
-      this.send(text);
-      return;
-    }
-    this.pending = text; // the latest wins
-    if (this.timer === null) {
-      this.timer = this.timers.setTimeout(() => {
-        this.timer = null;
-        const next = this.pending;
-        this.pending = null;
-        if (next !== null) this.send(next);
-      }, Math.max(0, wait));
-    }
-  }
-
-  private send(text: string): void {
-    this.lastAt = this.now();
-    this.emit(text);
-  }
 }

@@ -7,7 +7,7 @@ import type { Auth } from '../api/auth';
 import type { ServerClock } from '../lib/clock';
 import { formatLocal } from '../lib/clock';
 import type { Catalogue } from '../strings/catalogue';
-import { PoliteQueue, announce } from '../live/announcer';
+import { announce } from '../live/announcer';
 import { initialRoom, isStale, type RoomState } from '../live/room';
 import { createRoomController, type RoomController } from '../live/roomController';
 import { createSocket, openBrowserSocket, type Socket } from '../live/socket';
@@ -21,7 +21,8 @@ export type SessionDeps = {
   auth: Auth;
   clock: ServerClock;
   catalogue: Catalogue;
-  politeRegion: () => HTMLElement | null;
+  /** the app's polite queue (lib/polite.ts), shared with the shell */
+  polite: (text: string) => void;
   assertiveRegion: () => HTMLElement | null;
 };
 
@@ -46,7 +47,6 @@ export function createRoomSession(deps: SessionDeps) {
   let lastUpdateMs: number | null = null;
   let windowMs: number | null = null;
   const time = (ms: number) => formatLocal(ms, { seconds: true });
-  const polite = new PoliteQueue((text) => write(deps.politeRegion(), text), () => Date.now(), timers);
 
   function write(region: HTMLElement | null, text: string): void {
     if (region === null) return;
@@ -68,7 +68,7 @@ export function createRoomSession(deps: SessionDeps) {
       if (lastState !== null) {
         const said = announce(lastState, state, { catalogue: deps.catalogue, time, windowMs: () => windowMs });
         if (said.assertive !== undefined) write(deps.assertiveRegion(), said.assertive);
-        if (said.polite !== undefined) polite.offer(said.polite);
+        if (said.polite !== undefined) deps.polite(said.polite);
       }
       lastState = state;
       emit();
@@ -162,7 +162,7 @@ export function createRoomSession(deps: SessionDeps) {
     setProxy: (amount: number) => controller?.setProxy(amount) ?? null,
     countdownZero: () => controller?.dispatch({ type: 'countdownZero' }),
     setSeller: (isSeller: boolean) => controller?.dispatch({ type: 'seller', isSeller }),
-    announcePolite: (text: string) => polite.offer(text),
+    announcePolite: (text: string) => deps.polite(text),
     /** "Use this tab" (item 3): take the socket from the tab that holds it */
     useThisTab: () => void tabs?.useThisTab(),
 

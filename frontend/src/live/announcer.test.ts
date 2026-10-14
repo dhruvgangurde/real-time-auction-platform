@@ -4,7 +4,8 @@ import { describe, expect, test } from 'vitest';
 
 import type { InboundFrame, LiveSnapshot } from '../lib/contract';
 import { enIN } from '../strings/en-IN';
-import { PoliteQueue, announce, type Announcement } from './announcer';
+import { PoliteQueue } from '../lib/polite';
+import { announce, type Announcement } from './announcer';
 import { initialRoom, roomReducer, type RoomAction, type RoomState } from './room';
 
 const A = 'a1';
