@@ -2,7 +2,7 @@
 // Every string comes from the catalogue; every colour from the tokens.
 import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense } from 'react';
-import { Link, NavLink, Outlet } from 'react-router';
+import { Link, NavLink, Outlet, ScrollRestoration } from 'react-router';
 
 import { useStrings } from '../strings/catalogue';
 import { useApp, useToken } from './context';
@@ -64,6 +64,8 @@ export function Shell() {
           <Outlet />
         </Suspense>
       </main>
+      {/* back and forward return to the same scroll position (Discover's list, brief 9.2) */}
+      <ScrollRestoration />
       <div className="sr-only" aria-live="polite" id="live-polite" />
       <div className="sr-only" aria-live="assertive" id="live-assertive" />
     </>

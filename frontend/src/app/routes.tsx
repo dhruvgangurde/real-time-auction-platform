@@ -24,6 +24,7 @@ export const router = createBrowserRouter([
       { path: 'sign-in', lazy: auth('SignIn') },
       { path: 'forgot-password', lazy: auth('ForgotPassword') },
       { path: 'reset-password', lazy: auth('ResetPassword'), loader: () => takeTokenFromHash() },
+      { path: 'auctions', lazy: () => import('../discover/DiscoverPage') },
       { path: 'auctions/:id', lazy: () => import('../room/RoomPage') },
       { path: 'auctions/:id/bids', lazy: () => import('../room/BidHistory') },
       { path: 'help', lazy: () => import('../help/HelpPage') },

@@ -325,6 +325,62 @@ export type Catalogue = {
     tryAgain: string;
     trying: string;
   };
+  /** a listing card, on Discover and the watchlist (brief 9.2, 9.7) */
+  cards: {
+    status: Record<'scheduled' | 'live' | 'closing' | 'sold' | 'noSale' | 'cancelled', string>;
+    startingBid: string;
+    currentBid: string;
+    soldFor: string;
+    startsAt: (time: string) => string;
+    endsIn: (span: string) => string;
+    endsOn: (time: string) => string;
+    closingNote: string;
+    noSaleNote: string;
+    cancelledNote: string;
+    bids: (n: number) => string;
+  };
+  discover: {
+    title: string;
+    searchLabel: string;
+    searchPlaceholder: string;
+    search: string;
+    filters: string;
+    filtersToggle: (n: number) => string;
+    category: string;
+    anyCategory: string;
+    status: string;
+    statusNames: Record<'scheduled' | 'live' | 'closing' | 'closed_sold' | 'closed_no_sale', string>;
+    statusHint: string;
+    price: string;
+    priceHint: string;
+    min: string;
+    max: string;
+    closingBefore: string;
+    apply: string;
+    clear: string;
+    wholeRupees: string;
+    range: string;
+    filteredBy: string;
+    active: {
+      search: (q: string) => string;
+      category: (name: string) => string;
+      status: (names: string) => string;
+      price: (range: string) => string;
+      from: (amount: string) => string;
+      upTo: (amount: string) => string;
+      between: (min: string, max: string) => string;
+      closing: (time: string) => string;
+    };
+    empty: string;
+    emptyNote: string;
+    noMatch: string;
+    unknownCategory: string;
+    error: string;
+    rateLimited: (seconds: number) => string;
+    showMore: string;
+    loadingMore: string;
+    results: string;
+  };
   history: {
     title: string;
     toRoom: string;
