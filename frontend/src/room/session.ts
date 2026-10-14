@@ -108,7 +108,9 @@ export function createRoomSession(deps: SessionDeps) {
       },
       onStatus: (status) => {
         if (status.closed !== null) {
-          // 4004, 4012, 4009, 4010: no reconnect; this tab polls from here (item 2)
+          // 4004, 4012, 4009, 4010: no reconnect; this tab polls from here (item 2). On 4004 the
+          // session is gone on the server: forget the token here (no refresh), so the shell signs out
+          if (status.closed.code === 4004) deps.auth.forget();
           switchToPolling(status.closed.code);
           return;
         }

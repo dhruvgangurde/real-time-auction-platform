@@ -196,6 +196,12 @@ export function createAuth(deps: AuthDeps) {
       return revoked;
     },
 
+    /** The server revoked this session (socket close 4004): drop the token in this tab only,
+     * with no logout call and no refresh; the shell then shows the signed-out header. */
+    forget(): void {
+      set(null);
+    },
+
     onChange(listen: (token: string | null) => void): () => void {
       listeners.add(listen);
       return () => listeners.delete(listen);

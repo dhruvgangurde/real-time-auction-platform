@@ -97,6 +97,16 @@ export function BidControl({ state, session, profile, signedIn, startTimeMs, onR
       </div>
     ));
   }
+  // after 4004 the token is forgotten, so this comes before the anonymous panel
+  if (state.closedCode === 4004) {
+    return panel(b.signedOutHead, b.signedOutNote, (
+      <div className={styles.actions}>
+        <Link className={styles.btnPrimary} to="/sign-in" state={{ from: `/auctions/${state.auctionId}` }}>
+          {s.nav.signIn}
+        </Link>
+      </div>
+    ));
+  }
   if (!signedIn) {
     return (
       <div className={styles.panel}>
@@ -112,15 +122,6 @@ export function BidControl({ state, session, profile, signedIn, startTimeMs, onR
         </p>
       </div>
     );
-  }
-  if (state.closedCode === 4004) {
-    return panel(b.signedOutHead, b.signedOutNote, (
-      <div className={styles.actions}>
-        <Link className={styles.btnPrimary} to="/sign-in" state={{ from: `/auctions/${state.auctionId}` }}>
-          {s.nav.signIn}
-        </Link>
-      </div>
-    ));
   }
   if (state.own.result === 'won') {
     return (

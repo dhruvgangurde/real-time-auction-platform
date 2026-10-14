@@ -231,3 +231,18 @@ describe('tabs (item 3)', () => {
     expect(b.getToken()).toBe('t-new');
   });
 });
+
+describe('close 4004 (the session was revoked on the server)', () => {
+  test('forget drops the token here without any request, and tells the listeners', async () => {
+    const calls: Call[] = [];
+    const auth = tab(new Bus(), fakeLocks(), [ok('t-1')], calls);
+    await auth.restoreOnLoad();
+    expect(auth.getToken()).toBe('t-1');
+    const heard: (string | null)[] = [];
+    auth.onChange((t) => heard.push(t));
+    auth.forget();
+    expect(auth.getToken()).toBeNull();
+    expect(heard).toEqual([null]);
+    expect(calls).toHaveLength(1); // only the load-time refresh: no logout, no second refresh
+  });
+});

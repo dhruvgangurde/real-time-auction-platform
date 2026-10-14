@@ -33,7 +33,13 @@ export function RoomPage() {
   const s = useStrings();
   const { api } = useApp();
   const token = useToken();
-  const detail = useQuery({ queryKey: ['auction', id, token], queryFn: () => api.detail(id), retry: false });
+  const detail = useQuery({
+    queryKey: ['auction', id, token],
+    queryFn: () => api.detail(id),
+    retry: false,
+    // a token change (sign-in, or a 4004 forgetting it) refetches; keep this auction's lot meanwhile
+    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[1] === id ? previous : undefined),
+  });
   const me = useQuery({ queryKey: ['me', token], queryFn: () => api.me(), enabled: token !== null, staleTime: 60_000 });
   const { state, session } = useRoom(id, !detail.isError);
   const [helpTopic, setHelpTopic] = useState<HelpTopic | null>(null);

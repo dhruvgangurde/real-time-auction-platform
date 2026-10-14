@@ -22,8 +22,22 @@ test('after 4004 the room keeps its snapshot and polls anonymously', async ({ br
   await expect(page.getByText(/Connected,/)).toBeVisible({ timeout: 10_000 });
 
   // a password reset revokes every session: this page's socket closes 4004
+  const refreshes: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().endsWith('/api/v1/auth/refresh')) refreshes.push(r.url());
+  });
   await resetPassword(request, alice);
   await expect(page.getByText(enIN.roomUi.banner.signedOut, { exact: true })).toBeVisible({ timeout: 20_000 });
+
+  // the shell signs out too: "Sign in", no "Sign out", no name, at 1440 and 390
+  const header = page.getByRole('banner');
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await expect(header.getByRole('link', { name: enIN.nav.signIn, exact: true })).toBeVisible();
+    await expect(header.getByRole('button', { name: enIN.auth.signOut.label })).toHaveCount(0);
+    await expect(header.getByText(alice.name, { exact: true })).toHaveCount(0);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   // the last snapshot stays: price, leader and the next minimum, status "Updates every 2 s"
   const main = page.getByRole('main');
@@ -42,6 +56,8 @@ test('after 4004 the room keeps its snapshot and polls anonymously', async ({ br
 
   // no sentence with its amount or time missing ("can be .", "at least .")
   expect(await main.innerText()).not.toMatch(/ \.(\s|$)/);
+  // this tab never asks the refresh endpoint again once its session was revoked
+  expect(refreshes).toEqual([]);
   await ctx.close();
 });
 
