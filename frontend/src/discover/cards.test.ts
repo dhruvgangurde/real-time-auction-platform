@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { AuctionCard } from '../lib/contract';
-import { POLL_MS, cardView, crossedZero, pollInterval } from './cards';
+import { POLL_MS, cardView, cardWatch, crossedZero, pollInterval } from './cards';
 
 const NOW = 1_800_000_000_000;
 const card = (over: Partial<AuctionCard> = {}): AuctionCard => ({
@@ -53,5 +53,18 @@ describe('the list poll (amendment)', () => {
     expect(POLL_MS).toBe(15_000);
     for (const pages of [0, 1, 2, 3]) expect(pollInterval(pages), String(pages)).toBe(15_000);
     for (const pages of [4, 10, 25]) expect(pollInterval(pages), String(pages)).toBe(false);
+  });
+});
+
+describe('the Watch toggle on a card', () => {
+  test('a lot still to be decided offers Watch; a finished one only Watching, so it can be removed', () => {
+    for (const status of ['scheduled', 'live', 'closing'] as const) {
+      expect(cardWatch(status, false), status).toBe(true);
+      expect(cardWatch(status, true), status).toBe(true);
+    }
+    for (const status of ['closed_sold', 'closed_no_sale', 'cancelled'] as const) {
+      expect(cardWatch(status, false), status).toBe(false);
+      expect(cardWatch(status, true), status).toBe(true);
+    }
   });
 });

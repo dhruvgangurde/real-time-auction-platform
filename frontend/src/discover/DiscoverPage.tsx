@@ -15,7 +15,7 @@ import { formatINR } from '../lib/money';
 import { errorMessage, useStrings, type Catalogue } from '../strings/catalogue';
 import { WatchButton } from '../watch/WatchButton';
 import { Card } from './Card';
-import { crossedZero, pollInterval } from './cards';
+import { cardWatch, crossedZero, pollInterval } from './cards';
 import styles from './discover.module.css';
 import {
   MAX_PAGES,
@@ -252,7 +252,7 @@ export function DiscoverPage() {
         <ul className={styles.grid} ref={list}>
           {items.map((c) => (
             <li key={c.id}>
-              <Card card={c} nowMs={now} action={<WatchButton card={c} />} />
+              <Card card={c} nowMs={now} action={<WatchButton card={c} visible={(watched) => cardWatch(c.status, watched)} />} />
             </li>
           ))}
         </ul>

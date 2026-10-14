@@ -6,7 +6,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
-import { newAccount, newAuction, waitForStatus, type Account } from './fixtures/stack';
+import { API, bearer, newAccount, newAuction, restBid, signInUi, waitForStatus, type Account } from './fixtures/stack';
 
 const d = enIN.discover;
 const tag = () => Math.random().toString(36).slice(2, 8);
@@ -251,6 +251,36 @@ test('at 390 the filters open from a button, the page never scrolls sideways, an
   await expect(page.locator('article').first()).toHaveCSS('outline-style', 'solid');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   await ctx.close();
+});
+
+// frame 04's flow: finished lots (sold, not sold) offer no Watch; one already watched shows
+// Watching, so it can be removed, and then the button goes
+test('finished lots show no Watch unless watched; a watched one can be removed', async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const t = tag();
+  const seller = await newAccount(request, 'seller', 'seller');
+  const bidder = await newAccount(request, 'bidder');
+  const viewer = await newAccount(request, 'viewer');
+  const short = { startInS: 2, endInS: 25, thresholdS: 10, extensionS: 10, reservePrice: null } as const;
+  const sold = await newAuction(request, seller, { ...short, title: `Kodak ${t} Retina sold` });
+  const unsold = await newAuction(request, seller, { ...short, title: `Kodak ${t} Retina unsold` });
+  await waitForStatus(request, sold, 'live');
+  await (await restBid(request, bidder, sold, 900000)).json();
+  await request.put(`${API}/watchlist/${sold}`, { headers: bearer(viewer) }); // watched while live
+  await waitForStatus(request, sold, 'closed_sold', 60_000);
+  await waitForStatus(request, unsold, 'closed_no_sale', 60_000);
+
+  await signInUi(page, viewer);
+  await page.goto(`/auctions?q=${t}&status=closed_sold&status=closed_no_sale`);
+  const soldCard = cards(page).filter({ hasText: `Kodak ${t} Retina sold` });
+  const unsoldCard = cards(page).filter({ hasText: `Kodak ${t} Retina unsold` });
+  await expect(soldCard.getByRole('button', { name: enIN.watch.watching })).toHaveAttribute('aria-pressed', 'true');
+  await expect(unsoldCard).toContainText(enIN.cards.status.noSale);
+  await expect(unsoldCard.getByRole('button')).toHaveCount(0);
+
+  await soldCard.getByRole('button', { name: enIN.watch.watching }).click();
+  await expect(soldCard.getByRole('button')).toHaveCount(0); // removed, and nothing to watch again
+  await expect.poll(async () => ((await (await request.get(`${API}/watchlist`, { headers: bearer(viewer) })).json()) as { items: unknown[] }).items.length).toBe(0);
 });
 
 test('the dark theme renders with its own paper and ink', async ({ browser }) => {

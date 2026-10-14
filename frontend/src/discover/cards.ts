@@ -1,7 +1,7 @@
 // What a listing card says (brief 9.2) and when the list asks the server again. Prices and end
 // times come from the list response; the time left is the end time against the server clock, a
 // local tick only repaints it (UI-4). A live card past its end says Closing until a refetch.
-import type { AuctionCard } from '../lib/contract';
+import type { AuctionCard, AuctionStatus } from '../lib/contract';
 
 export type CardView =
   | { kind: 'scheduled'; price: number; startsAtMs: number }
@@ -30,6 +30,14 @@ export function cardView(c: AuctionCard, nowMs: number): CardView {
     default: // scheduled (a draft is never listed)
       return { kind: 'scheduled', price: c.starting_price, startsAtMs: c.start_time_ms };
   }
+}
+
+const FINISHED = new Set<AuctionStatus>(['closed_sold', 'closed_no_sale', 'cancelled']);
+
+/** Whether a card shows the Watch toggle: a lot still to be decided does; a finished one (sold,
+ * not sold, cancelled) only while watched, as "Watching", so it can be removed. */
+export function cardWatch(status: AuctionStatus, watched: boolean): boolean {
+  return watched || !FINISHED.has(status);
 }
 
 /** A live card's end passed between two ticks: time to ask the server what happened. */

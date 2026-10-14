@@ -3,6 +3,7 @@
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
 ## 2026-10-15 Phase 10c slice 3, review fixes
+- A Discover card for a finished auction (sold, not sold, cancelled) shows no Watch button unless the viewer already watches it; then it shows "Watching", so it can be removed, and after removal nothing (`cardWatch` in `discover/cards.ts`). Watching a finished lot brings nothing (no ending-soon notice). The watchlist page and the room keep their rule: every status but an unwatched cancelled auction.
 - Discover's default status is live and closing, not the server's default of scheduled, live and closing: "Live auctions" must lead with live lots, and newest-first buried them under scheduled listings. Scheduled is an opt-in tick. The URL leaves the default set out (any order), the client always sends the statuses explicitly (the server's own default still includes scheduled), and with no box ticked the default applies again. When the default view is empty, the empty state links to `/auctions?status=scheduled` ("See upcoming auctions").
 
 ## 2026-10-14 Phase 10c slice 3

@@ -20,8 +20,20 @@ export function useWatchlist(refetchInterval: number | false = false) {
   return { key, list, token };
 }
 
-/** `again`: the watchlist page's label for an item removed during this visit. */
-export function WatchButton({ card, note, again = false }: { card: AuctionCard; note?: string; again?: boolean }) {
+/** `again`: the watchlist page's label for an item removed during this visit. `visible`: whether
+ * to show the toggle given the watched state; by default everything but an unwatched cancelled
+ * auction (the server refuses it, ALREADY_CLOSED). */
+export function WatchButton({
+  card,
+  note,
+  again = false,
+  visible = (watched) => watched || card.status !== 'cancelled',
+}: {
+  card: AuctionCard;
+  note?: string;
+  again?: boolean;
+  visible?: (watched: boolean) => boolean;
+}) {
   const w = useStrings().watch;
   const { api, auth } = useApp();
   const client = useQueryClient();
@@ -30,7 +42,7 @@ export function WatchButton({ card, note, again = false }: { card: AuctionCard; 
   const { key, list, token } = useWatchlist();
   const mutation = useMutation(watchOptions(client, api, key));
   const watched = token !== null && (list.data?.items.some((c) => c.id === card.id) ?? false);
-  if (!watched && card.status === 'cancelled') return null; // the server refuses it (ALREADY_CLOSED)
+  if (!visible(watched)) return null;
 
   const onClick = async () => {
     // a click during the load-time restore waits for it: until then a signed-in viewer has no token
