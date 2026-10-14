@@ -28,3 +28,9 @@ export function useAuthReady(): boolean {
   const { auth } = useApp();
   return useSyncExternalStore(auth.onChange, auth.isRestored, () => false);
 }
+
+/** The load-time restore could not reach the server (network, 5xx): not the same as signed out. */
+export function useAuthUnreachable(): boolean {
+  const { auth } = useApp();
+  return useSyncExternalStore(auth.onChange, auth.isUnreachable, () => false);
+}

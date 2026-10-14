@@ -99,6 +99,30 @@ test('RequireAuth redirects an anonymous visitor to sign in and back to the same
   await expect(page.getByRole('heading', { name: enIN.placeholder.title })).toBeVisible();
 });
 
+// Q1: a refresh that cannot reach the server (5xx) is not a sign-out; 401 still is
+test('RequireAuth offers a retry when the load-time refresh fails with a 5xx, and redirects on a 401', async ({ page, request }) => {
+  const a = await newAccount(request, 'reach');
+  await signIn(page, a.email, a.password);
+  await page.waitForURL('http://localhost:8011/');
+  await page.route('**/api/v1/auth/refresh', (r) => r.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
+  await page.goto('/account');
+  await expect(page.getByRole('heading', { name: enIN.guards.unreachableTitle })).toBeVisible();
+  await expect(page).toHaveURL(/\/account$/);
+
+  // the server is back: the retry restores the session in place, still on the same URL
+  await page.unroute('**/api/v1/auth/refresh');
+  await page.getByRole('button', { name: enIN.common.tryAgain }).click();
+  await expect(page.getByRole('heading', { name: enIN.placeholder.title })).toBeVisible();
+  await expect(page).toHaveURL(/\/account$/);
+
+  // a 401 says the session is gone: that is a sign-out, so sign in again
+  await page.route('**/api/v1/auth/refresh', (r) =>
+    r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":{"code":"INVALID_TOKEN","message":"gone"}}' }),
+  );
+  await page.goto('/account');
+  await page.waitForURL(/\/sign-in$/);
+});
+
 test('RequireRole shows access denied in place, with no redirect loop', async ({ page, request }) => {
   const a = await newAccount(request, 'norole');
   await signIn(page, a.email, a.password);

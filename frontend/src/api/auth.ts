@@ -52,6 +52,9 @@ export function createAuth(deps: AuthDeps) {
   let epoch = 0;
   // the in-flight load-time restore, one promise for everyone (login waits for it)
   let ready: Promise<string | null> = Promise.resolve(null);
+  // the epoch at which the load-time restore could not reach the server (network, 5xx): until a
+  // login, logout or forget moves the epoch, a guard shows "try again" instead of signing out
+  let unreachableAt: number | null = null;
 
   function set(next: string | null, expires = 0): void {
     token = next;
@@ -146,6 +149,7 @@ export function createAuth(deps: AuthDeps) {
       return await refreshUnderLock(startedAt);
     } finally {
       restored = true;
+      unreachableAt = startedAt === epoch && token === null && lastRefresh === 'unavailable' ? epoch : null;
       for (const listen of listeners) listen(token);
     }
   }
@@ -170,6 +174,10 @@ export function createAuth(deps: AuthDeps) {
 
     /** Whether the load-time restore has settled, so a guard can tell anonymous from pending. */
     isRestored: () => restored,
+
+    /** The restore could not reach the server (network error, 5xx): there may still be a session,
+     * so a guard offers a retry (restoreOnLoad again) instead of a sign-in redirect. */
+    isUnreachable: () => unreachableAt === epoch && token === null,
 
     /** After login: keep the token in memory and share it with the other tabs. */
     accept(accessToken: string, expiresInS: number): void {

@@ -2,6 +2,9 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-14 Phase 10c slice 3
+- A load-time refresh that cannot reach the server (network error or 5xx) is not a sign-out. `RequireAuth` and `RequireRole` show "Can't reach the server" with "Try again" (a fresh `restoreOnLoad`) and stay on the same URL; only 204 (no session) and 401 (session gone) redirect to sign-in. The auth module records the epoch at which the restore was unreachable, so a later login, logout or forget clears it without extra bookkeeping (brief 9.1 "Server unavailable", Q1 of the slice 3 plan).
+
 ## 2026-10-14 Phase 10c slice 2
 - Verification and reset links put the token in the URL fragment, not the query (`/verify-email#token=…`). A fragment never reaches a server, so nginx, a future hosting proxy or any access log cannot hold it; the SPA reads `location.hash`, strips it with `history.replaceState` before the first render, and the token travels only in the API request body (brief 13 item 23). An e2e check greps `docker compose logs web` for both token values after the flows.
 - The dev-only `docker-compose.override.yml` raises the identity and anonymous-read rate limits (register, verify-email, login, `anon_live`) because the Playwright suite makes and signs in many accounts and polls `/live` from one host address; the production `.env` keeps the real limits, which the backend pytest suite exercises. The Playwright config runs one worker: `e2e/room-shots.spec.ts` pauses Redis to shoot the degraded state, which must not run beside other specs.

@@ -146,6 +146,54 @@ describe('restore on load (item 22)', () => {
   });
 });
 
+// Q1: a guard tells "the server could not say" (network, 5xx) from "no session" (204, 401)
+describe('an unreachable restore', () => {
+  const offline = () => {
+    throw new TypeError('Failed to fetch');
+  };
+
+  test('a network error or a 5xx at load is unreachable; 204 and 401 are not', async () => {
+    for (const [answer, unreachable] of [
+      [offline, true],
+      [() => new Response(null, { status: 503 }), true],
+      [anonymous, false],
+      [dead, false],
+      [ok('t-1'), false],
+    ] as const) {
+      const auth = tab(new Bus(), fakeLocks(), [answer], []);
+      await auth.restoreOnLoad();
+      expect(auth.isUnreachable()).toBe(unreachable);
+    }
+  });
+
+  test('a retry that reaches the server clears it, and listeners hear the change', async () => {
+    const auth = tab(new Bus(), fakeLocks(), [() => new Response(null, { status: 503 }), ok('t-2')], []);
+    await auth.restoreOnLoad();
+    expect(auth.isUnreachable()).toBe(true);
+    const seen: boolean[] = [];
+    auth.onChange(() => seen.push(auth.isUnreachable()));
+    expect(await auth.restoreOnLoad()).toBe('t-2');
+    expect(auth.isUnreachable()).toBe(false);
+    expect(seen.at(-1)).toBe(false);
+  });
+
+  test('a sign-in or a forget after it clears it', async () => {
+    const signIn = tab(new Bus(), fakeLocks(), [offline], []);
+    await signIn.restoreOnLoad();
+    signIn.accept('t-login', 900);
+    expect(signIn.isUnreachable()).toBe(false);
+
+    const forget = tab(new Bus(), fakeLocks(), [offline], []);
+    await forget.restoreOnLoad();
+    forget.forget();
+    expect(forget.isUnreachable()).toBe(false);
+  });
+
+  test('nothing is unreachable before a restore ran', () => {
+    expect(tab(new Bus(), fakeLocks(), [], []).isUnreachable()).toBe(false);
+  });
+});
+
 describe('tabs (item 3)', () => {
   test('two tabs restoring at once make one refresh call', async () => {
     const bus = new Bus();

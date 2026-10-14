@@ -322,6 +322,8 @@ export type Catalogue = {
     loading: string;
     required: string;
     back: string;
+    tryAgain: string;
+    trying: string;
   };
   history: {
     title: string;
@@ -341,6 +343,8 @@ export type Catalogue = {
   guards: {
     deniedTitle: string;
     denied: (role: 'seller' | 'admin') => string;
+    unreachableTitle: string;
+    unreachable: string;
   };
   placeholder: {
     title: string;

@@ -263,6 +263,8 @@ export const enIN = guardSentences({
     loading: 'Loading…',
     required: 'This field is required.',
     back: 'Go to live auctions',
+    tryAgain: 'Try again',
+    trying: 'Trying…',
   },
   history: {
     title: 'Bid history',
@@ -282,6 +284,8 @@ export const enIN = guardSentences({
   guards: {
     deniedTitle: 'You do not have access to this page',
     denied: (role) => (role === 'admin' ? 'You need administrator access to open this.' : 'You need seller access to list items.'),
+    unreachableTitle: "Can't reach the server",
+    unreachable: 'We could not check whether you are signed in. Check your connection, then try again.',
   },
   placeholder: {
     title: 'This page is on its way',
