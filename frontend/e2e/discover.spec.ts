@@ -1,0 +1,232 @@
+// Discover and search (brief 9.2; FR-20 to FR-23, FR-28, FR-30, UI-4, UI-7, NFR-35) on 8011:
+// the URL holds every filter, so back, forward, reload and a shared link restore the same list;
+// a category includes its descendants; min above max is caught before any request; "Show more"
+// pages; no socket is ever opened here; countdowns tick from the server clock and a live card
+// says Closing at zero; phones (390) and keyboard work; the dark theme renders.
+import { expect, test, type Page } from '@playwright/test';
+
+import { enIN } from '../src/strings/en-IN';
+import { newAccount, newAuction, waitForStatus, type Account } from './fixtures/stack';
+
+const d = enIN.discover;
+const tag = () => Math.random().toString(36).slice(2, 8);
+
+/** Count requests to the list endpoint, and fail on any console error or CSP violation. */
+function watch(page: Page) {
+  const listCalls: string[] = [];
+  const errors: string[] = [];
+  const sockets: string[] = [];
+  page.on('request', (r) => {
+    if (/\/api\/v1\/auctions\?/.test(r.url())) listCalls.push(r.url());
+  });
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('websocket', (ws) => sockets.push(ws.url()));
+  return { listCalls, errors, sockets };
+}
+
+const cards = (page: Page) => page.locator('article');
+const titles = async (page: Page) => (await cards(page).locator('h2').allInnerTexts()).sort();
+
+test('search and filters live in the URL: back, forward, reload and a shared link restore them', async ({ browser, request }) => {
+  test.setTimeout(120_000);
+  const t = tag();
+  const seller = await newAccount(request, 'seller', 'seller');
+  const leica = await newAuction(request, seller, { title: `Leica ${t} M3 rangefinder`, startInS: 2, endInS: 900, reservePrice: null });
+  await newAuction(request, seller, { title: `Nikon ${t} F2 body`, startInS: 3600, endInS: 7200, reservePrice: null, categoryId: 2 });
+  await waitForStatus(request, leica, 'live'); // one live, one scheduled
+
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  const seen = watch(page);
+  await page.goto('/auctions');
+  await expect(page.getByRole('heading', { level: 1, name: d.title })).toBeVisible();
+
+  // search: one history entry, both lots (FR-22)
+  await page.getByLabel(d.searchLabel).fill(t);
+  await page.getByLabel(d.searchLabel).press('Enter');
+  await expect(page).toHaveURL(new RegExp(`/auctions\\?q=${t}$`));
+  await expect(cards(page)).toHaveCount(2);
+
+  // a category includes its descendants (FR-21): Nikon is in phones, a child of electronics
+  await page.getByLabel(d.category).selectOption('electronics');
+  await page.getByRole('button', { name: d.apply }).click();
+  await expect(page).toHaveURL(new RegExp(`q=${t}&category=electronics$`));
+  await expect(cards(page)).toHaveCount(2);
+  await page.getByLabel(d.category).selectOption('phones');
+  await page.getByRole('button', { name: d.apply }).click();
+  await expect(page).toHaveURL(new RegExp(`category=phones$`));
+  await expect(cards(page)).toHaveCount(1);
+  expect(await titles(page)).toEqual([`Nikon ${t} F2 body`]);
+
+  // a status filter composes with the rest (FR-23)
+  await page.getByLabel(d.category).selectOption('');
+  await page.getByLabel(d.statusNames.scheduled).check();
+  await page.getByRole('button', { name: d.apply }).click();
+  await expect(page).toHaveURL(new RegExp(`q=${t}&status=scheduled$`));
+  await expect(cards(page)).toHaveCount(1);
+  await expect(cards(page).first()).toContainText(enIN.cards.status.scheduled);
+
+  // back and forward step through the searches and restore the form too
+  await page.goBack();
+  await expect(page).toHaveURL(/category=phones$/);
+  await expect(cards(page)).toHaveCount(1);
+  expect(await titles(page)).toEqual([`Nikon ${t} F2 body`]);
+  await expect(page.getByLabel(d.category)).toHaveValue('phones');
+  await page.goBack();
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/auctions\\?q=${t}$`));
+  await expect(cards(page)).toHaveCount(2);
+  await expect(page.getByLabel(d.searchLabel)).toHaveValue(t);
+  await page.goForward();
+  await page.goForward();
+  await page.goForward();
+  await expect(page).toHaveURL(/status=scheduled$/);
+  await expect(page.getByLabel(d.statusNames.scheduled)).toBeChecked();
+
+  // reload, and the same link opened elsewhere (a shared link)
+  await page.reload();
+  await expect(cards(page)).toHaveCount(1);
+  const other = await browser.newPage();
+  await other.goto(page.url());
+  await expect(other.locator('article')).toHaveCount(1);
+  expect(await titles(other)).toEqual(await titles(page));
+  await other.close();
+
+  // anonymous viewing is REST only (FR-28)
+  expect(seen.sockets).toEqual([]);
+  expect(seen.errors).toEqual([]);
+  await ctx.close();
+});
+
+test('min above max is a field error with no request; unknown category and no match say so', async ({ page }) => {
+  const seen = watch(page);
+  await page.goto('/auctions');
+  await expect(cards(page).or(page.getByText(d.empty))).not.toHaveCount(0);
+  const before = seen.listCalls.length;
+  await page.getByLabel(d.min).fill('5000');
+  await page.getByLabel(d.max).fill('100');
+  await page.getByRole('button', { name: d.apply }).click();
+  await expect(page.getByText(d.range)).toBeVisible();
+  await expect(page.getByLabel(d.max)).toHaveAttribute('aria-invalid', 'true');
+  await expect(page).toHaveURL(/\/auctions$/);
+  expect(seen.listCalls.length).toBe(before);
+
+  // the same pair in a hand-edited link: the error, and still nothing asked
+  const calls = seen.listCalls.length;
+  await page.goto('/auctions?min=500&max=100');
+  await expect(page.getByText(d.range)).toBeVisible();
+  expect(seen.listCalls.length).toBe(calls);
+
+  await page.goto('/auctions?category=no-such-category');
+  await expect(page.getByText(d.unknownCategory)).toBeVisible();
+
+  await page.goto(`/auctions?q=zz${tag()}qq`);
+  await expect(page.getByText(d.noMatch)).toBeVisible();
+  await expect(page.getByText(d.filteredBy)).toBeVisible();
+  await page.getByRole('link', { name: d.clear }).first().click();
+  await expect(page).toHaveURL(/\/auctions$/);
+  expect(seen.errors).toEqual([]);
+});
+
+test('Show more pages through the results, keeps them on reload and on the way back from a room', async ({ page, request }) => {
+  test.setTimeout(180_000);
+  const t = tag();
+  const sellers: Account[] = [];
+  for (let i = 0; i < 3; i += 1) sellers.push(await newAccount(request, 'seller', 'seller')); // 10 listings an hour each (NFR-22)
+  for (let i = 0; i < 21; i += 1) {
+    await newAuction(request, sellers[i % 3]!, { title: `Lot ${t} number ${i}`, startInS: 3600, endInS: 7200, reservePrice: null });
+  }
+  await page.goto(`/auctions?q=${t}`);
+  await expect(cards(page)).toHaveCount(20);
+  await page.getByRole('button', { name: d.showMore }).click();
+  await expect(page).toHaveURL(new RegExp(`q=${t}&page=2$`));
+  await expect(cards(page)).toHaveCount(21);
+  await expect(page.locator('a[data-card]').nth(20)).toBeFocused(); // focus on the first new card
+  await expect(page.getByRole('button', { name: d.showMore })).toHaveCount(0);
+
+  await page.reload();
+  await expect(cards(page)).toHaveCount(21);
+  await page.locator('a[data-card]').nth(20).click();
+  await expect(page).toHaveURL(/\/auctions\/[0-9a-f-]{36}$/);
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`page=2$`));
+  await expect(cards(page)).toHaveCount(21);
+});
+
+test('signed in, still no socket; a live countdown ticks from the server clock and says Closing at zero', async ({ browser, request }) => {
+  test.setTimeout(120_000);
+  const t = tag();
+  const seller = await newAccount(request, 'seller', 'seller');
+  const viewer = await newAccount(request, 'viewer');
+  const id = await newAuction(request, seller, { title: `Rolleiflex ${t}`, startInS: 2, endInS: 40, thresholdS: 10, extensionS: 10, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  const seen = watch(page);
+  await page.goto('/sign-in');
+  await page.getByLabel('Email').fill(viewer.email);
+  await page.getByLabel('Password').fill(viewer.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.waitForURL('http://localhost:8011/');
+  await page.goto(`/auctions?q=${t}`);
+  const card = cards(page).first();
+  const line = card.getByText(/^Ends in /);
+  await expect(line).toBeVisible();
+  const first = await line.innerText();
+  await expect(line).not.toHaveText(first, { timeout: 3_000 }); // the one page tick repaints it
+
+  // at zero the card says Closing without a reload (G3), then the list is asked again
+  await expect(card).toContainText(enIN.cards.status.closing, { timeout: 45_000 });
+  await expect(card).toContainText(enIN.cards.closingNote);
+  expect(seen.sockets).toEqual([]);
+  expect(seen.errors).toEqual([]);
+  await ctx.close();
+});
+
+test('at 390 the filters open from a button, the page never scrolls sideways, and it all works from the keyboard', async ({ browser, request }) => {
+  const t = tag();
+  const seller = await newAccount(request, 'seller', 'seller');
+  await newAuction(request, seller, { title: `Hasselblad ${t} 500C`, startInS: 3600, endInS: 7200, reservePrice: null });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.goto('/auctions');
+  await expect(page.getByLabel(d.category)).toBeHidden();
+
+  // keyboard only: search, open the filters, tick a status, apply
+  await page.getByLabel(d.searchLabel).focus();
+  await page.keyboard.type(t);
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(new RegExp(`q=${t}$`));
+  await expect(cards(page)).toHaveCount(1);
+  const toggle = page.getByRole('button', { name: d.filtersToggle(0) });
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByLabel(d.category)).toBeVisible();
+  await page.getByLabel(d.statusNames.scheduled).focus();
+  await page.keyboard.press('Space');
+  await page.getByRole('button', { name: d.apply }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(new RegExp(`q=${t}&status=scheduled$`));
+  await expect(page.getByRole('button', { name: d.filtersToggle(1) })).toBeVisible();
+
+  // a card is one link, reachable with Tab, with a visible focus ring around the card
+  await page.locator('a[data-card]').first().focus();
+  await expect(page.locator('article').first()).toHaveCSS('outline-style', 'solid');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await ctx.close();
+});
+
+test('the dark theme renders with its own paper and ink', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' });
+  const page = await ctx.newPage();
+  const seen = watch(page);
+  await page.goto('/auctions');
+  await expect(page.getByRole('heading', { level: 1, name: d.title })).toBeVisible();
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(13, 20, 36)'); // --paper, dark
+  await expect(page.locator('body')).toHaveCSS('color', 'rgb(233, 237, 244)'); // --ink, dark
+  expect(seen.errors).toEqual([]);
+  await ctx.close();
+});

@@ -121,6 +121,8 @@ export type AuctionSpec = {
   thresholdS?: number;
   extensionS?: number;
   publish?: boolean;
+  /** 1 (electronics) unless given; 2 is phones, a child of electronics */
+  categoryId?: number;
 };
 
 /** A listing by `seller` with one photo, published unless told otherwise; returns its id. */
@@ -129,7 +131,7 @@ export async function newAuction(api: APIRequestContext, seller: Account, spec: 
   const body: Record<string, unknown> = {
     title: spec.title ?? 'Asahi Pentax K1000 35 mm SLR with 50 mm f/2',
     description: 'Fully mechanical film SLR with standard lens. Light wear to the top plate; shutter fires at all speeds, meter not checked.',
-    category_id: 1,
+    category_id: spec.categoryId ?? 1,
     starting_price: spec.startingPrice ?? 900000,
     min_increment: spec.minIncrement ?? 50000,
     start_time: new Date(now + (spec.startInS ?? 8) * 1000).toISOString(),
