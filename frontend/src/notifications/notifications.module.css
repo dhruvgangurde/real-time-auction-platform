@@ -186,6 +186,75 @@ a.text:hover {
   margin-top: 32px;
 }
 
+/* ---- email choices */
+.prefs {
+  margin-top: 64px;
+  border-top: 1px solid var(--rule);
+  padding-top: 24px;
+}
+
+.prefsTitle {
+  font: var(--title-2);
+  margin: 0;
+}
+
+.prefs > .hint {
+  margin: 8px 0 0;
+}
+
+.prefsBody {
+  margin-top: 20px;
+}
+
+.prefsSet {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+
+.prefsActions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.btnPrimary {
+  composes: btnQuiet;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.btnPrimary[aria-disabled='true'] {
+  background: var(--ink-3);
+  border-color: var(--ink-3);
+  color: var(--paper);
+  cursor: progress;
+}
+
+.saved {
+  font: var(--ui-sm);
+  color: var(--green);
+  margin: 0;
+}
+
 @media (max-width: 700px) {
   .title {
     font: var(--title-1);

@@ -11,6 +11,7 @@ import { useUnreadCount } from '../app/useUnread';
 import { formatDay, formatLocal } from '../lib/clock';
 import type { NotificationPage } from '../lib/contract';
 import { errorMessage, useStrings } from '../strings/catalogue';
+import { EmailPreferences } from './EmailPreferences';
 import styles from './notifications.module.css';
 import { markReadIn, rowText } from './rows';
 
@@ -180,6 +181,7 @@ export function NotificationsPage() {
         {mark.isError ? p.failed : ''}
       </p>
       {body}
+      <EmailPreferences />
     </section>
   );
 }

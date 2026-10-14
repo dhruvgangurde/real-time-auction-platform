@@ -402,6 +402,20 @@ export type Catalogue = {
       otherNoTitle: string;
     };
   };
+  /** email choices per notification type (FR-72, FR-74) */
+  emailPrefs: {
+    title: string;
+    lede: string;
+    labels: Record<
+      'outbid' | 'ending_soon' | 'auction_won' | 'auction_lost' | 'payment_due' | 'payment_received' | 'payment_failed' | 'auction_sold' | 'auction_no_sale',
+      string
+    >;
+    save: string;
+    saving: string;
+    saved: string;
+    failed: string;
+    error: string;
+  };
   watchlist: {
     title: string;
     lede: string;
