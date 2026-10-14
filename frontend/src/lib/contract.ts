@@ -87,6 +87,34 @@ export type UserProfile = {
 
 export type ErrorEnvelope = { error: { code: string; message: string; fields?: Record<string, string> } };
 
+/** A card in the listing, the watchlist and the seller list (catalog.py _card): price, bids and end
+ * time from the live state, status from the record. No field for a reserve (BR-6). */
+export type AuctionCard = {
+  id: string;
+  title: string;
+  status: AuctionStatus;
+  category_id: number;
+  starting_price: number;
+  current_price: number | null;
+  bid_count: number;
+  start_time_ms: number;
+  end_time_ms: number;
+  thumbnail_url: string | null;
+};
+export type AuctionPage = { items: AuctionCard[]; page: number; page_size: number; has_more: boolean; server_time_ms: number };
+export type Watchlist = { items: AuctionCard[]; server_time_ms: number };
+export type Category = { id: number; name: string; slug: string; parent_id: number | null; children: Category[] };
+export type NotificationItem = {
+  id: number;
+  type: string;
+  auction_id: string | null;
+  payload: Record<string, unknown>;
+  read: boolean;
+  created_at_ms: number;
+};
+export type NotificationPage = { items: NotificationItem[]; next_before: number | null };
+export type EmailPreferences = Record<string, boolean>;
+
 // ---------------------------------------------------------------- frames
 
 type Stamped = { server_time_ms: number };
@@ -455,6 +483,73 @@ export function parseErrorEnvelope(v: unknown): ErrorEnvelope | null {
     out.error.fields = fields;
   }
   return out;
+}
+
+// ---------------------------------------------------------------- slice 3 lists
+// A malformed item is dropped and the rest of the list kept: one bad card never blanks a page.
+
+function card(v: unknown): AuctionCard | null {
+  if (!isObj(v)) return null;
+  const { id, title, status, category_id, starting_price, current_price, bid_count, start_time_ms, end_time_ms, thumbnail_url } = v;
+  if (
+    !isStr(id) ||
+    !isStr(title) ||
+    !isStatus(status) ||
+    !isInt(category_id) ||
+    !isMoney(starting_price) ||
+    !nullOrMoney(current_price) ||
+    !isInt(bid_count) ||
+    !isInt(start_time_ms) ||
+    !isInt(end_time_ms) ||
+    !nullOrStr(thumbnail_url)
+  ) {
+    return null;
+  }
+  return { id, title, status, category_id, starting_price, current_price, bid_count, start_time_ms, end_time_ms, thumbnail_url };
+}
+
+function each<T>(items: unknown[], parse: (v: unknown) => T | null): T[] {
+  return items.map(parse).filter((x): x is T => x !== null);
+}
+
+export function parseAuctionPage(v: unknown): AuctionPage | null {
+  if (!isObj(v) || !Array.isArray(v.items) || !isInt(v.page) || !isInt(v.page_size) || !isBool(v.has_more) || !isInt(v.server_time_ms)) {
+    return null;
+  }
+  return { items: each(v.items, card), page: v.page, page_size: v.page_size, has_more: v.has_more, server_time_ms: v.server_time_ms };
+}
+
+export function parseWatchlist(v: unknown): Watchlist | null {
+  if (!isObj(v) || !Array.isArray(v.items) || !isInt(v.server_time_ms)) return null;
+  return { items: each(v.items, card), server_time_ms: v.server_time_ms };
+}
+
+function category(v: unknown): Category | null {
+  if (!isObj(v) || !isInt(v.id) || !isStr(v.name) || !isStr(v.slug) || !nullOrInt(v.parent_id) || !Array.isArray(v.children)) {
+    return null;
+  }
+  return { id: v.id, name: v.name, slug: v.slug, parent_id: v.parent_id, children: each(v.children, category) };
+}
+
+export function parseCategoryTree(v: unknown): Category[] | null {
+  return Array.isArray(v) ? each(v, category) : null;
+}
+
+function notificationItem(v: unknown): NotificationItem | null {
+  if (!isObj(v)) return null;
+  const { id, type, auction_id, payload, read, created_at_ms } = v;
+  if (!isInt(id) || !isStr(type) || !nullOrStr(auction_id) || !isObj(payload) || !isBool(read) || !isInt(created_at_ms)) return null;
+  return { id, type, auction_id, payload: { ...payload }, read, created_at_ms };
+}
+
+export function parseNotificationPage(v: unknown): NotificationPage | null {
+  if (!isObj(v) || !Array.isArray(v.items) || !nullOrInt(v.next_before)) return null;
+  return { items: each(v.items, notificationItem), next_before: v.next_before };
+}
+
+export function parseEmailPreferences(v: unknown): EmailPreferences | null {
+  if (!isObj(v) || !isObj(v.email)) return null;
+  return Object.fromEntries(Object.entries(v.email).filter((e): e is [string, boolean] => isBool(e[1])));
 }
 
 // ---------------------------------------------------------------- frames

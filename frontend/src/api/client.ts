@@ -6,19 +6,29 @@
 import {
   REQUEST_ID,
   parseAuctionDetail,
+  parseAuctionPage,
   parseBidHistoryPage,
+  parseCategoryTree,
+  parseEmailPreferences,
   parseErrorEnvelope,
   parseFrame,
   parseLiveSnapshot,
+  parseNotificationPage,
   parseTokenResponse,
   parseUserProfile,
+  parseWatchlist,
   type AuctionDetail,
+  type AuctionPage,
   type BidAccepted,
   type BidHistoryPage,
+  type Category,
+  type EmailPreferences,
   type LiveSnapshot,
+  type NotificationPage,
   type ProxyArmed,
   type TokenResponse,
   type UserProfile,
+  type Watchlist,
 } from '../lib/contract';
 import type { Sample } from '../lib/clock';
 
@@ -128,6 +138,49 @@ export function createApi(deps: ApiDeps) {
       const query = new URLSearchParams({ limit: String(limit) });
       if (before !== undefined) query.set('before', String(before));
       return parsed(await request('GET', `/auctions/${auctionId}/bids?${query}`), parseBidHistoryPage);
+    },
+
+    // discovery (FR-20 to FR-23): the query string is built by discover/params.ts
+    async auctions(query: URLSearchParams): Promise<AuctionPage> {
+      return parsed(await request('GET', `/auctions?${query}`), parseAuctionPage);
+    },
+    async categories(): Promise<Category[]> {
+      return parsed(await request('GET', '/categories', { auth: 'none' }), parseCategoryTree);
+    },
+
+    // the watchlist (FR-24, FR-25): adding twice is a no-op on the server
+    async watchlist(): Promise<Watchlist> {
+      return parsed(await request('GET', '/watchlist', { auth: 'required' }), parseWatchlist);
+    },
+    async watch(auctionId: string): Promise<void> {
+      await request('PUT', `/watchlist/${auctionId}`, { auth: 'required' });
+    },
+    async unwatch(auctionId: string): Promise<void> {
+      await request('DELETE', `/watchlist/${auctionId}`, { auth: 'required' });
+    },
+
+    // notifications (FR-74): newest first, keyset on id
+    async notifications(options: { unread?: boolean; before?: number; limit?: number } = {}): Promise<NotificationPage> {
+      const query = new URLSearchParams();
+      if (options.unread) query.set('unread', 'true');
+      query.set('limit', String(options.limit ?? 20));
+      if (options.before !== undefined) query.set('before', String(options.before));
+      return parsed(await request('GET', `/notifications?${query}`, { auth: 'required' }), parseNotificationPage);
+    },
+    async markRead(id: number): Promise<void> {
+      await request('POST', `/notifications/${id}/read`, { auth: 'required' });
+    },
+    async markAllRead(): Promise<number> {
+      const body = await request('POST', '/notifications/read-all', { auth: 'required' });
+      const updated = (body as { updated?: unknown } | null)?.updated;
+      if (typeof updated !== 'number') throw malformed();
+      return updated;
+    },
+    async emailPreferences(): Promise<EmailPreferences> {
+      return parsed(await request('GET', '/notifications/preferences', { auth: 'required' }), parseEmailPreferences);
+    },
+    async setEmailPreferences(email: EmailPreferences): Promise<EmailPreferences> {
+      return parsed(await request('PUT', '/notifications/preferences', { auth: 'required', body: { email } }), parseEmailPreferences);
     },
 
     async me(): Promise<UserProfile> {

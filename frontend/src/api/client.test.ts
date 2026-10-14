@@ -148,3 +148,66 @@ describe('bids (items 13 and 14)', () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+// slice 3: discovery, watchlist and notification calls (FR-22 to FR-25, FR-74)
+describe('discovery, watchlist and notifications', () => {
+  const card = {
+    id: 'a1', title: 'K1000', status: 'live', category_id: 3, starting_price: 900000, current_price: null,
+    bid_count: 0, start_time_ms: 1, end_time_ms: 2, thumbnail_url: null,
+  };
+
+  test('the listing sends the query as given and feeds the clock', async () => {
+    const { fetch, calls } = fakeFetch([json(200, { items: [card], page: 2, page_size: 20, has_more: false, server_time_ms: 5000 })]);
+    const d = deps(fetch);
+    const page = await createApi(d).auctions(new URLSearchParams([['q', 'pentax'], ['status', 'live'], ['status', 'closing'], ['page', '2']]));
+    expect(calls[0]?.url).toBe('/api/v1/auctions?q=pentax&status=live&status=closing&page=2');
+    expect(page.items).toHaveLength(1);
+    expect(d.samples).toHaveLength(1);
+  });
+
+  test('categories are read without a token', async () => {
+    const { fetch, calls } = fakeFetch([json(200, [])]);
+    expect(await createApi(deps(fetch)).categories()).toEqual([]);
+    expect(calls[0]?.url).toBe('/api/v1/categories');
+    expect(calls[0]?.init.headers).not.toHaveProperty('Authorization');
+  });
+
+  test('watch is PUT, unwatch is DELETE, both with the bearer; the list is read with it', async () => {
+    const { fetch, calls } = fakeFetch([
+      () => new Response(null, { status: 204 }),
+      () => new Response(null, { status: 204 }),
+      json(200, { items: [card], server_time_ms: 5000 }),
+    ]);
+    const api = createApi(deps(fetch));
+    await api.watch('a1');
+    await api.unwatch('a1');
+    expect((await api.watchlist()).items[0]?.id).toBe('a1');
+    expect(calls.map((c) => `${String(c.init.method)} ${c.url}`)).toEqual([
+      'PUT /api/v1/watchlist/a1',
+      'DELETE /api/v1/watchlist/a1',
+      'GET /api/v1/watchlist',
+    ]);
+    for (const c of calls) expect(c.init.headers).toMatchObject({ Authorization: 'Bearer tok-1' });
+  });
+
+  test('notifications: the unread page, mark one, mark all, preferences', async () => {
+    const { fetch, calls } = fakeFetch([
+      json(200, { items: [], next_before: null }),
+      () => new Response(null, { status: 204 }),
+      json(200, { updated: 3 }),
+      json(200, { email: { outbid: false } }),
+    ]);
+    const api = createApi(deps(fetch));
+    await api.notifications({ unread: true, before: 40, limit: 100 });
+    await api.markRead(41);
+    expect(await api.markAllRead()).toBe(3);
+    expect(await api.setEmailPreferences({ outbid: false })).toEqual({ outbid: false });
+    expect(calls.map((c) => `${String(c.init.method)} ${c.url}`)).toEqual([
+      'GET /api/v1/notifications?unread=true&limit=100&before=40',
+      'POST /api/v1/notifications/41/read',
+      'POST /api/v1/notifications/read-all',
+      'PUT /api/v1/notifications/preferences',
+    ]);
+    expect(calls[3]?.init.body).toBe(JSON.stringify({ email: { outbid: false } }));
+  });
+});

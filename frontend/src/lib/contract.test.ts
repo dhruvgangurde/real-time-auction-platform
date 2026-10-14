@@ -6,7 +6,12 @@ import {
   REQUEST_ID,
   newRequestId,
   parseAuctionDetail,
+  parseAuctionPage,
   parseBidHistoryPage,
+  parseCategoryTree,
+  parseEmailPreferences,
+  parseNotificationPage,
+  parseWatchlist,
   parseErrorEnvelope,
   parseFrame,
   parseLiveSnapshot,
@@ -205,5 +210,57 @@ describe('request ids (item 13)', () => {
     expect(REQUEST_ID.test('')).toBe(false);
     expect(REQUEST_ID.test('a'.repeat(65))).toBe(false);
     expect(REQUEST_ID.test('has space')).toBe(false);
+  });
+});
+
+// slice 3: the shapes of api/discovery.py, catalog.py _card, notifications.py view (FR-22 to
+// FR-25, FR-74). A malformed item is dropped, the rest of the page kept; no card carries a reserve.
+describe('discovery, watchlist and notification guards', () => {
+  const card = {
+    id: A, title: 'Pentax K1000', status: 'live', category_id: 3, starting_price: 900000, current_price: 950000,
+    bid_count: 2, start_time_ms: T - 60_000, end_time_ms: T + 600_000, thumbnail_url: '/media/a.webp',
+  };
+
+  test('a listing page keeps valid cards, drops malformed ones and every stray field', () => {
+    const page = parseAuctionPage({
+      items: [card, { ...card, id: 7 }, { ...card, id: 'b', current_price: null, thumbnail_url: null, reserve_price: 1 }],
+      page: 1, page_size: 20, has_more: true, server_time_ms: T,
+    });
+    expect(page?.items.map((c) => c.id)).toEqual([A, 'b']);
+    expect(page?.items[1]).not.toHaveProperty('reserve_price');
+    expect(page).toMatchObject({ page: 1, page_size: 20, has_more: true, server_time_ms: T });
+    expect(parseAuctionPage({ items: [card], page: 1, page_size: 20, server_time_ms: T })).toBeNull();
+    expect(parseAuctionPage({ ...card, status: 'paused' })).toBeNull();
+  });
+
+  test('a watchlist is cards plus the server time; cancelled and closed cards are fine', () => {
+    const list = parseWatchlist({ items: [{ ...card, status: 'cancelled' }, { ...card, id: 'c', status: 'closed_sold' }], server_time_ms: T });
+    expect(list?.items.map((c) => c.status)).toEqual(['cancelled', 'closed_sold']);
+    expect(parseWatchlist({ items: [card] })).toBeNull();
+  });
+
+  test('the category tree keeps its nesting; a malformed node is dropped with its children', () => {
+    const tree = parseCategoryTree([
+      { id: 1, name: 'Cameras', slug: 'cameras', parent_id: null, children: [{ id: 3, name: 'Film', slug: 'film', parent_id: 1, children: [] }] },
+      { id: 2, name: 7, slug: 'bad', parent_id: null, children: [{ id: 4, name: 'Lost', slug: 'lost', parent_id: 2, children: [] }] },
+    ]);
+    expect(tree).toEqual([
+      { id: 1, name: 'Cameras', slug: 'cameras', parent_id: null, children: [{ id: 3, name: 'Film', slug: 'film', parent_id: 1, children: [] }] },
+    ]);
+    expect(parseCategoryTree({ id: 1 })).toBeNull();
+  });
+
+  test('a notification page: integer ids, a payload object, read state, keyset cursor', () => {
+    const n = { id: 41, type: 'outbid', auction_id: A, payload: { title: 'K1000', current_price: 950000 }, read: false, created_at_ms: T };
+    const page = parseNotificationPage({ items: [n, { ...n, id: '42' }, { ...n, id: 43, auction_id: null, read: true }], next_before: 41 });
+    expect(page?.items.map((i) => i.id)).toEqual([41, 43]);
+    expect(page?.next_before).toBe(41);
+    expect(page?.items[0]?.payload).toEqual({ title: 'K1000', current_price: 950000 });
+    expect(parseNotificationPage({ items: [n], next_before: 'x' })).toBeNull();
+  });
+
+  test('email preferences keep boolean switches only', () => {
+    expect(parseEmailPreferences({ email: { outbid: true, ending_soon: false, odd: 'yes' } })).toEqual({ outbid: true, ending_soon: false });
+    expect(parseEmailPreferences({ outbid: true })).toBeNull();
   });
 });
