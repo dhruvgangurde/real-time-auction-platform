@@ -53,6 +53,15 @@
   flex: none;
 }
 
+.heartIcon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  flex: none;
+}
+
 /* the count beside the bell; its words are in the link's accessible name */
 .badge {
   min-width: 22px;
@@ -131,6 +140,14 @@
 
   .nav {
     gap: 16px;
+  }
+
+  /* a long name never pushes the header past the screen */
+  .account {
+    max-width: 30vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

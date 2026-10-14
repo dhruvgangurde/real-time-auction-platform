@@ -60,8 +60,12 @@ export function Shell() {
             </NavLink>
             {signedIn ? (
               <>
-                <NavLink className={() => styles.deskOnly} to="/watchlist">
-                  {s.nav.watchlist}
+                {/* an icon at every width, the word on desktop: at 390 the header has room for icons only */}
+                <NavLink className={() => styles.bell} to="/watchlist" aria-label={s.nav.watchlist}>
+                  <svg className={styles.heartIcon} viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 13.5 2.6 8.3a3.2 3.2 0 0 1 4.5-4.6L8 4.6l.9-.9a3.2 3.2 0 0 1 4.5 4.6Z" />
+                  </svg>
+                  <span className={styles.deskOnly}>{s.nav.watchlist}</span>
                 </NavLink>
                 <NavLink className={() => styles.bell} to="/notifications" aria-label={s.nav.notificationsLabel(unread)}>
                   <svg className={styles.bellIcon} viewBox="0 0 20 20" aria-hidden="true">
@@ -74,7 +78,9 @@ export function Shell() {
                     </span>
                   )}
                 </NavLink>
-                <NavLink to="/account">{me.data?.full_name ?? s.nav.account}</NavLink>
+                <NavLink className={() => styles.account} to="/account">
+                  {me.data?.full_name ?? s.nav.account}
+                </NavLink>
                 <Suspense fallback={null}>
                   <SignOutButton className={`${styles.signOut} ${styles.deskOnly}`} />
                 </Suspense>

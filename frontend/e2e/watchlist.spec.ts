@@ -152,3 +152,32 @@ test('an empty watchlist offers Discover; 390 and keyboard; the dark theme', asy
   expect(errors).toEqual([]);
   await ctx.close();
 });
+
+test('at 390, signed in, the header reaches the watchlist from the keyboard', async ({ browser, request }) => {
+  const viewer = await newAccount(request, 'viewer');
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await signInUi(page, viewer);
+  await page.goto('/auctions');
+  await expect(page.getByRole('link', { name: /^Notifications/ })).toBeVisible(); // the signed-in header
+  // Tab from the top of the page through the header only; the watchlist link must be among its stops
+  const stops: string[] = [];
+  for (let i = 0; i < 10; i += 1) {
+    await page.keyboard.press('Tab');
+    const at = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      return { inHeader: el?.closest('header') !== null && el?.closest('header') !== undefined, href: el?.getAttribute('href') ?? '', name: el?.getAttribute('aria-label') ?? el?.textContent ?? '' };
+    });
+    if (!at.inHeader && stops.length > 0) break;
+    if (at.inHeader) stops.push(`${at.href} ${at.name}`.trim());
+    if (at.href === '/watchlist') break;
+  }
+  expect(stops.some((s) => s.startsWith('/watchlist')), stops.join(' | ')).toBe(true);
+  await expect(page.locator('header a[href="/watchlist"]')).toBeFocused();
+  await expect(page.locator('header a[href="/watchlist"]')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/watchlist$/);
+  await expect(page.getByRole('heading', { level: 1, name: enIN.watchlist.title })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await ctx.close();
+});
