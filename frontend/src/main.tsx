@@ -25,6 +25,7 @@ const api = createApi({
   getToken: auth.getToken,
   refresh: auth.refresh,
   observe: (sample) => clock.observe(sample),
+  ready: () => auth.ready,
 });
 const services: AppServices = { auth, api, clock };
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });

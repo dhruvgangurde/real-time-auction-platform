@@ -47,6 +47,11 @@ export function createAuth(deps: AuthDeps) {
   const listeners = new Set<(token: string | null) => void>();
   const channel = deps.channel();
   let waitingForPeer: ((token: string) => void) | null = null;
+  // bumped by every login (accept), logout and forget: a load-time restore applies its result only
+  // if none of them happened since it started, so a late restore never writes or clears the token
+  let epoch = 0;
+  // the in-flight load-time restore, one promise for everyone (login waits for it)
+  let ready: Promise<string | null> = Promise.resolve(null);
 
   function set(next: string | null, expires = 0): void {
     token = next;
@@ -79,8 +84,9 @@ export function createAuth(deps: AuthDeps) {
   type RefreshOutcome = 'token' | 'anonymous' | 'dead' | 'unavailable';
   let lastRefresh: RefreshOutcome = 'unavailable';
 
-  /** POST /auth/refresh: 200 a new token, 204 anonymous, 401 the session is gone. */
-  async function refresh(): Promise<string | null> {
+  /** POST /auth/refresh: 200 a new token, 204 anonymous, 401 the session is gone. With
+   * `startedAt` (the restore's epoch), the result is applied only if the epoch has not moved. */
+  async function refresh(startedAt?: number): Promise<string | null> {
     let response: Response;
     try {
       response = await deps.fetch(`${BASE}/auth/refresh`, {
@@ -92,6 +98,7 @@ export function createAuth(deps: AuthDeps) {
       lastRefresh = 'unavailable';
       return token; // offline: keep what we have
     }
+    if (startedAt !== undefined && startedAt !== epoch) return token; // a login, logout or forget won
     if (response.status === 204) {
       lastRefresh = 'anonymous';
       set(null);
@@ -103,6 +110,7 @@ export function createAuth(deps: AuthDeps) {
       return null;
     }
     const parsed = response.ok ? parseTokenResponse(await response.json().catch(() => undefined)) : null;
+    if (startedAt !== undefined && startedAt !== epoch) return token; // moved while the body was read
     if (parsed === null) {
       lastRefresh = 'unavailable'; // a 5xx or a body this client does not understand
       return token;
@@ -113,39 +121,51 @@ export function createAuth(deps: AuthDeps) {
     return parsed.access_token;
   }
 
-  async function refreshUnderLock(): Promise<string | null> {
+  async function refreshUnderLock(startedAt?: number): Promise<string | null> {
     const before = token;
     const run = async () => {
       // a peer may have refreshed and shared its token while we waited for the lock
       if (token !== null && token !== before) return token;
-      return refresh();
+      return refresh(startedAt);
     };
     return deps.locks === null ? run() : deps.locks.request(LOCK, run);
+  }
+
+  async function restore(startedAt: number): Promise<string | null> {
+    try {
+      if (channel !== null) {
+        const fromPeer = new Promise<string | null>((resolve) => {
+          waitingForPeer = resolve;
+          post({ kind: 'who-has-token' });
+          void deps.sleep(deps.peerWaitMs ?? 150).then(() => resolve(null));
+        });
+        const peer = await fromPeer;
+        waitingForPeer = null;
+        if (peer !== null) return peer;
+      }
+      return await refreshUnderLock(startedAt);
+    } finally {
+      restored = true;
+      for (const listen of listeners) listen(token);
+    }
   }
 
   return {
     getToken: () => token,
     expiresAt: () => expiresAtMs,
-    refresh: refreshUnderLock,
+    refresh: () => refreshUnderLock(),
 
-    /** On every load: a peer tab's token if one answers, otherwise a refresh under the lock. */
-    async restoreOnLoad(): Promise<string | null> {
-      try {
-        if (channel !== null) {
-          const fromPeer = new Promise<string | null>((resolve) => {
-            waitingForPeer = resolve;
-            post({ kind: 'who-has-token' });
-            void deps.sleep(deps.peerWaitMs ?? 150).then(() => resolve(null));
-          });
-          const peer = await fromPeer;
-          waitingForPeer = null;
-          if (peer !== null) return peer;
-        }
-        return await refreshUnderLock();
-      } finally {
-        restored = true;
-        for (const listen of listeners) listen(token);
-      }
+    /** The in-flight load-time restore (resolved when none was started). */
+    get ready(): Promise<string | null> {
+      return ready;
+    },
+
+    /** On every load: a peer tab's token if one answers, otherwise a refresh under the lock. Its
+     * result is dropped if a login, logout or forget happened meanwhile (the epoch moved). */
+    restoreOnLoad(): Promise<string | null> {
+      const startedAt = epoch;
+      ready = restore(startedAt);
+      return ready;
     },
 
     /** Whether the load-time restore has settled, so a guard can tell anonymous from pending. */
@@ -153,6 +173,7 @@ export function createAuth(deps: AuthDeps) {
 
     /** After login: keep the token in memory and share it with the other tabs. */
     accept(accessToken: string, expiresInS: number): void {
+      epoch += 1;
       set(accessToken, deps.now() + expiresInS * 1000);
       post({ kind: 'token', token: accessToken, expiresAtMs });
     },
@@ -163,6 +184,7 @@ export function createAuth(deps: AuthDeps) {
      * session is still alive), so it refreshes and revokes again with the new token. On false
      * the refresh cookie may still be alive and the UI must say the sign-out did not go through. */
     async logout(): Promise<boolean> {
+      epoch += 1;
       const revoke = async (bearer: string): Promise<number> => {
         try {
           const response = await deps.fetch(`${BASE}/auth/logout`, {
@@ -199,6 +221,7 @@ export function createAuth(deps: AuthDeps) {
     /** The server revoked this session (socket close 4004): drop the token in this tab only,
      * with no logout call and no refresh; the shell then shows the signed-out header. */
     forget(): void {
+      epoch += 1;
       set(null);
     },
 

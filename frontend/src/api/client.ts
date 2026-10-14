@@ -45,6 +45,8 @@ export type ApiDeps = {
   refresh: () => Promise<string | null>;
   /** clock samples from bodies that carry server_time_ms */
   observe?: (sample: Sample) => void;
+  /** the in-flight load-time restore (auth.ready): login waits for it, so their cookies never cross */
+  ready?: () => Promise<unknown>;
 };
 
 export const BASE = '/api/v1';
@@ -144,6 +146,7 @@ export function createApi(deps: ApiDeps) {
       await request('POST', '/auth/resend-verification', { auth: 'none', body: { email } });
     },
     async login(email: string, password: string): Promise<TokenResponse> {
+      await deps.ready?.(); // the page's restore answers first (no login cookie yet), never after
       const body = { email, password };
       return parsed(await request('POST', '/auth/login', { auth: 'none', body }), parseTokenResponse);
     },

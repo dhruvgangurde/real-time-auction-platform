@@ -1,8 +1,9 @@
 // brief 13 items 3 and 22: the token lives in memory only; refresh on load with X-Requested-With;
 // one refresh across tabs under a lock; the token shared over the channel, never stored.
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createAuth, type AuthDeps, type Channel, type Locks } from './auth';
+import { createApi } from './client';
 
 /** A fake BroadcastChannel bus: a message goes to every other channel, asynchronously. */
 class Bus {
@@ -244,5 +245,63 @@ describe('close 4004 (the session was revoked on the server)', () => {
     expect(auth.getToken()).toBeNull();
     expect(heard).toEqual([null]);
     expect(calls).toHaveLength(1); // only the load-time refresh: no logout, no second refresh
+  });
+});
+
+describe('sign-in during the load-time restore (the restore/sign-in race)', () => {
+  /** A fetch whose responses the test releases by hand, logging when each request starts and ends. */
+  function controlledFetch(log: string[]) {
+    const pending = new Map<string, (r: Response) => void>();
+    const fetchImpl: typeof globalThis.fetch = (url) => {
+      const name = String(url).endsWith('/auth/refresh') ? 'refresh' : String(url).endsWith('/auth/login') ? 'login' : String(url);
+      log.push(`${name}:start`);
+      return new Promise<Response>((resolve) => {
+        pending.set(name, (r) => {
+          log.push(`${name}:end`);
+          resolve(r);
+        });
+      });
+    };
+    return { fetchImpl, release: (name: string, r: Response) => pending.get(name)?.(r), started: (name: string) => pending.has(name) };
+  }
+
+  function wire(fetchImpl: typeof globalThis.fetch) {
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    const auth = createAuth({ fetch: fetchImpl, now: () => 1_000_000, sleep, channel: () => null, locks: null });
+    const api = createApi({ fetch: fetchImpl, now: () => 1_000_000, sleep, getToken: auth.getToken, refresh: auth.refresh, ready: () => auth.ready });
+    return { auth, api };
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  test('a login inside the restore window waits for the restore: refresh ends before login starts, and the login token stays', async () => {
+    const log: string[] = [];
+    const f = controlledFetch(log);
+    const { auth, api } = wire(f.fetchImpl);
+    const restoring = auth.restoreOnLoad(); // the page loaded: its refresh is in flight
+    await vi.advanceTimersByTimeAsync(0);
+    const signingIn = api.login('a@example.com', 'secret-password').then((t) => auth.accept(t.access_token, t.expires_in));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(f.started('login')).toBe(false); // login holds until the restore has answered
+    f.release('refresh', anonymous()); // no session cookie yet: 204
+    await vi.advanceTimersByTimeAsync(0);
+    await restoring;
+    f.release('login', ok('t-login')());
+    await signingIn;
+    expect(log).toEqual(['refresh:start', 'refresh:end', 'login:start', 'login:end']);
+    expect(auth.getToken()).toBe('t-login');
+  });
+
+  test('a restore whose 204 arrives after accept() leaves the login token in place', async () => {
+    const log: string[] = [];
+    const f = controlledFetch(log);
+    const { auth } = wire(f.fetchImpl);
+    const restoring = auth.restoreOnLoad();
+    await vi.advanceTimersByTimeAsync(0);
+    auth.accept('t-login', 900); // a login that did not wait for the restore
+    f.release('refresh', anonymous()); // the restore's answer arrives late
+    await restoring;
+    expect(auth.getToken()).toBe('t-login');
   });
 });
