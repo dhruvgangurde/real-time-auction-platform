@@ -1,0 +1,63 @@
+/* The Watch toggle: a quiet outlined button that fills when on; the heart outline fills too, so
+   the state is never colour alone. It sits above a card's full-card link. */
+
+.watch {
+  position: relative;
+  z-index: 1;
+}
+
+.off,
+.on {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: var(--button);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.off[aria-disabled='true'],
+.on[aria-disabled='true'] {
+  cursor: progress;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.on .icon {
+  fill: currentColor;
+}
+
+.message {
+  font: var(--ui-sm);
+  color: var(--red);
+  margin: 6px 0 0;
+}
+
+/* stays in the tree while empty, so a message that arrives is announced */
+.message:empty {
+  margin: 0;
+}
+
+.note {
+  font: var(--ui-sm);
+  color: var(--ink-2);
+  margin: 6px 0 0;
+}

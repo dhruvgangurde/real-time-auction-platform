@@ -339,6 +339,15 @@ export type Catalogue = {
     cancelledNote: string;
     bids: (n: number) => string;
   };
+  /** the Watch toggle (FR-24, FR-73) */
+  watch: {
+    watch: string;
+    watching: string;
+    note: string;
+    cancelled: string;
+    addFailed: string;
+    removeFailed: string;
+  };
   discover: {
     title: string;
     searchLabel: string;

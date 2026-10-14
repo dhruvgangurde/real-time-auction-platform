@@ -5,6 +5,8 @@ import { formatDay, formatLocal, formatRemaining, formatWindow } from '../lib/cl
 import type { AuctionDetail } from '../lib/contract';
 import { formatINR } from '../lib/money';
 import { HELP_TOPICS, useStrings, type HelpTopic } from '../strings/catalogue';
+import { cardFromDetail } from '../watch/watch';
+import { WatchButton } from '../watch/WatchButton';
 import styles from './room.module.css';
 
 export function Lot({ detail, onHelp }: { detail: AuctionDetail; onHelp: (topic: HelpTopic) => void }) {
@@ -34,6 +36,9 @@ export function Lot({ detail, onHelp }: { detail: AuctionDetail; onHelp: (topic:
         </div>
       )}
       <h1 className={styles.title}>{detail.title}</h1>
+      <div className={styles.watchRow}>
+        <WatchButton card={cardFromDetail(detail)} note={s.watch.note} />
+      </div>
       <p className={styles.desc}>{detail.description}</p>
       <dl className={styles.facts}>
         <div>

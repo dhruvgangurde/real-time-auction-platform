@@ -325,6 +325,11 @@
   margin: 4px 0 0;
 }
 
+.action {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
 /* ---- loading, empty, more */
 .skeleton .media,
 .bar,

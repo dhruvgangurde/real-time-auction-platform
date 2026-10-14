@@ -279,6 +279,14 @@ export const enIN = guardSentences({
     cancelledNote: 'Cancelled by the platform. Nothing is sold or charged.',
     bids: (n) => `${n} ${plural.select(n) === 'one' ? 'bid' : 'bids'}`,
   },
+  watch: {
+    watch: 'Watch',
+    watching: 'Watching',
+    note: 'We tell you 5 minutes before it ends.',
+    cancelled: 'This auction was cancelled, so it cannot be watched.',
+    addFailed: 'It was not added to your watchlist. Try again.',
+    removeFailed: 'It was not removed from your watchlist. Try again.',
+  },
   discover: {
     title: 'Live auctions',
     searchLabel: 'Search titles and descriptions',

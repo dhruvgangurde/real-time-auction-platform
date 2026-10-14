@@ -1,5 +1,6 @@
 // A listing card (brief 9.2): photo, title linking to the room, the status as a word and a mark
 // (never colour alone), the price with its label, and the time line. Shared with the watchlist.
+import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 
 import { formatDay, formatLocal, formatRemaining } from '../lib/clock';
@@ -13,7 +14,7 @@ import styles from './discover.module.css';
 const DECORATIVE = '';
 const DAY_MS = 86_400_000;
 
-export function Card({ card, nowMs }: { card: AuctionCard; nowMs: number }) {
+export function Card({ card, nowMs, action }: { card: AuctionCard; nowMs: number; action?: ReactNode }) {
   const c = useStrings().cards;
   const view = cardView(card, nowMs);
   const at = (ms: number) => `${formatDay(ms)}, ${formatLocal(ms)}`;
@@ -65,6 +66,7 @@ export function Card({ card, nowMs }: { card: AuctionCard; nowMs: number }) {
           {line === '' ? null : <span>{line}</span>}
           {bids === '' ? null : <span>{bids}</span>}
         </p>
+        {action === undefined ? null : <div className={styles.action}>{action}</div>}
       </div>
     </article>
   );
