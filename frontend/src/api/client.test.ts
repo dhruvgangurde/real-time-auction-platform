@@ -211,3 +211,27 @@ describe('discovery, watchlist and notifications', () => {
     expect(calls[3]?.init.body).toBe(JSON.stringify({ email: { outbid: false } }));
   });
 });
+
+// FR-65, FR-66, DC-10: the client never sends an amount; a start has no body at all, a
+// confirmation exactly the three ids the checkout returned
+describe('payments', () => {
+  const order = { payment_id: 'p1', settlement_id: 's1', status: 'created', amount: 950000, currency: 'INR', gateway: 'razorpay', key_id: 'rzp_test_X', order_id: 'order_Abc123' };
+  const ids = { razorpay_order_id: 'order_Abc123', razorpay_payment_id: 'pay_Xyz789', razorpay_signature: 'a'.repeat(64) };
+
+  test('start: POST with the bearer and no body; confirm: exactly the three ids; the settlement is read', async () => {
+    const settlement = { id: 's1', auction_id: 'a1', status: 'pending_payment', final_price: 950000, winner: { id: 'u1', full_name: 'B' }, created_at_ms: 1, paid_at_ms: null, payment: null };
+    const { fetch, calls } = fakeFetch([json(200, order), json(202, { status: 'pending' }), json(200, settlement)]);
+    const api = createApi(deps(fetch));
+    expect((await api.startPayment('a1')).order_id).toBe('order_Abc123');
+    expect(await api.confirmPayment('a1', { ...ids, amount: 1 } as typeof ids)).toEqual({ status: 'pending' });
+    expect((await api.settlement('a1')).status).toBe('pending_payment');
+    expect(calls.map((c) => `${String(c.init.method)} ${c.url}`)).toEqual([
+      'POST /api/v1/auctions/a1/payment',
+      'POST /api/v1/auctions/a1/payment/confirm',
+      'GET /api/v1/auctions/a1/settlement',
+    ]);
+    expect(calls[0]?.init.body).toBeUndefined();
+    expect(calls[0]?.init.headers).toMatchObject({ Authorization: 'Bearer tok-1' });
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual(ids); // the stray amount is not sent
+  });
+});

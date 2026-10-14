@@ -11,6 +11,9 @@ import {
   parseCategoryTree,
   parseEmailPreferences,
   parseNotificationPage,
+  parsePaymentConfirm,
+  parsePaymentOrder,
+  parseSettlement,
   parseWatchlist,
   parseErrorEnvelope,
   parseFrame,
@@ -267,5 +270,34 @@ describe('discovery, watchlist and notification guards', () => {
   test('email preferences keep boolean switches only', () => {
     expect(parseEmailPreferences({ email: { outbid: true, ending_soon: false, odd: 'yes' } })).toEqual({ outbid: true, ending_soon: false });
     expect(parseEmailPreferences({ outbid: true })).toBeNull();
+  });
+});
+
+// FR-65 to FR-69: the settlement the winner and the seller read, the order for the checkout and
+// the confirmation's answer (closing.py settlement_dict, payments.py payment_view and _order_view)
+describe('payment guards', () => {
+  const payment = { id: 'p1', status: 'created', amount: 950000, currency: 'INR', order_id: 'order_Abc123', payment_id: null, updated_at_ms: T };
+  const settlement = {
+    id: 's1', auction_id: A, status: 'pending_payment', final_price: 950000, winner: { id: 'u1', full_name: 'Bob' },
+    created_at_ms: T, paid_at_ms: null, payment,
+  };
+
+  test('a settlement with its payment; a no-sale one has no winner, price or payment', () => {
+    expect(parseSettlement(settlement)).toEqual(settlement);
+    expect(parseSettlement({ ...settlement, status: 'no_sale', final_price: null, winner: null, payment: null })?.status).toBe('no_sale');
+    expect(parseSettlement({ ...settlement, payment: { ...payment, status: 'succeeded', payment_id: 'pay_X1' } })?.payment?.payment_id).toBe('pay_X1');
+    expect(parseSettlement({ ...settlement, status: 'refunded' })).toBeNull();
+    expect(parseSettlement({ ...settlement, final_price: 9.5 })).toBeNull();
+  });
+
+  test('an order carries what the checkout needs and nothing else', () => {
+    const order = { payment_id: 'p1', settlement_id: 's1', status: 'created', amount: 950000, currency: 'INR', gateway: 'razorpay', key_id: 'rzp_test_X', order_id: 'order_Abc123', extra: 1 };
+    expect(parsePaymentOrder(order)).toEqual({ payment_id: 'p1', settlement_id: 's1', status: 'created', amount: 950000, currency: 'INR', gateway: 'razorpay', key_id: 'rzp_test_X', order_id: 'order_Abc123' });
+    expect(parsePaymentOrder({ ...order, amount: '950000' })).toBeNull();
+  });
+
+  test('a confirmation answers paid, failed or pending', () => {
+    for (const status of ['paid', 'failed', 'pending']) expect(parsePaymentConfirm({ status })).toEqual({ status });
+    expect(parsePaymentConfirm({ status: 'ok' })).toBeNull();
   });
 });

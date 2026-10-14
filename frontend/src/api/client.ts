@@ -14,6 +14,9 @@ import {
   parseFrame,
   parseLiveSnapshot,
   parseNotificationPage,
+  parsePaymentConfirm,
+  parsePaymentOrder,
+  parseSettlement,
   parseTokenResponse,
   parseUserProfile,
   parseWatchlist,
@@ -25,7 +28,10 @@ import {
   type EmailPreferences,
   type LiveSnapshot,
   type NotificationPage,
+  type PaymentConfirm,
+  type PaymentOrder,
   type ProxyArmed,
+  type Settlement,
   type TokenResponse,
   type UserProfile,
   type Watchlist,
@@ -181,6 +187,22 @@ export function createApi(deps: ApiDeps) {
     },
     async setEmailPreferences(email: EmailPreferences): Promise<EmailPreferences> {
       return parsed(await request('PUT', '/notifications/preferences', { auth: 'required', body: { email } }), parseEmailPreferences);
+    },
+
+    // payments (FR-65 to FR-69, DC-10): the client never sends an amount; a start has no body at
+    // all, a confirmation only the three ids the gateway's checkout handed back
+    async settlement(auctionId: string): Promise<Settlement> {
+      return parsed(await request('GET', `/auctions/${auctionId}/settlement`, { auth: 'required' }), parseSettlement);
+    },
+    async startPayment(auctionId: string): Promise<PaymentOrder> {
+      return parsed(await request('POST', `/auctions/${auctionId}/payment`, { auth: 'required' }), parsePaymentOrder);
+    },
+    async confirmPayment(
+      auctionId: string,
+      ids: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string },
+    ): Promise<PaymentConfirm> {
+      const body = { razorpay_order_id: ids.razorpay_order_id, razorpay_payment_id: ids.razorpay_payment_id, razorpay_signature: ids.razorpay_signature };
+      return parsed(await request('POST', `/auctions/${auctionId}/payment/confirm`, { auth: 'required', body }), parsePaymentConfirm);
     },
 
     async me(): Promise<UserProfile> {

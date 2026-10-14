@@ -2,6 +2,10 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-15 Phase 10c slice 3b, checkout
+- The payment page is a state machine (`pay/flow.ts`). Razorpay's checkout handing back ids moves it only to "Confirming": it says Paid only when `GET /auctions/{id}/settlement` reads paid, whichever source completed it (the checkout callback, the webhook or the reconciler). Failed is the server's answer to the confirmation, or a failure inside the open window followed by its closing. INVALID_SIGNATURE and PAYMENT_MISMATCH on the confirmation keep it confirming with a note (the webhook may still settle it). The settlement's winner pays; anyone else the endpoint admits (the seller, an admin) sees the status only (FR-69); a no-sale has nothing to pay.
+- The client never sends an amount: `startPayment` posts no body at all, `confirmPayment` only the three ids, each checked against the server's patterns before posting. Checkout gets the server order's key, order id and amount, and no `prefill`, so nothing personal goes to the gateway from this site. checkout.js is loaded once, on the first "Pay", never on page load; a failed load is retried on the next click.
+
 ## 2026-10-15 Phase 10c slice 3, review fixes
 - At 390 the signed-in header had no way to the watchlist (the link was desktop-only), so it was not reachable by keyboard there. The Watchlist link is now an outline heart at every width, like the bell, with the word on desktop and "Watchlist" as its accessible name; the phone header is mark, heart, bell with count, and the account name, which is capped at 30% of the width with an ellipsis so a long name never pushes the row off screen. No new dependency.
 - A Discover card for a finished auction (sold, not sold, cancelled) shows no Watch button unless the viewer already watches it; then it shows "Watching", so it can be removed, and after removal nothing (`cardWatch` in `discover/cards.ts`). Watching a finished lot brings nothing (no ending-soon notice). The watchlist page and the room keep their rule: every status but an unwatched cancelled auction.

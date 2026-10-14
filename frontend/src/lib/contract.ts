@@ -115,6 +115,40 @@ export type NotificationItem = {
 export type NotificationPage = { items: NotificationItem[]; next_before: number | null };
 export type EmailPreferences = Record<string, boolean>;
 
+/** GET /auctions/{id}/settlement (closing.py settlement_dict + payments.py payment_view): the
+ * winner, the seller and admins only (FR-64, FR-69, BR-10). Never a reserve. */
+export type PaymentView = {
+  id: string;
+  status: string; // created, failed, succeeded
+  amount: number;
+  currency: string;
+  order_id: string;
+  payment_id: string | null;
+  updated_at_ms: number;
+};
+export type Settlement = {
+  id: string;
+  auction_id: string;
+  status: 'pending_payment' | 'paid' | 'no_sale';
+  final_price: number | null;
+  winner: { id: string; full_name: string } | null;
+  created_at_ms: number;
+  paid_at_ms: number | null;
+  payment: PaymentView | null;
+};
+/** POST /auctions/{id}/payment: the gateway order for the checkout; the amount is the settlement's. */
+export type PaymentOrder = {
+  payment_id: string;
+  settlement_id: string;
+  status: string;
+  amount: number;
+  currency: string;
+  gateway: string;
+  key_id: string;
+  order_id: string;
+};
+export type PaymentConfirm = { status: 'paid' | 'failed' | 'pending' };
+
 // ---------------------------------------------------------------- frames
 
 type Stamped = { server_time_ms: number };
@@ -550,6 +584,55 @@ export function parseNotificationPage(v: unknown): NotificationPage | null {
 export function parseEmailPreferences(v: unknown): EmailPreferences | null {
   if (!isObj(v) || !isObj(v.email)) return null;
   return Object.fromEntries(Object.entries(v.email).filter((e): e is [string, boolean] => isBool(e[1])));
+}
+
+// ---------------------------------------------------------------- payments (FR-65 to FR-69)
+
+const SETTLEMENT_STATUSES = new Set(['pending_payment', 'paid', 'no_sale']);
+
+function paymentView(v: unknown): PaymentView | null | undefined {
+  // undefined: malformed; null: no payment yet
+  if (v === null) return null;
+  if (!isObj(v)) return undefined;
+  const { id, status, amount, currency, order_id, payment_id, updated_at_ms } = v;
+  if (!isStr(id) || !isStr(status) || !isMoney(amount) || !isStr(currency) || !isStr(order_id) || !nullOrStr(payment_id) || !isInt(updated_at_ms)) {
+    return undefined;
+  }
+  return { id, status, amount, currency, order_id, payment_id, updated_at_ms };
+}
+
+export function parseSettlement(v: unknown): Settlement | null {
+  if (!isObj(v)) return null;
+  const { id, auction_id, status, final_price, winner, created_at_ms, paid_at_ms } = v;
+  if (!isStr(id) || !isStr(auction_id) || !isStr(status) || !SETTLEMENT_STATUSES.has(status) || !nullOrMoney(final_price)) return null;
+  if (!isInt(created_at_ms) || !nullOrInt(paid_at_ms)) return null;
+  if (winner !== null && (!isObj(winner) || !isStr(winner.id) || !isStr(winner.full_name))) return null;
+  const payment = paymentView(v.payment);
+  if (payment === undefined) return null;
+  return {
+    id,
+    auction_id,
+    status: status as Settlement['status'],
+    final_price,
+    winner: winner === null ? null : { id: (winner as Obj).id as string, full_name: (winner as Obj).full_name as string },
+    created_at_ms,
+    paid_at_ms,
+    payment,
+  };
+}
+
+export function parsePaymentOrder(v: unknown): PaymentOrder | null {
+  if (!isObj(v)) return null;
+  const { payment_id, settlement_id, status, amount, currency, gateway, key_id, order_id } = v;
+  if (!isStr(payment_id) || !isStr(settlement_id) || !isStr(status) || !isMoney(amount) || !isStr(currency) || !isStr(gateway) || !isStr(key_id) || !isStr(order_id)) {
+    return null;
+  }
+  return { payment_id, settlement_id, status, amount, currency, gateway, key_id, order_id };
+}
+
+export function parsePaymentConfirm(v: unknown): PaymentConfirm | null {
+  if (!isObj(v) || (v.status !== 'paid' && v.status !== 'failed' && v.status !== 'pending')) return null;
+  return { status: v.status };
 }
 
 // ---------------------------------------------------------------- frames
