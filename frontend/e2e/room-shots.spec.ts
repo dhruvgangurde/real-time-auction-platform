@@ -406,7 +406,8 @@ test('reconnecting, light (browser offline)', async ({ browser, request }) => {
   const page = await ctx.newPage();
   await signInUi(page, alice);
   await page.goto(`/auctions/${id}`);
-  await expect(field(page)).toBeVisible();
+  // the field renders before the first snapshot: wait for the live socket before going offline
+  await expect(page.getByText(/Connected,/)).toBeVisible({ timeout: 15_000 });
   await ctx.setOffline(true);
   try {
     await expect(page.getByText(enIN.roomUi.banner.reconnecting).first()).toBeVisible({ timeout: 20_000 });
