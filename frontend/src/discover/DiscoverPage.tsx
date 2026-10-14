@@ -23,8 +23,10 @@ import {
   STATUS_CHOICES,
   apiQuery,
   fromLocalInput,
+  isDefaultStatus,
   parseFilters,
   rangeError,
+  statusOrDefault,
   toLocalInput,
   toSearch,
   type Filters,
@@ -53,7 +55,7 @@ function summary(f: Filters, category: Flat | null, s: Catalogue): string[] {
   const out: string[] = [];
   if (f.q !== '') out.push(a.search(f.q));
   if (category !== null) out.push(a.category(category.name));
-  if (f.status.length > 0) out.push(a.status(f.status.map((x) => s.discover.statusNames[x]).join(', ')));
+  if (!isDefaultStatus(f.status)) out.push(a.status(f.status.map((x) => s.discover.statusNames[x]).join(', ')));
   const rupees = (n: number) => formatINR(n * 100);
   if (f.min !== null && f.max !== null) out.push(a.price(a.between(rupees(f.min), rupees(f.max))));
   else if (f.min !== null) out.push(a.price(a.from(rupees(f.min))));
@@ -148,7 +150,7 @@ export function DiscoverPage() {
     const next: Filters = {
       q: text('q').trim().slice(0, MAX_QUERY),
       category: text('category') === '' ? null : text('category'),
-      status: STATUS_CHOICES.filter((x) => form.getAll('status').includes(x)),
+      status: statusOrDefault(form.getAll('status').map(String)), // none ticked: the default again
       min: min ?? null,
       max: max ?? null,
       closingBefore: fromLocalInput(text('closing_before')),
@@ -234,7 +236,9 @@ export function DiscoverPage() {
       <div className={styles.empty}>
         <p className={styles.emptyHead}>{active.length === 0 ? d.empty : d.noMatch}</p>
         {active.length === 0 ? (
-          <p className={styles.hint}>{d.emptyNote}</p>
+          <Link className={styles.btnQuiet} to="/auctions?status=scheduled">
+            {d.upcoming}
+          </Link>
         ) : (
           <Link className={styles.btnQuiet} to="/auctions">
             {d.clear}

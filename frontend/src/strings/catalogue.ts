@@ -456,7 +456,7 @@ export type Catalogue = {
       closing: (time: string) => string;
     };
     empty: string;
-    emptyNote: string;
+    upcoming: string;
     noMatch: string;
     unknownCategory: string;
     error: string;

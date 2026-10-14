@@ -2,7 +2,8 @@
 // same list (brief 9.2). The codec reads any query string, dropping what it cannot use (a
 // hand-edited link never reaches a 422), writes the filters back with the defaults left out, and
 // builds the GET /auctions query (FR-21 to FR-23). Prices are whole rupees in the URL and integer
-// paise to the API (DC-6); "closing before" is a UTC instant (OR-1).
+// paise to the API (DC-6); "closing before" is a UTC instant (OR-1). The default status is live
+// and closing, so "Live auctions" leads with live lots; scheduled is an opt-in tick.
 import { toUtcIso } from '../lib/clock';
 
 export const STATUS_CHOICES = ['scheduled', 'live', 'closing', 'closed_sold', 'closed_no_sale'] as const;
@@ -12,7 +13,7 @@ export type Filters = {
   q: string;
   /** a category slug (FR-20); mapped to its id through the category tree */
   category: string | null;
-  /** empty: the server's default of scheduled, live and closing */
+  /** never empty: DEFAULT_STATUS when the URL names none */
   status: ListedStatus[];
   /** whole rupees */
   min: number | null;
@@ -23,7 +24,8 @@ export type Filters = {
   pages: number;
 };
 
-export const EMPTY: Filters = { q: '', category: null, status: [], min: null, max: null, closingBefore: null, pages: 1 };
+export const DEFAULT_STATUS: readonly ListedStatus[] = ['live', 'closing'];
+export const EMPTY: Filters = { q: '', category: null, status: [...DEFAULT_STATUS], min: null, max: null, closingBefore: null, pages: 1 };
 export const PAGE_SIZE = 20;
 export const MAX_PAGES = 25;
 export const MAX_QUERY = 200; // FR-22
@@ -44,14 +46,24 @@ function instant(v: string | null): string | null {
   return Number.isNaN(t) ? null : new Date(t).toISOString();
 }
 
+/** The chosen statuses in a fixed order, or the default when none is chosen. */
+export function statusOrDefault(chosen: readonly string[]): ListedStatus[] {
+  const picked = STATUS_CHOICES.filter((s) => chosen.includes(s));
+  return picked.length === 0 ? [...DEFAULT_STATUS] : picked;
+}
+
+/** Whether the statuses are the default set, in any order (then the URL leaves them out). */
+export function isDefaultStatus(status: readonly ListedStatus[]): boolean {
+  return status.length === DEFAULT_STATUS.length && DEFAULT_STATUS.every((s) => status.includes(s));
+}
+
 export function parseFilters(search: URLSearchParams): Filters {
   const category = search.get('category');
-  const statuses = new Set(search.getAll('status'));
   const page = search.get('page');
   return {
     q: (search.get('q') ?? '').trim().slice(0, MAX_QUERY),
     category: category !== null && category.length <= 100 && SLUG.test(category) ? category : null,
-    status: STATUS_CHOICES.filter((s) => statuses.has(s)),
+    status: statusOrDefault(search.getAll('status')),
     min: rupees(search.get('min')),
     max: rupees(search.get('max')),
     closingBefore: instant(search.get('closing_before')),
@@ -63,7 +75,7 @@ export function toSearch(f: Filters): URLSearchParams {
   const out = new URLSearchParams();
   if (f.q !== '') out.set('q', f.q);
   if (f.category !== null) out.set('category', f.category);
-  for (const s of f.status) out.append('status', s);
+  if (!isDefaultStatus(f.status)) for (const s of f.status) out.append('status', s);
   if (f.min !== null) out.set('min', String(f.min));
   if (f.max !== null) out.set('max', String(f.max));
   if (f.closingBefore !== null) out.set('closing_before', f.closingBefore);
@@ -76,7 +88,7 @@ export function apiQuery(f: Filters, categoryId: number | null, page: number): U
   const out = new URLSearchParams();
   if (f.q !== '') out.set('q', f.q);
   if (categoryId !== null) out.set('category', String(categoryId));
-  for (const s of f.status) out.append('status', s);
+  for (const s of statusOrDefault(f.status)) out.append('status', s); // always explicit: the server's default has scheduled
   if (f.min !== null) out.set('min_price', String(f.min * 100));
   if (f.max !== null) out.set('max_price', String(f.max * 100));
   if (f.closingBefore !== null) out.set('closing_before', f.closingBefore);

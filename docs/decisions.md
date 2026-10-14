@@ -2,6 +2,9 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-15 Phase 10c slice 3, review fixes
+- Discover's default status is live and closing, not the server's default of scheduled, live and closing: "Live auctions" must lead with live lots, and newest-first buried them under scheduled listings. Scheduled is an opt-in tick. The URL leaves the default set out (any order), the client always sends the statuses explicitly (the server's own default still includes scheduled), and with no box ticked the default applies again. When the default view is empty, the empty state links to `/auctions?status=scheduled` ("See upcoming auctions").
+
 ## 2026-10-14 Phase 10c slice 3
 - Email choices (FR-72, FR-74) are a section of the notifications page, one switch per stored type in plain words, saved with one button as a full map of the nine known types (`notifications/preferences.ts`), so an unticked box is an explicit off and nothing unknown is sent. The page says in-app delivery is always on (FR-71). A save is not optimistic: "Saved." appears only after the server answered.
 - The notifications page (brief 9.6, FR-74) keeps "All" or "Unread" in the URL (`?filter=unread`) and pages with the API's keyset. Each of the nine stored types has a label and a sentence built only from the declared payload fields (`notifications/rows.ts`), with a plain line for a missing field or an unknown type, so neither a reserve amount nor a maximum nor the gateway's error code can reach the page. Mark one and mark all are optimistic over every cached list and the bell's count together, rolled back on a failure; opening a row's link marks it read. Every row links to its auction room, payment types included, until the checkout slice adds the payment page. The list is refetched when the bell sees a new arrival and when the tab is shown again.

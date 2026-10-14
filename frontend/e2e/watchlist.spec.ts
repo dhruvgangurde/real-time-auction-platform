@@ -53,7 +53,7 @@ test('watch from a card and from the room; the page lists every status; remove k
   await signInUi(page, viewer);
 
   // a card: pressed at once (optimistic), and still pressed after a reload (persisted)
-  await page.goto(`/auctions?q=${t}`);
+  await page.goto(`/auctions?q=${t}&status=scheduled&status=live`);
   await expect(page.locator('article')).toHaveCount(3);
   const card = page.locator('article', { hasText: `Linhof ${t} later` });
   await card.getByRole('button', { name: w.watch }).click();
@@ -108,7 +108,7 @@ test('a refused watch rolls back with a message: a server error, and an auction 
   const viewer = await newAccount(request, 'viewer');
   const id = await newAuction(request, seller, { title: `Pentacon ${t} six`, startInS: 3600, endInS: 7200, reservePrice: null });
   await signInUi(page, viewer);
-  await page.goto(`/auctions?q=${t}`);
+  await page.goto(`/auctions?q=${t}&status=scheduled`);
   const button = () => page.locator('article').getByRole('button', { name: new RegExp(`^(${w.watch}|${w.watching})$`) });
 
   await page.route('**/api/v1/watchlist/*', (r) => r.fulfill({ status: 503, contentType: 'application/json', body: '{"error":{"code":"SERVICE_UNAVAILABLE","message":"down"}}' }));
@@ -141,7 +141,7 @@ test('an empty watchlist offers Discover; 390 and keyboard; the dark theme', asy
   await expect(page).toHaveURL(/\/auctions$/);
 
   // keyboard: the toggle takes focus and Space presses it
-  await page.goto(`/auctions?q=${t}`);
+  await page.goto(`/auctions?q=${t}&status=scheduled`);
   await watchButton(page).focus();
   await page.keyboard.press('Space');
   await expect(watchButton(page)).toHaveAttribute('aria-pressed', 'true');

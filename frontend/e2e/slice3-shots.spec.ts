@@ -66,9 +66,9 @@ test('Discover: default, search, filters, closed, closing, empty, loading, error
   await expect(page.locator('article').first()).toBeVisible();
   await shoot(page, '01-discover-default', 'light');
 
-  await page.goto(`/auctions?q=${mix}`);
+  await page.goto(`/auctions?q=${mix}&status=scheduled&status=live&status=closing`);
   await expect(page.locator('article')).toHaveCount(3);
-  await shoot(page, '02-discover-search', 'light', { note: 'live with bids, live without, scheduled' });
+  await shoot(page, '02-discover-search', 'light', { note: 'live with bids, live without, and Scheduled ticked (an opt-in)' });
 
   await page.goto(`/auctions?q=${mix}&category=electronics&status=live&status=scheduled&min=5000&max=50000`);
   await expect(page.locator('article')).toHaveCount(3);
@@ -77,7 +77,7 @@ test('Discover: default, search, filters, closed, closing, empty, loading, error
     at390: () => page.getByRole('button', { name: d.filtersToggle(3) }).click(),
   });
 
-  await page.goto(`/auctions?q=${many}`);
+  await page.goto(`/auctions?q=${many}&status=scheduled`);
   await expect(page.locator('article')).toHaveCount(20);
   await page.getByRole('button', { name: d.showMore }).click();
   await expect(page.locator('article')).toHaveCount(21);
@@ -122,7 +122,7 @@ test('Discover: default, search, filters, closed, closing, empty, loading, error
 
   const dark = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' });
   const dp = await dark.newPage();
-  await dp.goto(`/auctions?q=${mix}`);
+  await dp.goto(`/auctions?q=${mix}&status=scheduled&status=live&status=closing`);
   await expect(dp.locator('article')).toHaveCount(3);
   await shoot(dp, '02-discover-search', 'dark');
   await dark.close();

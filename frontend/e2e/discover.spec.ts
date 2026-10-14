@@ -42,26 +42,37 @@ test('search and filters live in the URL: back, forward, reload and a shared lin
   await page.goto('/auctions');
   await expect(page.getByRole('heading', { level: 1, name: d.title })).toBeVisible();
 
-  // search: one history entry, both lots (FR-22)
+  // search: one history entry; the default is live and closing, so the live lot only (FR-22)
   await page.getByLabel(d.searchLabel).fill(t);
   await page.getByLabel(d.searchLabel).press('Enter');
   await expect(page).toHaveURL(new RegExp(`/auctions\\?q=${t}$`));
+  await expect(cards(page)).toHaveCount(1);
+  await expect(cards(page).locator('h2')).toHaveText([`Leica ${t} M3 rangefinder`]);
+  await expect(page.getByLabel(d.statusNames.live, { exact: true })).toBeChecked();
+  await expect(page.getByLabel(d.statusNames.closing, { exact: true })).toBeChecked();
+  await expect(page.getByLabel(d.statusNames.scheduled, { exact: true })).not.toBeChecked();
+
+  // scheduled is an opt-in tick, composed with the search (FR-23)
+  await page.getByLabel(d.statusNames.scheduled, { exact: true }).check();
+  await page.getByRole('button', { name: d.apply }).click();
+  await expect(page).toHaveURL(new RegExp(`q=${t}&status=scheduled&status=live&status=closing$`));
   await expect(cards(page)).toHaveCount(2);
 
   // a category includes its descendants (FR-21): Nikon is in phones, a child of electronics
   await page.getByLabel(d.category).selectOption('electronics');
   await page.getByRole('button', { name: d.apply }).click();
-  await expect(page).toHaveURL(new RegExp(`q=${t}&category=electronics$`));
+  await expect(page).toHaveURL(new RegExp(`q=${t}&category=electronics&status=scheduled&status=live&status=closing$`));
   await expect(cards(page)).toHaveCount(2);
   await page.getByLabel(d.category).selectOption('phones');
   await page.getByRole('button', { name: d.apply }).click();
-  await expect(page).toHaveURL(new RegExp(`category=phones$`));
+  await expect(page).toHaveURL(new RegExp(`category=phones&status=scheduled&status=live&status=closing$`));
   await expect(cards(page)).toHaveCount(1);
-  expect(await titles(page)).toEqual([`Nikon ${t} F2 body`]);
+  await expect(cards(page).locator('h2')).toHaveText([`Nikon ${t} F2 body`]);
 
-  // a status filter composes with the rest (FR-23)
+  // scheduled alone
   await page.getByLabel(d.category).selectOption('');
-  await page.getByLabel(d.statusNames.scheduled).check();
+  await page.getByLabel(d.statusNames.live, { exact: true }).uncheck();
+  await page.getByLabel(d.statusNames.closing, { exact: true }).uncheck();
   await page.getByRole('button', { name: d.apply }).click();
   await expect(page).toHaveURL(new RegExp(`q=${t}&status=scheduled$`));
   await expect(cards(page)).toHaveCount(1);
@@ -69,20 +80,21 @@ test('search and filters live in the URL: back, forward, reload and a shared lin
 
   // back and forward step through the searches and restore the form too
   await page.goBack();
-  await expect(page).toHaveURL(/category=phones$/);
+  await expect(page).toHaveURL(/category=phones&status=scheduled&status=live&status=closing$/);
   await expect(cards(page)).toHaveCount(1);
-  expect(await titles(page)).toEqual([`Nikon ${t} F2 body`]);
+  await expect(cards(page).locator('h2')).toHaveText([`Nikon ${t} F2 body`]);
   await expect(page.getByLabel(d.category)).toHaveValue('phones');
   await page.goBack();
   await page.goBack();
+  await page.goBack();
   await expect(page).toHaveURL(new RegExp(`/auctions\\?q=${t}$`));
-  await expect(cards(page)).toHaveCount(2);
+  await expect(cards(page)).toHaveCount(1);
   await expect(page.getByLabel(d.searchLabel)).toHaveValue(t);
-  await page.goForward();
-  await page.goForward();
-  await page.goForward();
-  await expect(page).toHaveURL(/status=scheduled$/);
-  await expect(page.getByLabel(d.statusNames.scheduled)).toBeChecked();
+  await expect(page.getByLabel(d.statusNames.scheduled, { exact: true })).not.toBeChecked();
+  for (let i = 0; i < 4; i += 1) await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`q=${t}&status=scheduled$`));
+  await expect(page.getByLabel(d.statusNames.scheduled, { exact: true })).toBeChecked();
+  await expect(page.getByLabel(d.statusNames.live, { exact: true })).not.toBeChecked();
 
   // reload, and the same link opened elsewhere (a shared link)
   await page.reload();
@@ -96,7 +108,7 @@ test('search and filters live in the URL: back, forward, reload and a shared lin
   // a shared link with a category, in a fresh browser (no cached tree): the select shows it too
   const fresh = await browser.newContext();
   const shared = await fresh.newPage();
-  await shared.goto(`/auctions?q=${t}&category=phones`);
+  await shared.goto(`/auctions?q=${t}&category=phones&status=scheduled`);
   await expect(shared.locator('article')).toHaveCount(1);
   await expect(shared.getByLabel(d.category)).toHaveValue('phones');
   await fresh.close();
@@ -107,8 +119,21 @@ test('search and filters live in the URL: back, forward, reload and a shared lin
   await ctx.close();
 });
 
-test('min above max is a field error with no request; unknown category and no match say so', async ({ page }) => {
+test('min above max is a field error with no request; unknown category, no match and an empty default say so', async ({ page }) => {
   const seen = watch(page);
+  // the default view with nothing live (routed): the empty state offers the upcoming auctions
+  const DEFAULT = '**/api/v1/auctions?status=live&status=closing&page=1&page_size=20';
+  await page.route(DEFAULT, (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], page: 1, page_size: 20, has_more: false, server_time_ms: Date.now() }) }),
+  );
+  await page.goto('/auctions');
+  await expect(page.getByText(d.empty)).toBeVisible();
+  await page.unroute(DEFAULT);
+  await page.getByRole('link', { name: d.upcoming }).click();
+  await expect(page).toHaveURL(/\/auctions\?status=scheduled$/);
+  await expect(page.getByLabel(d.statusNames.scheduled, { exact: true })).toBeChecked();
+  await expect(page.getByLabel(d.statusNames.live, { exact: true })).not.toBeChecked();
+
   await page.goto('/auctions');
   await expect(cards(page).or(page.getByText(d.empty))).not.toHaveCount(0);
   const before = seen.listCalls.length;
@@ -145,10 +170,10 @@ test('Show more pages through the results, keeps them on reload and on the way b
   for (let i = 0; i < 21; i += 1) {
     await newAuction(request, sellers[i % 3]!, { title: `Lot ${t} number ${i}`, startInS: 3600, endInS: 7200, reservePrice: null });
   }
-  await page.goto(`/auctions?q=${t}`);
+  await page.goto(`/auctions?q=${t}&status=scheduled`);
   await expect(cards(page)).toHaveCount(20);
   await page.getByRole('button', { name: d.showMore }).click();
-  await expect(page).toHaveURL(new RegExp(`q=${t}&page=2$`));
+  await expect(page).toHaveURL(new RegExp(`q=${t}&status=scheduled&page=2$`));
   await expect(cards(page)).toHaveCount(21);
   await expect(page.locator('a[data-card]').nth(20)).toBeFocused(); // focus on the first new card
   await expect(page.getByRole('button', { name: d.showMore })).toHaveCount(0);
@@ -202,22 +227,23 @@ test('at 390 the filters open from a button, the page never scrolls sideways, an
   await page.goto('/auctions');
   await expect(page.getByLabel(d.category)).toBeHidden();
 
-  // keyboard only: search, open the filters, tick a status, apply
+  // keyboard only: search (a scheduled lot is not in the default), open the filters, tick Scheduled, apply
   await page.getByLabel(d.searchLabel).focus();
   await page.keyboard.type(t);
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(new RegExp(`q=${t}$`));
-  await expect(cards(page)).toHaveCount(1);
+  await expect(page.getByText(d.noMatch)).toBeVisible();
   const toggle = page.getByRole('button', { name: d.filtersToggle(0) });
   await toggle.focus();
   await page.keyboard.press('Enter');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByLabel(d.category)).toBeVisible();
-  await page.getByLabel(d.statusNames.scheduled).focus();
+  await page.getByLabel(d.statusNames.scheduled, { exact: true }).focus();
   await page.keyboard.press('Space');
   await page.getByRole('button', { name: d.apply }).focus();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(new RegExp(`q=${t}&status=scheduled$`));
+  await expect(page).toHaveURL(new RegExp(`q=${t}&status=scheduled&status=live&status=closing$`));
+  await expect(cards(page)).toHaveCount(1);
   await expect(page.getByRole('button', { name: d.filtersToggle(1) })).toBeVisible();
 
   // a card is one link, reachable with Tab, with a visible focus ring around the card

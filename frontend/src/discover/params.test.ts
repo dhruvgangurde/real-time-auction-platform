@@ -3,14 +3,20 @@
 // defaults left out, and builds the API query of GET /auctions (FR-21 to FR-23).
 import { describe, expect, test } from 'vitest';
 
-import { EMPTY, MAX_PAGES, apiQuery, fromLocalInput, parseFilters, rangeError, toLocalInput, toSearch, type Filters } from './params';
+import { DEFAULT_STATUS, EMPTY, MAX_PAGES, apiQuery, fromLocalInput, parseFilters, rangeError, toLocalInput, toSearch, type Filters } from './params';
 
 const q = (s: string) => parseFilters(new URLSearchParams(s));
 
 describe('reading the URL', () => {
-  test('an empty query is the default listing', () => {
+  test('an empty query is the default listing: live and closing, so "Live auctions" leads with live lots', () => {
+    expect(DEFAULT_STATUS).toEqual(['live', 'closing']);
     expect(q('')).toEqual(EMPTY);
-    expect(EMPTY).toEqual({ q: '', category: null, status: [], min: null, max: null, closingBefore: null, pages: 1 });
+    expect(EMPTY).toEqual({ q: '', category: null, status: ['live', 'closing'], min: null, max: null, closingBefore: null, pages: 1 });
+  });
+
+  test('scheduled is an opt-in tick; a link with only unusable statuses gets the default', () => {
+    expect(q('status=scheduled').status).toEqual(['scheduled']);
+    expect(q('status=draft&status=cancelled').status).toEqual(['live', 'closing']);
   });
 
   test('every filter is read back', () => {
@@ -46,11 +52,15 @@ describe('reading the URL', () => {
 describe('writing the URL', () => {
   test('defaults are left out; the order is stable', () => {
     expect(toSearch(EMPTY).toString()).toBe('');
+    expect(toSearch({ ...EMPTY, status: ['closing', 'live'] }).toString()).toBe(''); // the default set, any order
+    expect(toSearch({ ...EMPTY, status: ['live'] }).toString()).toBe('status=live');
+    expect(toSearch({ ...EMPTY, status: ['scheduled', 'live', 'closing'] }).toString()).toBe('status=scheduled&status=live&status=closing');
     const f: Filters = { q: 'k1000', category: 'cameras', status: ['live'], min: 100, max: 200, closingBefore: '2026-10-20T12:30:00.000Z', pages: 2 };
     expect(toSearch(f).toString()).toBe('q=k1000&category=cameras&status=live&min=100&max=200&closing_before=2026-10-20T12%3A30%3A00.000Z&page=2');
   });
 
   test('a round trip is lossless', () => {
+    expect(parseFilters(toSearch(EMPTY))).toEqual(EMPTY);
     const f: Filters = { q: 'leica m3', category: 'film', status: ['scheduled', 'closed_sold'], min: 0, max: null, closingBefore: null, pages: 4 };
     expect(parseFilters(toSearch(f))).toEqual(f);
   });
@@ -64,8 +74,9 @@ describe('the API query', () => {
     );
   });
 
-  test('the default listing sends only the page (the server defaults to scheduled, live and closing)', () => {
-    expect(apiQuery(EMPTY, null, 1).toString()).toBe('page=1&page_size=20');
+  test('the default listing asks for live and closing explicitly (the server default also has scheduled)', () => {
+    expect(apiQuery(EMPTY, null, 1).toString()).toBe('status=live&status=closing&page=1&page_size=20');
+    expect(apiQuery({ ...EMPTY, status: [] }, null, 1).toString()).toBe('status=live&status=closing&page=1&page_size=20');
   });
 
   test('a minimum above the maximum is caught before any request (FR-23)', () => {
