@@ -20,6 +20,7 @@ export const enIN = guardSentences({
     watchlist: 'Watchlist',
     notifications: 'Notifications',
     unread: (n) => `${n} unread`,
+    notificationsLabel: (n) => (n > 0 ? `Notifications, ${n > 99 ? 'more than 99' : n} unread` : 'Notifications'),
     account: 'Your account',
   },
   home: {
@@ -287,6 +288,9 @@ export const enIN = guardSentences({
     cancelled: 'This auction was cancelled, so it cannot be watched.',
     addFailed: 'It was not added to your watchlist. Try again.',
     removeFailed: 'It was not removed from your watchlist. Try again.',
+  },
+  notifications: {
+    arrived: (n) => `New notification. ${n > 99 ? 'More than 99' : n} unread.`,
   },
   watchlist: {
     title: 'Watchlist',

@@ -37,6 +37,35 @@
   text-decoration: none;
 }
 
+.bell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bellIcon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+/* the count beside the bell; its words are in the link's accessible name */
+.badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--ink);
+  color: var(--paper);
+  font: 600 13px/22px var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .signOut {
   border: 0;
   background: none;

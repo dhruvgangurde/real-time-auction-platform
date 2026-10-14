@@ -23,6 +23,8 @@ export type SessionDeps = {
   catalogue: Catalogue;
   /** the app's polite queue (lib/polite.ts), shared with the shell */
   polite: (text: string) => void;
+  /** a stored notification arrived live on the user channel (FR-71): the bell reads again */
+  onNotification?: () => void;
   assertiveRegion: () => HTMLElement | null;
 };
 
@@ -104,6 +106,7 @@ export function createRoomSession(deps: SessionDeps) {
       online: () => navigator.onLine,
       onFrame: (frame) => {
         deps.clock.observe({ serverTimeMs: frame.server_time_ms, receivedAtMs: Date.now() });
+        if (frame.type === 'notification') deps.onNotification?.();
         controller?.handleFrame(frame);
       },
       onStatus: (status) => {

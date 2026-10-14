@@ -86,6 +86,8 @@ export type Catalogue = {
     watchlist: string;
     notifications: string;
     unread: (n: number) => string;
+    /** the bell's accessible name: "Notifications" or "Notifications, 3 unread" */
+    notificationsLabel: (n: number) => string;
     account: string;
   };
   home: {
@@ -348,6 +350,10 @@ export type Catalogue = {
     cancelled: string;
     addFailed: string;
     removeFailed: string;
+  };
+  notifications: {
+    /** the polite line when the unread count rises (brief 9.6) */
+    arrived: (n: number) => string;
   };
   watchlist: {
     title: string;

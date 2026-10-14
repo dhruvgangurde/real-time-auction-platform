@@ -1,6 +1,7 @@
 // The React side of a room session: one session per auction, created once the load-time
 // restore settled (so a signed-in viewer claims the socket), started and stopped with the
 // component, read through useSyncExternalStore.
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 
 import { useApp, useAuthReady } from '../app/context';
@@ -15,6 +16,7 @@ export function useRoom(auctionId: string, enabled = true): { state: RoomState; 
   const { api, auth, clock } = useApp();
   const catalogue = useStrings();
   const ready = useAuthReady();
+  const client = useQueryClient();
   const session = useMemo(
     () =>
       ready && enabled
@@ -25,10 +27,11 @@ export function useRoom(auctionId: string, enabled = true): { state: RoomState; 
             clock,
             catalogue,
             polite: announcePolite,
+            onNotification: () => void client.invalidateQueries({ queryKey: ['notifications'] }),
             assertiveRegion: () => document.getElementById('live-assertive'),
           })
         : null,
-    [auctionId, api, auth, clock, catalogue, ready, enabled],
+    [auctionId, api, auth, clock, catalogue, ready, enabled, client],
   );
   useEffect(() => {
     if (session === null) return;
