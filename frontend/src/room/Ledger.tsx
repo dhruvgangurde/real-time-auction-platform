@@ -9,6 +9,7 @@ import { formatDecided } from '../lib/clock';
 import { formatINR } from '../lib/money';
 import { isStale, type RoomState } from '../live/room';
 import { useStrings } from '../strings/catalogue';
+import { useBand } from './band';
 import styles from './room.module.css';
 
 const SHOWN = 8;
@@ -20,8 +21,8 @@ export function Ledger({ state }: { state: RoomState }) {
   const pending = state.pending?.kind === 'bid' ? state.pending : null;
   const checking = state.last?.kind === 'rejected' && state.last.code === 'SERVICE_UNAVAILABLE';
   const rows = state.recentBids.slice(0, SHOWN);
-  // the marigold highlight is a live moment only: never while stale, degraded or terminal (brief 6)
-  const highlight = !isStale(state) && state.terminal === null;
+  // one band per new bid, keyed on its sequence: never on load, never replayed (brief 6)
+  const bandSeq = useBand(state);
   const table = isStale(state) ? `${styles.ledger} ${styles.stale}` : styles.ledger;
   return (
     <div className={styles.ledgerWrap}>
@@ -51,8 +52,7 @@ export function Ledger({ state }: { state: RoomState }) {
           )}
           {rows.map((b, i) => {
             const mine = own.has(b.sequence_no) || (state.yourAlias !== null && b.bidder_alias === state.yourAlias);
-            const newest = highlight && i === 0 && b.sequence_no === state.sequence && pending === null;
-            const cls = i >= ANIMATED ? styles.rowStill : newest ? styles.rowNew : styles.row;
+            const cls = i >= ANIMATED ? styles.rowStill : b.sequence_no === bandSeq ? styles.rowNew : styles.row;
             return (
               <tr key={b.sequence_no} className={cls} style={{ '--i': i } as CSSProperties}>
                 <td className={styles.seq}>{b.sequence_no}</td>

@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 
 import { expect, test } from '@playwright/test';
 
-import { ROOT, newAccount, newAuction, restBid, signInUi, waitForStatus } from './fixtures/stack';
+import { ROOT, newAccount, newAuction, resetPassword, restBid, signInUi, waitForStatus } from './fixtures/stack';
 
 const MARIGOLD = ['rgb(245, 180, 0)', 'rgb(255, 194, 26)']; // light, dark
 
@@ -90,5 +90,60 @@ test('the newest row fades as one: every cell shows the same background, during 
     expect(new Set(seen).size, `cells at sample ${i}: ${seen.join(' | ')}`).toBe(1);
     await page.waitForTimeout(80);
   }
+  await ctx.close();
+});
+
+test('the band never replays: not after a refused bid, not on a fresh load, not after a 4004 close', async ({ browser, request }) => {
+  test.setTimeout(150_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { endInS: 600, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await signInUi(page, alice);
+  await page.goto(`/auctions/${id}`);
+  await expect(page.getByLabel('Your bid in rupees')).toBeVisible();
+
+  const marigold = (p: typeof page, selector: string) =>
+    p.evaluate(
+      ([sel, colors]) => [...document.querySelectorAll(sel)].filter((el) => colors.includes(getComputedStyle(el).backgroundColor)).length,
+      [selector, MARIGOLD] as const,
+    );
+  /** the most marigold elements seen over about 1.5 s */
+  const watch = async (p: typeof page, selector: string) => {
+    let most = 0;
+    for (let i = 0; i < 25; i += 1) {
+      most = Math.max(most, await marigold(p, selector));
+      await p.waitForTimeout(60);
+    }
+    return most;
+  };
+
+  // a bid after load starts a band on row 1 and the price; let it finish
+  await (await restBid(request, bob, id, 900000)).json();
+  await expect(page.locator('tbody tr').first()).toContainText('₹9,000', { timeout: 10_000 });
+  await page.waitForTimeout(1500);
+  expect(await marigold(page, 'tbody tr, tbody td')).toBe(0);
+
+  // a pending bid that is refused: the same sequence, so no band
+  await page.getByLabel('Your bid in rupees').fill('8,000');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#live-assertive')).toContainText('Bid not placed', { timeout: 10_000 });
+  expect(await watch(page, 'tbody tr, tbody td'), 'ledger after a refused bid').toBe(0);
+
+  // a fresh page load of the same room: the first snapshot never starts a band
+  const fresh = await ctx.newPage();
+  await fresh.goto(`/auctions/${id}`);
+  await expect(fresh.locator('tbody tr').first()).toContainText('₹9,000', { timeout: 10_000 });
+  expect(await watch(fresh, 'tbody tr, tbody td'), 'ledger on a fresh load').toBe(0);
+  await fresh.close();
+
+  // the session is revoked: the socket closes 4004, the room keeps its rows and polls
+  await resetPassword(request, alice);
+  await expect(page.getByText('You were signed out.', { exact: true })).toBeVisible({ timeout: 20_000 });
+  expect(await watch(page, 'tbody tr, tbody td'), 'ledger after 4004').toBe(0);
+  expect(await watch(page, 'main p span'), 'price digits after 4004').toBe(0);
   await ctx.close();
 });

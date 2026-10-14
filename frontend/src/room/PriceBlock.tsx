@@ -8,6 +8,7 @@ import { formatINR } from '../lib/money';
 import { isStale, type RoomState } from '../live/room';
 import { useStrings, type HelpTopic } from '../strings/catalogue';
 import styles from './room.module.css';
+import { useBand } from './band';
 import { changedFrom } from './time';
 
 export function Check() {
@@ -40,13 +41,16 @@ export function PriceBlock({
   const shown = amount ?? state.startPrice;
   const text = shown === null ? '' : formatINR(shown);
 
-  // the tick (brief 6): only the digits that changed, once per bid
+  // the tick (brief 6): only the digits that changed, once per new bid; it shares the ledger's
+  // trigger, so a stale moment, a refused bid or a fresh load never starts or replays it
+  const bandSeq = useBand(state);
   const [prevText, setPrevText] = useState(text);
-  const [tick, setTick] = useState<{ from: number; key: number } | null>(null);
+  const [from, setFrom] = useState(0);
   if (prevText !== text) {
     setPrevText(text);
-    setTick(prevText === '' ? null : { from: changedFrom(prevText, text), key: state.sequence });
+    setFrom(changedFrom(prevText, text));
   }
+  const ticking = bandSeq !== null && bandSeq === state.sequence;
   const seq = state.sequence;
   const ext = state.extensionCount;
   let box = styles.priceBox;
@@ -131,13 +135,13 @@ export function PriceBlock({
     <div className={box}>
       <div className={styles.plabel}>{label}</div>
       <p className={priceClass}>
-        {tick === null || outbid || isStale(state) || state.terminal !== null ? (
+        {!ticking || outbid ? (
           text
         ) : (
           <>
-            {text.slice(0, tick.from)}
-            <span key={tick.key} className={styles.tick}>
-              {text.slice(tick.from)}
+            {text.slice(0, from)}
+            <span key={bandSeq} className={styles.tick}>
+              {text.slice(from)}
             </span>
           </>
         )}
