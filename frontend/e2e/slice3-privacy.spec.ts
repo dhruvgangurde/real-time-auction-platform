@@ -4,7 +4,7 @@
 // was met.
 import { expect, test, type Page } from '@playwright/test';
 
-import { newAccount, newAuction, restBid, restProxy, signInUi, waitForStatus } from './fixtures/stack';
+import { API, bearer, newAccount, newAuction, restBid, restProxy, signInUi, waitForStatus } from './fixtures/stack';
 
 const RESERVE = 1025000; // ₹10,250
 const MAXIMUM = 1234567; // ₹12,345.67: not start + k×increment, so the proxy never bids at its limit
@@ -53,4 +53,25 @@ test('Discover shows neither the reserve amount nor another bidder’s maximum, 
     expect(leaks(seen), leaks(seen).slice(0, 3).join('\n')).toEqual([]);
     await ctx.close();
   }
+});
+
+test('the watchlist shows neither the reserve amount nor another bidder’s maximum', async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const t = tag();
+  const seller = await newAccount(request, 'seller', 'seller');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { title: `Contax ${t} T2`, startInS: 2, endInS: 600, reservePrice: RESERVE });
+  await waitForStatus(request, id, 'live');
+  await (await restBid(request, bob, id, 900000)).json();
+  await (await restProxy(request, alice, id, MAXIMUM)).json();
+  await (await restBid(request, bob, id, 1000000)).json();
+  await request.put(`${API}/watchlist/${id}`, { headers: bearer(bob) });
+
+  const seen = record(page);
+  await signInUi(page, bob);
+  await page.goto('/watchlist');
+  await expect(page.locator('article', { hasText: `Contax ${t} T2` })).toContainText('₹10,500');
+  seen.push(`dom ${await page.locator('body').innerText()}`);
+  expect(leaks(seen), leaks(seen).slice(0, 3).join('\n')).toEqual([]);
 });
