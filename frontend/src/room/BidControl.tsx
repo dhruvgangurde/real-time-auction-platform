@@ -12,6 +12,7 @@ import type { UserProfile } from '../lib/contract';
 import { formatINR, parseRupees } from '../lib/money';
 import { canBid, type RoomState } from '../live/room';
 import { errorMessage, useStrings } from '../strings/catalogue';
+import { blockedBy } from './account';
 import styles from './room.module.css';
 import type { RoomSession } from './session';
 
@@ -81,15 +82,13 @@ export function BidControl({ state, session, profile, signedIn, startTimeMs, onR
     submit(parsed.paise);
   }
 
-  const status = profile?.status;
   const rejected = state.last?.kind === 'rejected' ? state.last : null;
-  const suspended = status === 'suspended' || rejected?.code === 'ACCOUNT_SUSPENDED';
-  const unverified = status === 'pending_verification' || rejected?.code === 'EMAIL_NOT_VERIFIED';
+  const blocked = blockedBy(state, profile);
   const time = (ms: number | null) => (ms === null ? '' : formatLocal(ms, { seconds: true }));
 
   // ---- the states that replace the bid form (brief 9.3)
-  if (suspended) return panel(b.suspendedHead, b.suspendedNote);
-  if (unverified) {
+  if (blocked === 'suspended') return panel(b.suspendedHead, b.suspendedNote);
+  if (blocked === 'unverified') {
     return panel(b.verifyHead, b.verifyNote, (
       <div className={styles.actions}>
         <button type="button" className={styles.btnQuiet} onClick={onResend}>

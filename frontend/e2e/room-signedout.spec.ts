@@ -44,3 +44,33 @@ test('after 4004 the room keeps its snapshot and polls anonymously', async ({ br
   expect(await main.innerText()).not.toMatch(/ \.(\s|$)/);
   await ctx.close();
 });
+
+test('a suspended viewer sees the suspended panel and no maximum control', async ({ browser, request }) => {
+  test.setTimeout(120_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const admin = await newAccount(request, 'admin', 'admin');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { endInS: 600, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+  await (await restBid(request, bob, id, 900000)).json();
+
+  // two tabs: one owns the socket (it gets 4004), the other polls and still has a bid field
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const t1 = await ctx.newPage();
+  await signInUi(t1, alice);
+  await t1.goto(`/auctions/${id}`);
+  const t2 = await ctx.newPage();
+  await t2.goto(`/auctions/${id}`);
+  const useTab = (p: typeof t1) => p.getByRole('button', { name: enIN.roomUi.status.useThisTab });
+  await expect(async () => expect((await useTab(t1).count()) + (await useTab(t2).count())).toBeGreaterThan(0)).toPass({ timeout: 15_000 });
+  const polling = (await useTab(t1).count()) > 0 ? t1 : t2;
+
+  await request.post(`http://localhost:8011/api/v1/admin/users/${alice.id}/suspend`, { headers: { authorization: `Bearer ${admin.token}` }, data: { reason: 'spec: suspend the viewer' } });
+  await polling.getByLabel(enIN.roomUi.bid.fieldLabel).fill('9,500');
+  await polling.keyboard.press('Enter');
+  await expect(polling.getByRole('heading', { name: enIN.roomUi.bid.suspendedHead })).toBeVisible({ timeout: 15_000 });
+  // the maximum control goes with the bid control
+  await expect(polling.getByRole('heading', { name: enIN.roomUi.proxy.set })).toHaveCount(0);
+  await ctx.close();
+});
