@@ -3,6 +3,7 @@
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
 ## 2026-10-14 Phase 10c slice 3
+- Discover's URL holds every filter (`discover/params.ts`): `q` (trimmed, at most 200, FR-22), `category` as the category's slug (FR-20 gives every category one; the client maps it to the id through `GET /categories`), `status` repeated, `min` and `max` in whole rupees (sent as integer paise, DC-6), `closing_before` as a UTC instant (OR-1; the form's datetime-local value is converted), and `page` as the number of pages shown (at most 25). Defaults are left out and anything unusable is dropped when read, so a hand-edited link never reaches a 422; a minimum above the maximum is shown as a field error before any request (FR-23).
 - A load-time refresh that cannot reach the server (network error or 5xx) is not a sign-out. `RequireAuth` and `RequireRole` show "Can't reach the server" with "Try again" (a fresh `restoreOnLoad`) and stay on the same URL; only 204 (no session) and 401 (session gone) redirect to sign-in. The auth module records the epoch at which the restore was unreachable, so a later login, logout or forget clears it without extra bookkeeping (brief 9.1 "Server unavailable", Q1 of the slice 3 plan).
 
 ## 2026-10-14 Phase 10c slice 2
