@@ -299,7 +299,9 @@ export function DiscoverPage() {
             <label className={styles.label} htmlFor="f-category">
               {d.category}
             </label>
-            <select id="f-category" className={styles.input} name="category" defaultValue={category?.slug ?? ''}>
+            {/* remounted when the tree arrives: an uncontrolled default applies only on mount, and before
+                the tree there is no option for a linked category to select */}
+            <select key={flat.length === 0 ? 'no-tree' : 'tree'} id="f-category" className={styles.input} name="category" defaultValue={category?.slug ?? ''}>
               <option value="">{d.anyCategory}</option>
               {flat.map((c) => (
                 <option key={c.id} value={c.slug}>

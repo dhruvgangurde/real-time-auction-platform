@@ -93,6 +93,14 @@ test('search and filters live in the URL: back, forward, reload and a shared lin
   expect(await titles(other)).toEqual(await titles(page));
   await other.close();
 
+  // a shared link with a category, in a fresh browser (no cached tree): the select shows it too
+  const fresh = await browser.newContext();
+  const shared = await fresh.newPage();
+  await shared.goto(`/auctions?q=${t}&category=phones`);
+  await expect(shared.locator('article')).toHaveCount(1);
+  await expect(shared.getByLabel(d.category)).toHaveValue('phones');
+  await fresh.close();
+
   // anonymous viewing is REST only (FR-28)
   expect(seen.sockets).toEqual([]);
   expect(seen.errors).toEqual([]);
