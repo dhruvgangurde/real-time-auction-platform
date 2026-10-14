@@ -220,7 +220,7 @@ export type OutbidNotice = Stamped & {
 };
 export type Notification = Stamped & {
   type: 'notification';
-  id: string;
+  id: number;
   notification_type: string;
   auction_id: string | null;
   payload: Record<string, unknown>;
@@ -742,7 +742,7 @@ const FRAMES: Record<InboundFrame['type'], FrameParser> = {
         }
       : null,
   notification: (f, t) =>
-    isStr(f.id) &&
+    isInt(f.id) &&
     isStr(f.notification_type) &&
     nullOrStr(f.auction_id) &&
     isObj(f.payload) &&

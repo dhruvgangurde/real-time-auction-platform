@@ -73,7 +73,8 @@ const samples: Record<string, Record<string, unknown>> = {
   auction_closed: { type: 'auction_closed', auction_id: A, outcome: 'closed_sold', final_price: 2200000, reserve_met: true, final_sequence_no: 26, server_time_ms: T },
   presence: { type: 'presence', auction_id: A, participants: 17, sequence_no: 5, end_time_ms: 1791889807063, server_time_ms: T },
   outbid_notice: { type: 'outbid_notice', auction_id: A, current_price: 1250000, sequence_no: 8, server_time_ms: T },
-  notification: { type: 'notification', id: 'n1', notification_type: 'auction_won', auction_id: A, payload: { title: 'K1000' }, created_at_ms: T, server_time_ms: T },
+  // live_events.publish_notifications: the row's id is a bigint, sent as a JSON number
+  notification: { type: 'notification', id: 41, notification_type: 'auction_won', auction_id: A, payload: { title: 'K1000' }, created_at_ms: T, server_time_ms: T },
   system_status: { type: 'system_status', degraded: true, server_time_ms: T },
 };
 
@@ -248,6 +249,10 @@ describe('discovery, watchlist and notification guards', () => {
       { id: 1, name: 'Cameras', slug: 'cameras', parent_id: null, children: [{ id: 3, name: 'Film', slug: 'film', parent_id: 1, children: [] }] },
     ]);
     expect(parseCategoryTree({ id: 1 })).toBeNull();
+  });
+
+  test('a live notification frame with a string id is dropped (the server sends a number)', () => {
+    expect(parseFrame({ ...samples.notification, id: '41' })).toBeNull();
   });
 
   test('a notification page: integer ids, a payload object, read state, keyset cursor', () => {
