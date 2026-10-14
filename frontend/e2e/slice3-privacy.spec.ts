@@ -75,3 +75,25 @@ test('the watchlist shows neither the reserve amount nor another bidder’s maxi
   seen.push(`dom ${await page.locator('body').innerText()}`);
   expect(leaks(seen), leaks(seen).slice(0, 3).join('\n')).toEqual([]);
 });
+
+test('notifications show neither the reserve amount nor the winner’s maximum to the bidder who lost', async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const t = tag();
+  const seller = await newAccount(request, 'seller', 'seller');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { title: `Contax ${t} RTS`, startInS: 2, endInS: 30, thresholdS: 10, extensionS: 10, reservePrice: RESERVE });
+  await waitForStatus(request, id, 'live');
+  await request.put(`${API}/watchlist/${id}`, { headers: bearer(bob) });
+  await (await restBid(request, bob, id, 900000)).json();
+  await (await restProxy(request, alice, id, MAXIMUM)).json(); // answers 950000: bob is outbid
+  await (await restBid(request, bob, id, 1000000)).json(); // answers 1050000: reserve met, bob outbid again
+  await waitForStatus(request, id, 'closed_sold', 90_000);
+
+  const seen = record(page);
+  await signInUi(page, bob);
+  await page.goto('/notifications');
+  await expect(page.getByText(`Contax ${t} RTS sold for ₹10,500. Your bid did not win.`)).toBeVisible({ timeout: 20_000 });
+  seen.push(`dom ${await page.locator('body').innerText()}`);
+  expect(leaks(seen), leaks(seen).slice(0, 3).join('\n')).toEqual([]);
+});
