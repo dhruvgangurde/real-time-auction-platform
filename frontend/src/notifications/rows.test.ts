@@ -34,7 +34,7 @@ describe('a sentence for each of the nine types', () => {
     }
     expect(texts[0]!.text).toBe('You were outbid on Pentax K1000. The current bid is ₹9,500.');
     expect(texts[2]!.text).toBe('You won Pentax K1000 at ₹12,000.');
-    expect(texts[4]!.text).toBe('Payment due: ₹12,000 for Pentax K1000.');
+    expect(texts[4]!.text).toBe('₹12,000 for Pentax K1000.');
     expect(texts[6]!.text).not.toContain('BAD_REQUEST_ERROR'); // the gateway's code is not for people
     expect(texts[8]!.text).toBe('Pentax K1000 closed without a sale. The reserve was not met.');
   });

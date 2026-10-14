@@ -84,3 +84,10 @@ test('the 4004 copy never claims another device (4004 also follows suspension an
   expect(texts.filter((t) => /another device/i.test(t))).toEqual([]);
   expect(`${enIN.roomUi.bid.signedOutHead}. ${enIN.roomUi.bid.signedOutNote}`).toBe('You were signed out. Sign in again to bid.');
 });
+
+test('the payment-due line does not repeat its row label ("Payment due" already heads the row)', () => {
+  const p = enIN.notificationsPage;
+  const line = p.text.paymentDue('₹9,000', 'Zenit E');
+  expect(line).toBe('₹9,000 for Zenit E.');
+  expect(line.toLowerCase().startsWith(p.labels.payment_due.toLowerCase())).toBe(false);
+});
