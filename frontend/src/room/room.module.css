@@ -456,12 +456,18 @@
   animation-delay: calc(var(--i, 0) * 120ms);
 }
 
+/* one highlight for the newest row: the band is on the row, so a cell that a breakpoint hides and
+   shows again (the decided-at cell on phones) never restarts its own; cells only take the
+   on-marigold text colour while the band is up (brief 4.3, 6) */
 .rowNew {
   composes: row;
+  animation:
+    rowIn 160ms cubic-bezier(0.2, 0, 0, 1) both,
+    band 800ms ease-out forwards;
 }
 
 .rowNew td {
-  animation: band 800ms ease-out forwards;
+  animation: ink 800ms ease-out;
 }
 
 .rowStill {
@@ -485,6 +491,14 @@
   to {
     transform: none;
     opacity: 1;
+  }
+}
+
+/* no closing keyframe: the colour fades back to each cell's own */
+@keyframes ink {
+  0%,
+  25% {
+    color: var(--on-marigold);
   }
 }
 
@@ -554,17 +568,29 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tick,
-  .rowNew td {
-    animation: bandStill 600ms step-end forwards;
-  }
-
   .row,
   .swap,
   .banner,
   .priceBoxOut::before,
   .pending td {
     animation: none;
+  }
+
+  /* after .row: the newest row carries both classes, and its still band must win */
+  .tick,
+  .rowNew {
+    animation: bandStill 600ms step-end forwards;
+  }
+
+  .rowNew td {
+    animation: inkStill 600ms step-end;
+  }
+
+  @keyframes inkStill {
+    0%,
+    99% {
+      color: var(--on-marigold);
+    }
   }
 
   @keyframes bandStill {

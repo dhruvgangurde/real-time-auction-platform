@@ -52,3 +52,43 @@ test('the highlight fades to nothing, and no cell is marigold in a terminal room
   expect(maxSeen, 'marigold on a freshly loaded terminal room').toBe(0);
   await ctx.close();
 });
+
+test('the newest row fades as one: every cell shows the same background, during and after the band', async ({ browser, request }) => {
+  test.setTimeout(120_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const alice = await newAccount(request, 'alice');
+  const bob = await newAccount(request, 'bob');
+  const id = await newAuction(request, seller, { endInS: 600, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await signInUi(page, alice);
+  await page.goto(`/auctions/${id}`);
+  await expect(page.getByLabel('Your bid in rupees')).toBeVisible();
+
+  // the background each cell shows: its own, or the row's behind it when its own is clear
+  const cells = () =>
+    page.evaluate(() => {
+      const row = document.querySelector('tbody tr');
+      if (row === null) return [];
+      const clear = (c: string) => c === 'transparent' || /rgba\(.*,\s*0\)$/.test(c);
+      const rowBg = getComputedStyle(row).backgroundColor;
+      return [...row.querySelectorAll('td')].map((td) => {
+        const own = getComputedStyle(td).backgroundColor;
+        return clear(own) ? rowBg : own;
+      });
+    });
+
+  await (await restBid(request, bob, id, 900000)).json();
+  await expect(page.locator('tbody tr').first()).toContainText('₹9,000', { timeout: 10_000 });
+  // a resize across the 700 px breakpoint mid-band (the decided-at cell hides on phones)
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(60);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (let i = 0; i < 25; i += 1) {
+    const seen = await cells();
+    expect(new Set(seen).size, `cells at sample ${i}: ${seen.join(' | ')}`).toBe(1);
+    await page.waitForTimeout(80);
+  }
+  await ctx.close();
+});
