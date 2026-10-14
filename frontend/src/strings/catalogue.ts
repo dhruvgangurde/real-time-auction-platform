@@ -355,6 +355,53 @@ export type Catalogue = {
     /** the polite line when the unread count rises (brief 9.6) */
     arrived: (n: number) => string;
   };
+  /** the notifications page (brief 9.6, FR-74); one label and sentence per type (FR-70) */
+  notificationsPage: {
+    title: string;
+    filterLabel: string;
+    all: string;
+    unread: string;
+    markAll: string;
+    markRead: string;
+    markReadLabel: (text: string) => string;
+    unreadMark: string;
+    empty: string;
+    emptyNote: string;
+    caughtUp: string;
+    showAll: string;
+    error: string;
+    failed: string;
+    showMore: string;
+    loadingMore: string;
+    labels: Record<
+      | 'outbid'
+      | 'ending_soon'
+      | 'auction_won'
+      | 'auction_lost'
+      | 'payment_due'
+      | 'payment_received'
+      | 'payment_failed'
+      | 'auction_sold'
+      | 'auction_no_sale'
+      | 'other',
+      string
+    >;
+    text: {
+      outbid: (title: string, price: string) => string;
+      endingSoon: (title: string, time: string) => string;
+      won: (title: string, price: string) => string;
+      lostSold: (title: string, price: string) => string;
+      lostNoSale: (title: string) => string;
+      paymentDue: (price: string, title: string) => string;
+      paymentReceived: (price: string, title: string) => string;
+      paymentFailed: (price: string, title: string) => string;
+      sold: (title: string, price: string) => string;
+      noSale: (title: string) => string;
+      noSaleReserve: (title: string) => string;
+      other: (title: string) => string;
+      otherNoTitle: string;
+    };
+  };
   watchlist: {
     title: string;
     lede: string;

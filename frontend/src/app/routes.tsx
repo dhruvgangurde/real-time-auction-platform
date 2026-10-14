@@ -34,7 +34,7 @@ export const router = createBrowserRouter([
         children: [
           { path: 'account/*', element: <Placeholder /> },
           { path: 'watchlist', lazy: () => import('../watchlist/WatchlistPage') },
-          { path: 'notifications', element: <Placeholder /> },
+          { path: 'notifications', lazy: () => import('../notifications/NotificationsPage') },
           { path: 'auctions/:id/pay', element: <Placeholder /> },
         ],
       },

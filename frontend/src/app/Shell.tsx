@@ -1,39 +1,35 @@
 // The app shell: skip link, header, main landmark and the two live regions (brief 9.1, 11.4).
 // Every string comes from the catalogue; every colour from the tokens.
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useRef } from 'react';
 import { Link, NavLink, Outlet, ScrollRestoration } from 'react-router';
 
 import { announcePolite } from '../lib/polite';
 import { useStrings } from '../strings/catalogue';
-import { useApp, useToken, useViewerId } from './context';
+import { useApp, useToken } from './context';
 import styles from './Shell.module.css';
-import { arrived, badge, unreadCount, UNREAD_LIMIT, UNREAD_POLL_MS } from './unread';
+import { arrived, badge } from './unread';
+import { useUnreadCount } from './useUnread';
 
 const SignOutButton = lazy(() => import('../auth/screens').then((m) => ({ default: m.SignOutButton })));
 
-/** The unread count for the bell (unread.ts), announced politely when it rises. */
+/** The unread count for the bell, announced politely when it rises; a rise also refreshes the
+ * notifications list if it is open. */
 function useUnread(): number {
   const s = useStrings();
-  const { api } = useApp();
-  const token = useToken();
-  const viewer = useViewerId();
-  const unread = useQuery({
-    queryKey: ['notifications', 'unread', viewer],
-    queryFn: () => api.notifications({ unread: true, limit: UNREAD_LIMIT }),
-    enabled: token !== null,
-    refetchInterval: UNREAD_POLL_MS, // paused while the tab is hidden
-    refetchOnWindowFocus: true, // and read again when it is shown
-  });
-  const count = unread.data === undefined ? 0 : unreadCount(unread.data);
+  const client = useQueryClient();
+  const { count, loaded, viewer } = useUnreadCount();
   const previous = useRef<{ viewer: string | null; count: number } | null>(null);
   useEffect(() => {
-    if (unread.data === undefined) return;
+    if (!loaded) return;
     const before = previous.current?.viewer === viewer ? previous.current.count : undefined;
-    if (arrived(before, count)) announcePolite(s.notifications.arrived(count));
+    if (arrived(before, count)) {
+      announcePolite(s.notifications.arrived(count));
+      void client.invalidateQueries({ queryKey: ['notifications', 'list'] });
+    }
     previous.current = { viewer, count };
-  }, [unread.data, count, viewer, s]);
-  return token === null ? 0 : count;
+  }, [loaded, count, viewer, s, client]);
+  return count;
 }
 
 export function Shell() {
