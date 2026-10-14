@@ -23,7 +23,7 @@ export function useWatchlist(refetchInterval: number | false = false) {
 /** `again`: the watchlist page's label for an item removed during this visit. */
 export function WatchButton({ card, note, again = false }: { card: AuctionCard; note?: string; again?: boolean }) {
   const w = useStrings().watch;
-  const { api } = useApp();
+  const { api, auth } = useApp();
   const client = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -32,12 +32,17 @@ export function WatchButton({ card, note, again = false }: { card: AuctionCard; 
   const watched = token !== null && (list.data?.items.some((c) => c.id === card.id) ?? false);
   if (!watched && card.status === 'cancelled') return null; // the server refuses it (ALREADY_CLOSED)
 
-  const onClick = () => {
-    if (token === null) {
+  const onClick = async () => {
+    // a click during the load-time restore waits for it: until then a signed-in viewer has no token
+    // yet and would be sent to sign in by mistake
+    if (!auth.isRestored()) await auth.ready;
+    if (auth.getToken() === null) {
       void navigate('/sign-in', { state: { from: location.pathname + location.search } });
       return;
     }
-    if (mutation.isPending || list.data === undefined) return;
+    // before the list has loaded the toggle reads "Watch": a watch is idempotent on the server, and
+    // the refetch after it shows the real state, so the click is sent rather than dropped
+    if (mutation.isPending) return;
     mutation.mutate({ auctionId: card.id, watch: !watched, card });
   };
   const error = mutation.error;
@@ -49,8 +54,8 @@ export function WatchButton({ card, note, again = false }: { card: AuctionCard; 
         type="button"
         className={watched ? styles.on : styles.off}
         aria-pressed={token === null ? undefined : watched}
-        aria-disabled={token !== null && (mutation.isPending || list.data === undefined)}
-        onClick={onClick}
+        aria-disabled={mutation.isPending}
+        onClick={() => void onClick()}
       >
         <svg className={styles.icon} viewBox="0 0 16 16" aria-hidden="true">
           <path d="M8 13.5 2.6 8.3a3.2 3.2 0 0 1 4.5-4.6L8 4.6l.9-.9a3.2 3.2 0 0 1 4.5 4.6Z" />
