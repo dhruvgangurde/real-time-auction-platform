@@ -4,6 +4,10 @@
 // on a real order skip when the api container cannot reach api.razorpay.com (the beforeAll
 // pre-check, and only that). The checkout callback and the webhooks are signed as Razorpay signs
 // them, with the secrets read from the api container at run time.
+// The skip branch, proved on demand: E2E_RAZORPAY_CHECK_URL (tests only) points the pre-check, and
+// nothing else, at another URL. With a host that cannot answer, the two order tests skip with the
+// reason below and the third still runs:
+//   E2E_RAZORPAY_CHECK_URL=https://razorpay-check.invalid/ npm run e2e -- e2e/checkout-stub.spec.ts
 import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';

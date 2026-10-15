@@ -34,12 +34,14 @@ export async function watchViolations(page: Page): Promise<string[]> {
   return seen;
 }
 
-/** The beforeAll pre-check: can the api container reach api.razorpay.com (any HTTP answer)? */
-export function apiReachesRazorpay(): boolean {
+/** The beforeAll pre-check: can the api container reach api.razorpay.com (any HTTP answer)?
+ * E2E_RAZORPAY_CHECK_URL, for tests only, points this check (and nothing else) at another URL,
+ * such as a host that cannot answer, to prove the skip branch. It goes to Python as an argument. */
+export function apiReachesRazorpay(url = process.env.E2E_RAZORPAY_CHECK_URL || 'https://api.razorpay.com/v1/'): boolean {
   try {
     execFileSync(
       'docker',
-      ['compose', 'exec', '-T', 'api', 'python', '-c', "import httpx; httpx.get('https://api.razorpay.com/v1/', timeout=8)"],
+      ['compose', 'exec', '-T', 'api', 'python', '-c', 'import sys, httpx; httpx.get(sys.argv[1], timeout=8)', url],
       { cwd: ROOT, stdio: 'ignore', timeout: 30_000 },
     );
     return true;
