@@ -1,6 +1,8 @@
-// Screenshots of slice 3 as built (Discover, the watchlist, notifications) for review, written to
-// design/shots/05-slice3 with an index.md. Every frame is a real state driven through the API and
-// the UI on 8011; loading and error are the only routed ones (a delayed and a refused list call).
+// Screenshots of slice 3 as built (Discover, the watchlist, notifications, checkout) for review,
+// written to design/shots/05-slice3 with an index.md. Every frame is a real state driven through
+// the API and the UI on 8011; the routed ones say so in their note. Checkout uses the stand-in
+// checkout.js of e2e/checkout-stub.spec.ts on a real sandbox order; Razorpay's own window is in
+// the two evidence frames (checkout-sandbox.spec.ts drives it).
 // PNGs are git-ignored (design/shots/**/*.png); this spec regenerates them.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
+import { payEnIN as p } from '../src/strings/pay-en-IN';
+import { CHECKOUT_SRC, apiReachesRazorpay, checkoutIds, newPaymentId, sendWebhook, stubCheckout } from './fixtures/pay';
 import { API, bearer, newAccount, newAuction, restBid, signInUi, waitForStatus, type Account } from './fixtures/stack';
 
 const OUT = fileURLToPath(new URL('../../design/shots/05-slice3', import.meta.url));
@@ -20,7 +24,8 @@ const d = enIN.discover;
 
 /** 1440 then 390 (light, or dark), full page unless `viewport`; `at390` runs before the phone frame. */
 async function shoot(page: Page, state: string, theme: 'light' | 'dark', opts: { note?: string; at390?: () => Promise<void>; viewport?: boolean } = {}) {
-  const polite = (await page.locator('#live-polite').textContent()) ?? '';
+  const region = page.locator('#live-polite'); // the payment document has none
+  const polite = (await region.count()) === 0 ? '' : ((await region.textContent()) ?? '');
   for (const width of [1440, 390] as const) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
     if (width === 390) await opts.at390?.();
@@ -264,6 +269,145 @@ test('Notifications: the bell, seven types, unread, mark all, empty, caught up, 
   await empty.close();
 });
 
+test('Checkout: due, its refusals, opening, the window, closed, failed, last attempt, confirming, paid; seller, other bidder, signed out, no sale', async ({ browser, request }) => {
+  test.skip(!apiReachesRazorpay(), 'skipped: the api container cannot reach api.razorpay.com, which creates the order');
+  test.setTimeout(240_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const winner = await newAccount(request, 'winner');
+  const other = await newAccount(request, 'other');
+  const short = { startInS: 2, endInS: 25, thresholdS: 10, extensionS: 10, reservePrice: null } as const;
+  const id = await newAuction(request, seller, { ...short, title: `Olympus ${tag()} Pen F` });
+  const unsold = await newAuction(request, seller, { ...short, title: `Olympus ${tag()} Trip 35` });
+  await waitForStatus(request, id, 'live');
+  await (await restBid(request, other, id, 900000)).json();
+  await (await restBid(request, winner, id, 950000)).json();
+  await waitForStatus(request, id, 'closed_sold', 60_000);
+  await waitForStatus(request, unsold, 'closed_no_sale', 60_000);
+  const PAY = `/auctions/${id}/pay`;
+  const START = `**/api/v1/auctions/${id}/payment`;
+  type Win = { __rzp: { options: { order_id: string; handler: (r: unknown) => void; modal: { ondismiss: () => void } }; failed: ((r: unknown) => void)[] }; __rzpOpened?: number };
+  const opened = (page: Page) => page.evaluate(() => (window as unknown as Win).__rzpOpened ?? 0);
+
+  const anon = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const ap = await anon.newPage();
+  await ap.goto(PAY);
+  await expect(ap.getByRole('heading', { name: p.signInTitle })).toBeVisible();
+  await shoot(ap, '40-pay-signed-out', 'light', { note: 'Sign in returns here through ?next=' });
+  await anon.close();
+
+  const dark = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' });
+  const dp = await dark.newPage();
+  await signInUi(dp, winner);
+  await dp.goto(PAY);
+  await expect(dp.getByRole('button', { name: p.pay('₹9,500') })).toBeVisible();
+  await shoot(dp, '25-pay-due', 'dark');
+  await dark.close();
+
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await stubCheckout(page);
+  await signInUi(page, winner);
+  await page.goto(PAY);
+  const pay = page.getByRole('button', { name: p.pay('₹9,500') });
+  await expect(pay).toBeVisible();
+  await shoot(page, '25-pay-due', 'light', { note: 'from the room’s Pay or the payment-due notification' });
+
+  // routed refusals, the script first (before anything loaded it)
+  const ORDER = { payment_id: 'p', settlement_id: 's', status: 'created', amount: 950000, currency: 'INR', gateway: 'razorpay', key_id: 'rzp_test_stub', order_id: 'order_Stub123' };
+  await page.route(START, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(ORDER) }));
+  await page.route(CHECKOUT_SRC, (route) => route.abort());
+  await pay.click();
+  await expect(page.getByText(p.scriptFailed)).toBeVisible();
+  await shoot(page, '35-pay-script-failed', 'light', { note: 'checkout.js routed to fail' });
+  await page.unroute(CHECKOUT_SRC);
+  await stubCheckout(page);
+  for (const [state, status, code, text] of [
+    ['33-pay-below-minimum', 409, 'AMOUNT_BELOW_GATEWAY_MINIMUM', enIN.errors.AMOUNT_BELOW_GATEWAY_MINIMUM],
+    ['34-pay-unavailable', 503, 'SERVICE_UNAVAILABLE', p.unavailable],
+  ] as const) {
+    await page.unroute(START);
+    await page.route(START, (route) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error: { code, message: code } }) }));
+    await pay.click();
+    await expect(page.getByText(text)).toBeVisible();
+    await shoot(page, state, 'light', { note: `the start routed to ${status} ${code}` });
+  }
+  await page.unroute(START);
+
+  // opening (the start held 3 s), then the window, on a real sandbox order
+  await page.route(START, async (route) => {
+    await new Promise((r) => setTimeout(r, 3_000));
+    await route.continue();
+  });
+  await pay.click();
+  await expect(page.getByRole('button', { name: p.opening })).toBeVisible();
+  await shoot(page, '26-pay-opening', 'light', { note: 'the start held 3 s' });
+  await expect.poll(() => opened(page), { timeout: 15_000 }).toBe(1);
+  await page.unroute(START);
+  await expect(page.getByText(p.open)).toBeVisible();
+  await shoot(page, '27-pay-window-open', 'light', { note: 'our page while the window is open (a stand-in window; Razorpay’s is in the evidence frames)' });
+  const order = await page.evaluate(() => (window as unknown as Win).__rzp.options.order_id);
+
+  await page.evaluate(() => (window as unknown as Win).__rzp.options.modal.ondismiss());
+  await expect(page.getByText(p.dismissed)).toBeVisible();
+  await shoot(page, '28-pay-dismissed', 'light', { note: 'the window closed without paying' });
+
+  await pay.click();
+  await expect.poll(() => opened(page)).toBe(2);
+  await page.evaluate(() => {
+    const rzp = (window as unknown as Win).__rzp;
+    for (const listener of rzp.failed) listener({ error: { code: 'BAD_REQUEST_ERROR' } });
+    rzp.options.modal.ondismiss();
+  });
+  await expect(page.getByRole('heading', { name: p.failedTitle })).toBeVisible();
+  await shoot(page, '29-pay-failed', 'light', { note: 'a failure inside the window, then closing it' });
+
+  await sendWebhook(request, 'payment.failed', { id: newPaymentId(), order_id: order, amount: 950000 });
+  await page.reload();
+  await expect(page.getByText(p.lastFailed)).toBeVisible();
+  await shoot(page, '30-pay-last-attempt-failed', 'light', { note: 'after Razorpay’s signed payment.failed webhook' });
+
+  const seller1 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const sp = await seller1.newPage();
+  await signInUi(sp, seller);
+  await sp.goto(PAY);
+  await expect(sp.getByRole('heading', { name: p.statusTitle })).toBeVisible();
+  await shoot(sp, '37-pay-seller-awaiting', 'light', { note: 'the seller’s read-only status (FR-69)' });
+
+  await pay.click();
+  await expect.poll(() => opened(page)).toBe(1); // a new document since the reload
+  const paymentId = newPaymentId();
+  await page.evaluate((ids) => (window as unknown as Win).__rzp.options.handler(ids), checkoutIds(order, paymentId));
+  await expect(page.getByRole('heading', { name: p.confirmingTitle })).toBeVisible();
+  await shoot(page, '31-pay-confirming', 'light', { note: 'the signed callback answered 202; nothing says paid yet' });
+
+  await sendWebhook(request, 'payment.captured', { id: paymentId, order_id: order, amount: 950000 });
+  await expect(page.getByRole('heading', { name: p.paidTitle })).toBeVisible({ timeout: 15_000 });
+  await shoot(page, '32-pay-paid', 'light', { note: 'after the signed payment.captured webhook: the receipt' });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await shoot(page, '32-pay-paid', 'dark');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('/notifications');
+  await expect(page.getByText(p.paid('₹9,500')).or(page.getByText(/Payment of ₹9,500 received/))).toBeVisible();
+  await shoot(page, '41-notifications-payments', 'light', { note: 'payment received and payment failed rows; both open the payment page' });
+  await ctx.close();
+
+  await sp.reload();
+  await expect(sp.getByText(new RegExp(`^${winner.name} paid ₹9,500 on `))).toBeVisible();
+  await shoot(sp, '38-pay-seller-paid', 'light');
+  await sp.goto(`/auctions/${unsold}/pay`);
+  await expect(sp.getByText(p.noSale)).toBeVisible();
+  await shoot(sp, '36-pay-no-sale', 'light');
+  await seller1.close();
+
+  const o = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const op = await o.newPage();
+  await signInUi(op, other);
+  await op.goto(PAY);
+  await expect(op.getByText(p.notWinner)).toBeVisible();
+  await shoot(op, '39-pay-not-winner', 'light');
+  await o.close();
+});
+
 test.afterAll(() => {
   rows.sort((a, b) => a.state.localeCompare(b.state) || a.file.localeCompare(b.file));
   const esc = (s: string) => s.replace(/\|/g, '\\|').trim();
@@ -280,7 +424,7 @@ test.afterAll(() => {
     '',
     '## Not shot here',
     '',
-    '- **Payment received and payment failed** rows need a payment, which arrives with the checkout slice; their sentences are covered by `src/notifications/rows.test.ts`.',
+    '- **Razorpay’s own window** is not in the checkout frames (they use the stand-in checkout.js on a real sandbox order). The enforced-policy evidence frames are: `evidence-enforced-1280-paid.png` (a real Netbanking test payment, zero CSP violations) and `evidence-enforced-390-checkout-open.png` (the window full screen at 390, zero violations), from the evidence run; `e2e/checkout-sandbox.spec.ts` drives the same.',
     '- **A new notification arriving** is motion (the count rising, the polite line); `e2e/notifications.spec.ts` checks it by poll and by the room frame.',
     '- **Rate limited** on Discover: the list endpoint has no limiter (G1), so the state cannot be reached from the real backend; the shared error path handles the code.',
     '',
