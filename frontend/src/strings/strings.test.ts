@@ -3,6 +3,7 @@
 import { expect, test } from 'vitest';
 
 import architecture from '../../../docs/architecture.md?raw';
+import { rowText, TYPES } from '../notifications/rows';
 import { errorMessage } from './catalogue';
 import { enIN } from './en-IN';
 
@@ -90,4 +91,12 @@ test('the payment-due line does not repeat its row label ("Payment due" already 
   const line = p.text.paymentDue('₹9,000', 'Zenit E');
   expect(line).toBe('₹9,000 for Zenit E.');
   expect(line.toLowerCase().startsWith(p.labels.payment_due.toLowerCase())).toBe(false);
+});
+
+test('no notification sentence starts with its own row label, for all nine types', () => {
+  const payload = { auction_id: 'a', title: 'Zenit E', current_price: 950000, end_time_ms: 0, final_price: 900000, amount: 900000, outcome: 'closed_sold', reserve_met: false };
+  for (const type of TYPES) {
+    const row = rowText({ id: 1, type, auction_id: 'a', payload, read: false, created_at_ms: 0 }, enIN);
+    expect(row.text.toLowerCase().startsWith(row.label.toLowerCase()), `${type}: "${row.label}" / "${row.text}"`).toBe(false);
+  }
 });

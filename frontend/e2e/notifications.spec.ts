@@ -83,7 +83,7 @@ test('real rows: the bell rises without a reload, at once in a room, and every t
 
   // the winner's and the seller's lines
   for (const [who, lines] of [
-    [bob, [`You won Voigtlander ${t} at ₹9,500.`, `₹9,500 for Voigtlander ${t}.`]],
+    [bob, [`Voigtlander ${t} is yours at ₹9,500.`, `₹9,500 for Voigtlander ${t}.`]],
     [seller, [`Voigtlander ${t} sold for ₹9,500.`]],
   ] as const) {
     const c = await browser.newContext({ viewport: { width: 1440, height: 900 } });

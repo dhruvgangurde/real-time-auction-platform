@@ -324,7 +324,7 @@ export const enIN = guardSentences({
     text: {
       outbid: (title, price) => `You were outbid on ${title}. The current bid is ${price}.`,
       endingSoon: (title, time) => `${title} ends soon, at ${time}.`,
-      won: (title, price) => `You won ${title} at ${price}.`,
+      won: (title, price) => `${title} is yours at ${price}.`, // the row's label says "You won"
       lostSold: (title, price) => `${title} sold for ${price}. Your bid did not win.`,
       lostNoSale: (title) => `${title} closed without a sale.`,
       paymentDue: (price, title) => `${price} for ${title}.`, // the row's label says "Payment due"
