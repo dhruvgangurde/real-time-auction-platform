@@ -7,6 +7,7 @@ import { Link, Navigate, useLoaderData, useLocation, useNavigate } from 'react-r
 import { useApp, useToken } from '../app/context';
 import { useStrings } from '../strings/catalogue';
 import { Field, FormError, useForm } from './Form';
+import { safeNext } from './next';
 import styles from './screens.module.css';
 import type { TokenLoader } from './token';
 
@@ -161,16 +162,23 @@ export function SignIn() {
   const s = useStrings();
   const { api, auth } = useApp();
   const navigate = useNavigate();
-  const from = (useLocation().state as { from?: string } | null)?.from ?? '/';
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from ?? '/';
+  // ?next= from another document (the payment page): a full load back to it, only to a path here
+  const next = safeNext(new URLSearchParams(location.search).get('next'));
+  const token = useToken();
   const [email, setEmail] = useState('');
   const form = useForm(async (data) => {
     const address = text(data, 'email');
     setEmail(address);
     const tokens = await api.login(address, String(data.get('password') ?? ''));
     auth.accept(tokens.access_token, tokens.expires_in);
-    void navigate(from, { replace: true });
+    if (next === null) void navigate(from, { replace: true });
   });
-  if (useToken() !== null) return <Navigate to={from} replace />;
+  useEffect(() => {
+    if (token !== null && next !== null) window.location.replace(next);
+  }, [token, next]);
+  if (token !== null) return next === null ? <Navigate to={from} replace /> : null;
   return (
     <Page title={s.auth.signIn.title}>
       <form onSubmit={form.onSubmit} noValidate>
