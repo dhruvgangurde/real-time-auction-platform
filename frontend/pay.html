@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en-IN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0D1424" />
+    <!-- the payment page (brief 13 item 25): its own document, served with its own CSP; the same
+         two fonts as the SPA preloaded (brief 3.4) -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/spectral/Spectral-Regular.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/anek-latin/AnekLatin.woff2" />
+    <title>Payment, Real-Time Auction</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/pay/main.tsx"></script>
+  </body>
+</html>

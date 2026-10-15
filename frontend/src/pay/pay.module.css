@@ -1,0 +1,173 @@
+/* The payment page (brief 9.5): the shell's header without its navigation, one narrow column, the
+   lot on a plate, and a panel that carries the state. Tokens only. */
+
+.wrap {
+  max-width: 1416px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 48px;
+  padding-right: 48px;
+}
+
+.header {
+  border-bottom: 1px solid var(--rule);
+}
+
+.header .wrap {
+  display: flex;
+  align-items: center;
+  height: 72px;
+}
+
+.mark {
+  font: 400 22px/1 var(--font-serif);
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px 48px 96px;
+  box-sizing: content-box;
+}
+
+.back {
+  font-weight: 600;
+  text-underline-offset: 4px;
+}
+
+.title {
+  font: var(--display-2);
+  letter-spacing: -0.01em;
+  margin: 16px 0 0;
+}
+
+.lot {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  margin-top: 28px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.thumb {
+  aspect-ratio: 4 / 3;
+  background: var(--plate);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lotLabel {
+  font: var(--label);
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.lotTitle {
+  font: var(--title-3);
+  margin: 4px 0 0;
+  text-wrap: balance;
+}
+
+.panel {
+  margin-top: 28px;
+}
+
+.head {
+  font: var(--title-2);
+  margin: 0 0 8px;
+}
+
+.text {
+  font: var(--ui-lg);
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.quiet {
+  font: var(--ui-md);
+  color: var(--ink-2);
+  margin: 10px 0 0;
+}
+
+.warn {
+  font: var(--ui-md);
+  color: var(--red);
+  margin: 12px 0 0;
+}
+
+.primary,
+.quietButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  margin-top: 20px;
+  padding: 0 24px;
+  border-radius: 4px;
+  font: var(--button);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primary {
+  border: 0;
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.primary[aria-disabled='true'] {
+  background: var(--ink-3);
+  cursor: progress;
+}
+
+.quietButton {
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  color: var(--ink);
+}
+
+.note {
+  font: var(--ui-sm);
+  color: var(--ink-2);
+  margin: 48px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+@media (max-width: 700px) {
+  .wrap {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .header .wrap {
+    height: 56px;
+  }
+
+  .main {
+    padding: 24px 16px 64px;
+  }
+
+  .title {
+    font: var(--title-1);
+  }
+
+  .lot {
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .primary {
+    width: 100%;
+  }
+}

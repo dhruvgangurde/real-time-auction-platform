@@ -570,6 +570,47 @@ export type Catalogue = {
   unknownError: string;
 };
 
+/** The payment page's strings (brief 9.5). A catalogue of their own, imported only by the payment
+ * document (strings/pay-en-IN.ts), so the SPA's entry chunk does not carry them; error codes and
+ * the shared lines still come from Catalogue. */
+export type PayCatalogue = {
+  title: string;
+  back: string;
+  lotLabel: string;
+  wonFor: (amount: string) => string;
+  pay: (amount: string) => string;
+  opening: string;
+  open: string;
+  confirmingTitle: string;
+  confirming: string;
+  confirmingNote: string;
+  slow: string;
+  unverified: string;
+  paidTitle: string;
+  paid: (amount: string) => string;
+  paidOn: (time: string) => string;
+  paymentId: (id: string) => string;
+  failedTitle: string;
+  failed: string;
+  tryAgain: string;
+  lastFailed: string;
+  dismissed: string;
+  scriptFailed: string;
+  unavailable: string;
+  rateLimited: (seconds: number) => string;
+  notWinner: string;
+  notFound: string;
+  noSale: string;
+  statusTitle: string;
+  statusDue: (name: string, amount: string) => string;
+  statusPaid: (name: string, amount: string, time: string) => string;
+  statusLastFailed: string;
+  signInTitle: string;
+  signInNote: string;
+  signIn: string;
+  testMode: string;
+};
+
 /**
  * A sentence never renders with a value missing: every catalogue function returns '' when any
  * argument is '' or NaN (an amount or time that is not known yet), so the UI shows nothing rather

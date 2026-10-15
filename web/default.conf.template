@@ -52,6 +52,17 @@ server {
         proxy_pass http://api;
     }
 
+    # the payment page (brief 13 item 25): its own document (frontend/pay.html, its own build) and
+    # its own CSP, the only one that allows Razorpay; every other response keeps the policy above.
+    # add_header here replaces the server-level ones, so the other two headers are repeated. Why
+    # each Razorpay entry is there: docs/decisions.md, 2026-10-15 slice 3b.
+    location ~ "^/auctions/[0-9a-f-]{36}/pay$" {
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://cdn.razorpay.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://lumberjack.razorpay.com https://lumberjack-metrics.razorpay.com; frame-src https://api.razorpay.com; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        try_files /pay.html =404;
+    }
+
     location / {
         try_files $uri /index.html =404;  # the SPA (frontend/dist, built in 10c)
     }

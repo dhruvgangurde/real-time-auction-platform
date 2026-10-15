@@ -144,7 +144,7 @@ docker compose logs api api-2                 # both api instances (which one to
 cd frontend && npm ci                          # frontend deps (Node 24.19, .nvmrc; exact versions)
 cd frontend && npm run dev                     # Vite on 5173, /api proxied to the stack on 8011
 cd frontend && npm run typecheck               # tsc --noEmit
-cd frontend && npm run build                   # typecheck, vite build into dist/ (served on 8011), chunk budget
+cd frontend && npm run build                   # typecheck, the SPA and the payment page builds into dist/ (served on 8011), chunk budget per document
 cd frontend && npm test                        # Vitest (reducer, money, clock, strings, contract, lint rules)
 cd frontend && npm run lint                    # ESLint with the project rules
 docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e.yml up -d   # stack for e2e (raised limits, one host)
