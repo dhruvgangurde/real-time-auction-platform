@@ -150,4 +150,5 @@ cd frontend && npm run lint                    # ESLint with the project rules
 docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e.yml up -d   # stack for e2e (raised limits, one host)
 cd frontend && npm run e2e                     # Playwright against 8011 only (real CSP), after a build; one worker
 cd frontend && npm run e2e -- e2e/discover.spec.ts e2e/slice3-privacy.spec.ts   # one or more specs
+cd frontend && E2E_RAZORPAY_SANDBOX=1 npm run e2e -- e2e/checkout-sandbox.spec.ts   # the real Razorpay sandbox (internet, test keys)
 ```
