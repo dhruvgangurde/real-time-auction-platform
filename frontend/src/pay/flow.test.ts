@@ -60,10 +60,19 @@ describe('paying', () => {
     const opening = run([{ type: 'pay' }], due);
     expect(run([{ type: 'startFailed', code: 'SERVICE_UNAVAILABLE' }], opening)).toMatchObject({ kind: 'due', notice: 'SERVICE_UNAVAILABLE' });
     expect(run([{ type: 'startFailed', code: 'RATE_LIMITED', retryAfterMs: 30_000 }], opening)).toMatchObject({ notice: 'RATE_LIMITED', retryAfterMs: 30_000 });
-    expect(run([{ type: 'startFailed', code: 'AMOUNT_BELOW_GATEWAY_MINIMUM' }], opening)).toMatchObject({ kind: 'due', notice: 'AMOUNT_BELOW_GATEWAY_MINIMUM' });
     expect(run([{ type: 'startFailed', code: 'ALREADY_PAID' }], opening)).toEqual({ kind: 'loading' });
     expect(run([{ type: 'startFailed', code: 'NOT_WINNER' }], opening)).toEqual({ kind: 'refused', code: 'NOT_WINNER' });
     expect(run([{ type: 'scriptFailed' }], opening)).toMatchObject({ kind: 'due', notice: 'SCRIPT' });
+  });
+
+  test('below the gateway minimum is for good: no Pay, and Pay does nothing; unavailable keeps its retry', () => {
+    const opening = run([{ type: 'pay' }], due);
+    const below = run([{ type: 'startFailed', code: 'AMOUNT_BELOW_GATEWAY_MINIMUM' }], opening);
+    expect(below).toEqual({ kind: 'belowMinimum', amount: 950000 });
+    expect(run([{ type: 'pay' }], below)).toEqual(below);
+    const unavailable = run([{ type: 'startFailed', code: 'SERVICE_UNAVAILABLE' }], opening);
+    expect(unavailable).toEqual({ kind: 'due', amount: 950000, lastFailed: false, notice: 'SERVICE_UNAVAILABLE', retryAfterMs: null });
+    expect(run([{ type: 'pay' }], unavailable)).toEqual({ kind: 'opening', amount: 950000 });
   });
 });
 

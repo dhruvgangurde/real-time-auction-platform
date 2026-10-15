@@ -2,7 +2,8 @@
 // settlement: its winner pays, the seller (or an admin) reads the status, a no-sale has nothing to
 // pay. Razorpay's checkout handing back ids means only "confirming": the page says Paid when the
 // settlement read says paid (the checkout callback, the webhook or the reconciler completed it),
-// never before. A failure is the server's answer or a failure inside the open window.
+// never before. A failure is the server's answer or a failure inside the open window. An amount
+// below the gateway's minimum charge can never be paid online, so that refusal ends the paying.
 import type { Settlement } from '../lib/contract';
 
 export type PayState =
@@ -18,6 +19,7 @@ export type PayState =
   | { kind: 'open'; amount: number; failedInWindow: boolean }
   | { kind: 'confirming'; amount: number; unverified: boolean }
   | { kind: 'failed'; amount: number }
+  | { kind: 'belowMinimum'; amount: number }
   | { kind: 'paid'; amount: number; paidAtMs: number | null; paymentId: string | null };
 
 export type PayEvent =
@@ -75,6 +77,7 @@ export function payReducer(s: PayState, e: PayEvent): PayState {
     case 'startFailed':
       if (s.kind !== 'opening') return s;
       if (e.code === 'ALREADY_PAID') return { kind: 'loading' }; // read it again: the receipt
+      if (e.code === 'AMOUNT_BELOW_GATEWAY_MINIMUM') return { kind: 'belowMinimum', amount: s.amount }; // no retry changes the amount
       if (REFUSED.has(e.code)) return { kind: 'refused', code: e.code };
       if (SIGNED_OUT.has(e.code)) return { kind: 'signedOut' };
       return due(s.amount, e.code, e.retryAfterMs ?? null);

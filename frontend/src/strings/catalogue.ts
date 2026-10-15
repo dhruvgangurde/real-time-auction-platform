@@ -601,6 +601,7 @@ export type PayCatalogue = {
   notWinner: string;
   notFound: string;
   noSale: string;
+  belowMinimum: string;
   statusTitle: string;
   statusWon: (name: string, amount: string) => string;
   statusAwaiting: string;

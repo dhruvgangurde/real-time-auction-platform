@@ -321,16 +321,13 @@ test('Checkout: due, its refusals, opening, the window, closed, failed, last att
   await shoot(page, '35-pay-script-failed', 'light', { note: 'checkout.js routed to fail' });
   await page.unroute(CHECKOUT_SRC);
   await stubCheckout(page);
-  for (const [state, status, code, text] of [
-    ['33-pay-below-minimum', 409, 'AMOUNT_BELOW_GATEWAY_MINIMUM', enIN.errors.AMOUNT_BELOW_GATEWAY_MINIMUM],
-    ['34-pay-unavailable', 503, 'SERVICE_UNAVAILABLE', p.unavailable],
-  ] as const) {
-    await page.unroute(START);
-    await page.route(START, (route) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error: { code, message: code } }) }));
-    await pay.click();
-    await expect(page.getByText(text)).toBeVisible();
-    await shoot(page, state, 'light', { note: `the start routed to ${status} ${code}` });
-  }
+  await page.unroute(START);
+  const unavailable = { error: { code: 'SERVICE_UNAVAILABLE', message: 'SERVICE_UNAVAILABLE' } };
+  await page.route(START, (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(unavailable) }));
+  await pay.click();
+  await expect(page.getByText(p.unavailable)).toBeVisible();
+  await expect(pay).toBeVisible();
+  await shoot(page, '34-pay-unavailable', 'light', { note: 'the start routed to 503 SERVICE_UNAVAILABLE; Pay stays for a retry' });
   await page.unroute(START);
 
   // opening (the start held 3 s), then the window, on a real sandbox order
@@ -431,6 +428,7 @@ test.afterAll(() => {
     '- **Razorpay’s own window** is not in the checkout frames (they use the stand-in checkout.js on a real sandbox order). The enforced-policy evidence frames are: `evidence-enforced-1280-paid.png` (a real Netbanking test payment, zero CSP violations) and `evidence-enforced-390-checkout-open.png` (the window full screen at 390, zero violations), from the evidence run; `e2e/checkout-sandbox.spec.ts` drives the same.',
     '- **A new notification arriving** is motion (the count rising, the polite line); `e2e/notifications.spec.ts` checks it by poll and by the room frame.',
     '- **Rate limited** on Discover: the list endpoint has no limiter (G1), so the state cannot be reached from the real backend; the shared error path handles the code.',
+    '- **33, below the gateway minimum** (no Pay; "This amount is below the smallest payment Razorpay accepts, so it can’t be paid online."): no real sale can fall below it. The starting price is at least 100 paise (`backend/app/schemas/auctions.py`), which is the gateway minimum (`payment_min_amount`, `backend/app/core/config.py`), so the backend never refuses a real sale with AMOUNT_BELOW_GATEWAY_MINIMUM. A refusal routed onto a ₹9,500 sale would picture a state that cannot happen, so there is no frame; `src/pay/flow.test.ts` and `e2e/checkout-stub.spec.ts` (the start routed) cover it.',
     '',
   ];
   writeFileSync(`${OUT}/index.md`, lines.join('\n'));

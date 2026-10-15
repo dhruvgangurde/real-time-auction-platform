@@ -29,6 +29,7 @@ export const payEnIN = guardSentences({
   notWinner: 'Only the winner can pay for this auction.',
   notFound: 'This auction was not found.',
   noSale: 'This auction closed without a sale, so there is nothing to pay.',
+  belowMinimum: "This amount is below the smallest payment Razorpay accepts, so it can't be paid online.",
   statusTitle: 'Payment status',
   statusWon: (name, amount) => `Won by ${name} at ${amount}.`,
   statusAwaiting: 'The payment has not arrived yet.',

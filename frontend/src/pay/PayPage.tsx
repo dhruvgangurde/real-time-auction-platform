@@ -43,6 +43,7 @@ export function PayPage() {
   const [state, dispatch] = useReducer(payReducer, { kind: 'loading' } as PayState);
   const [slow, setSlow] = useState(false);
   const action = useRef<HTMLButtonElement>(null);
+  const said = useRef<HTMLParagraphElement>(null);
   const detail = useQuery({ queryKey: ['auction', id], queryFn: () => api.detail(id), enabled: id !== '', retry: false });
   const title = detail.data?.title ?? '';
   const photo = detail.data === undefined ? undefined : [...detail.data.images].sort((a, b) => a.position - b.position)[0];
@@ -99,15 +100,17 @@ export function PayPage() {
     };
   }, [confirming, api, id]);
 
-  // back from the window without paying, or after a failure: the button has the focus again. Only
-  // then: on load the page is read from the top, the lot before the button
+  // back from the window without paying, or after a failure: the button has the focus again; a
+  // start refused for good takes the button away, so its reason gets the focus. Only then: on load
+  // the page is read from the top, the lot before the button
   const kind = state.kind;
   const previousKind = useRef(kind);
   useEffect(() => {
     const before = previousKind.current;
     previousKind.current = kind;
-    const back = before === 'open' || before === 'opening';
-    if (back && (kind === 'due' || kind === 'failed')) action.current?.focus({ preventScroll: true });
+    if (before !== 'open' && before !== 'opening') return;
+    if (kind === 'due' || kind === 'failed') action.current?.focus({ preventScroll: true });
+    if (kind === 'belowMinimum') said.current?.focus({ preventScroll: true });
   }, [kind]);
 
   async function confirm(response: unknown) {
@@ -232,6 +235,16 @@ export function PayPage() {
       );
       break;
     }
+    case 'belowMinimum':
+      panel = (
+        <>
+          <p className={styles.text}>{p.wonFor(formatINR(state.amount))}</p>
+          <p ref={said} tabIndex={-1} className={styles.warn}>
+            {p.belowMinimum}
+          </p>
+        </>
+      );
+      break;
     case 'open':
       panel = <p className={styles.text}>{p.open}</p>;
       break;

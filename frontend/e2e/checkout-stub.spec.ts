@@ -166,7 +166,7 @@ test('a signed checkout callback leaves it confirming until a signed webhook pay
   await o.ctx.close();
 });
 
-test('with no order: a signed-out visit comes back through sign-in, refused starts say why, the script that does not load, no sale; 390, dark, keyboard', async ({ browser, request }) => {
+test('with no order: a signed-out visit comes back through sign-in, the script that does not load, refused starts say why (unavailable keeps Pay, below the gateway minimum takes it away), no sale; 390, dark, keyboard', async ({ browser, request }) => {
   test.setTimeout(150_000);
   const { id, winner } = await wonAuction(request, `Nikon ${Math.random().toString(36).slice(2, 7)} FM2`);
   const seller = await newAccount(request, 'seller', 'seller');
@@ -204,25 +204,30 @@ test('with no order: a signed-out visit comes back through sign-in, refused star
   await stubCheckout(page); // the loader tries afresh on the next Pay
   await page.unroute(START);
 
-  // refused starts, routed: each has its own message, and nothing reaches the gateway
+  // refused starts, routed, so nothing reaches the gateway: unavailable keeps Pay for a retry
   const refuse = (status: number, code: string) => (route: import('@playwright/test').Route) =>
     route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error: { code, message: code } }) });
-  for (const [status, code, text] of [
-    [409, 'AMOUNT_BELOW_GATEWAY_MINIMUM', enIN.errors.AMOUNT_BELOW_GATEWAY_MINIMUM],
-    [503, 'SERVICE_UNAVAILABLE', p.unavailable],
-  ] as const) {
-    await page.route(START, refuse(status, code));
-    await pay.click();
-    await expect(page.getByText(text)).toBeVisible();
-    await page.unroute(START);
-  }
-  await page.route(START, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(ORDER) }));
+  await page.route(START, refuse(503, 'SERVICE_UNAVAILABLE'));
+  await pay.click();
+  await expect(page.getByText(p.unavailable)).toBeVisible();
+  await expect(pay).toBeVisible();
+  await page.unroute(START);
 
-  // keyboard: the focused Pay opens the window with Enter
+  // keyboard: the focused Pay opens the window with Enter; closing it brings the focus back
+  await page.route(START, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(ORDER) }));
   await pay.focus();
   await page.keyboard.press('Enter');
   await expect.poll(() => opened(page)).toBe(1);
   await expect(page.getByText(p.open)).toBeVisible();
+  await dismiss(page);
+  await expect(pay).toBeFocused();
+  await page.unroute(START);
+
+  // below the gateway's minimum is for good: Pay goes, nothing offers a retry, the reason has the focus
+  await page.route(START, refuse(409, 'AMOUNT_BELOW_GATEWAY_MINIMUM'));
+  await pay.click();
+  await expect(page.getByText(p.belowMinimum, { exact: true })).toBeFocused();
+  await expect(page.getByRole('button')).toHaveCount(0);
   await ctx.close();
 
   // the seller of an auction that did not sell has nothing to pay
