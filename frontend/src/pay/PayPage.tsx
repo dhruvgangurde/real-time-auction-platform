@@ -98,10 +98,15 @@ export function PayPage() {
     };
   }, [confirming, api, id]);
 
-  // back from the window without paying, or after a failure: the button has the focus again
+  // back from the window without paying, or after a failure: the button has the focus again. Only
+  // then: on load the page is read from the top, the lot before the button
   const kind = state.kind;
+  const previousKind = useRef(kind);
   useEffect(() => {
-    if (kind === 'due' || kind === 'failed') action.current?.focus({ preventScroll: true });
+    const before = previousKind.current;
+    previousKind.current = kind;
+    const back = before === 'open' || before === 'opening';
+    if (back && (kind === 'due' || kind === 'failed')) action.current?.focus({ preventScroll: true });
   }, [kind]);
 
   async function confirm(response: unknown) {

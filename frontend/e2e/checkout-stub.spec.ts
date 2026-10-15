@@ -60,6 +60,8 @@ test("from the room's Pay: closing the window comes back to due; a failure insid
   await page.waitForURL(`**/auctions/${id}/pay`);
   await expect(page).toHaveTitle('Payment, Real-Time Auction');
   const pay = page.getByRole('button', { name: p.pay('₹9,500') });
+  await expect(pay).toBeVisible();
+  await expect(pay).not.toBeFocused(); // on load the page reads from the top; focus moves only on the way back
   await pay.click();
   await expect.poll(() => opened(page)).toBe(1);
   const options = await page.evaluate(() => {
