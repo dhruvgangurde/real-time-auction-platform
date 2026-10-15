@@ -30,7 +30,10 @@ describe('a sentence for each of the nine types', () => {
     for (const [i, row] of texts.entries()) {
       expect(row.label, TYPES[i]).not.toBe('');
       expect(row.text, TYPES[i]).toContain('Pentax K1000');
-      expect(row.href).toBe(`/auctions/${A}`);
+      // the payment types open the payment page, its own document (a full load); the rest the room
+      const pay = ['payment_due', 'payment_received', 'payment_failed'].includes(TYPES[i]!);
+      expect(row.href, TYPES[i]).toBe(pay ? `/auctions/${A}/pay` : `/auctions/${A}`);
+      expect(row.document, TYPES[i]).toBe(pay);
     }
     expect(texts[0]!.text).toBe('You were outbid on Pentax K1000. The current bid is ₹9,500.');
     expect(texts[2]!.text).toBe('Pentax K1000 is yours at ₹12,000.');
@@ -50,6 +53,7 @@ describe('a sentence for each of the nine types', () => {
       label: enIN.notificationsPage.labels.outbid,
       text: 'There is an update on one of your auctions.',
       href: null,
+      document: false,
     });
   });
 

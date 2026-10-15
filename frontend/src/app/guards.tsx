@@ -3,39 +3,32 @@
 // Neither decides before the load-time restore has settled (brief 13 item 22), and neither signs
 // anyone out because the server could not be reached: that offers a retry instead (brief 9.1).
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
-import { Link, Navigate, Outlet, useLocation } from 'react-router';
+import { useEffect } from 'react';
+import { Link, Navigate, Outlet, useLocation, useParams } from 'react-router';
 
 import { useStrings } from '../strings/catalogue';
 import { useApp, useAuthReady, useAuthUnreachable, useToken } from './context';
 import styles from './Home.module.css';
+import { NotFound } from './NotFound';
+import { Unreachable } from './Unreachable';
+
+/** /auctions/:id/pay is the payment page, a document of its own (brief 13 item 25): an SPA link
+ * that lands here loads it in full. nginx serves that document for a uuid only, so any other id
+ * is not found here instead of reloading forever. */
+export function PayDocument() {
+  const { id = '' } = useParams();
+  const isUuid = /^[0-9a-f-]{36}$/.test(id);
+  useEffect(() => {
+    if (isUuid) window.location.replace(window.location.href);
+  }, [isUuid]);
+  return isUuid ? null : <NotFound />;
+}
 
 /** No token: the server said there is no session (204, 401), or it could not be asked. */
 function SignedOut() {
   const location = useLocation();
   if (useAuthUnreachable()) return <Unreachable />;
   return <Navigate to="/sign-in" replace state={{ from: location.pathname + location.search }} />;
-}
-
-/** The load-time refresh hit a network error or a 5xx: the session may still be alive. */
-function Unreachable() {
-  const s = useStrings();
-  const { auth } = useApp();
-  const [trying, setTrying] = useState(false);
-  const retry = () => {
-    if (trying) return;
-    setTrying(true);
-    void auth.restoreOnLoad().finally(() => setTrying(false));
-  };
-  return (
-    <section>
-      <h1 className={styles.title}>{s.guards.unreachableTitle}</h1>
-      <p className={styles.lede}>{s.guards.unreachable}</p>
-      <button type="button" className={styles.button} onClick={retry} aria-disabled={trying}>
-        {trying ? s.common.trying : s.common.tryAgain}
-      </button>
-    </section>
-  );
 }
 
 export function RequireAuth() {

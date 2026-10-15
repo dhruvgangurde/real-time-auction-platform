@@ -27,7 +27,10 @@ export type NotificationType = (typeof TYPES)[number];
 
 const isType = (t: string): t is NotificationType => (TYPES as readonly string[]).includes(t);
 
-export type Row = { label: string; text: string; href: string | null };
+/** `document`: the link opens another document (the payment page), so it is a full load. */
+export type Row = { label: string; text: string; href: string | null; document: boolean };
+
+const PAYMENT_TYPES = new Set(['payment_due', 'payment_received', 'payment_failed']);
 
 export function rowText(n: NotificationItem, s: Catalogue): Row {
   const p = s.notificationsPage;
@@ -55,7 +58,9 @@ export function rowText(n: NotificationItem, s: Catalogue): Row {
   return {
     label: isType(n.type) ? p.labels[n.type] : p.labels.other,
     text: text || t.other(title) || t.otherNoTitle,
-    href: n.auction_id === null ? null : `/auctions/${n.auction_id}`,
+    // the payment types open the payment page (its own document); the rest the auction room
+    href: n.auction_id === null ? null : PAYMENT_TYPES.has(n.type) ? `/auctions/${n.auction_id}/pay` : `/auctions/${n.auction_id}`,
+    document: n.auction_id !== null && PAYMENT_TYPES.has(n.type),
   };
 }
 

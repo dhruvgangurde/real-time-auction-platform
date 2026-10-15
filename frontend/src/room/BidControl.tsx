@@ -127,9 +127,10 @@ export function BidControl({ state, session, profile, signedIn, startTimeMs, onR
     return (
       <div className={styles.panel}>
         <div className={styles.actions}>
-          <Link className={styles.btnPrimary} to={`/auctions/${state.auctionId}/pay`}>
+          {/* the payment page is its own document with its own CSP: a full load */}
+          <a className={styles.btnPrimary} href={`/auctions/${state.auctionId}/pay`}>
             {b.pay(formatINR(state.finalPrice ?? state.price ?? 0))}
-          </Link>
+          </a>
         </div>
       </div>
     );

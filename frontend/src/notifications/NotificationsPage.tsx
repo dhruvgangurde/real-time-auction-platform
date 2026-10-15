@@ -120,6 +120,20 @@ export function NotificationsPage() {
                   </p>
                   {row.href === null ? (
                     <p className={styles.text}>{row.text}</p>
+                  ) : row.document ? (
+                    // another document: mark it read first, then load it in full
+                    <a
+                      className={styles.text}
+                      href={row.href}
+                      onClick={(event) => {
+                        if (n.read) return;
+                        event.preventDefault();
+                        const href = row.href ?? '/';
+                        void mark.mutateAsync(n.id).finally(() => window.location.assign(href));
+                      }}
+                    >
+                      {row.text}
+                    </a>
                   ) : (
                     <Link className={styles.text} to={row.href} onClick={open}>
                       {row.text}

@@ -4,7 +4,7 @@
 import { createBrowserRouter } from 'react-router';
 
 import { takeTokenFromHash } from '../auth/token';
-import { Placeholder, RequireAuth, RequireRole } from './guards';
+import { PayDocument, Placeholder, RequireAuth, RequireRole } from './guards';
 import { Home } from './Home';
 import { NotFound } from './NotFound';
 import { Shell } from './Shell';
@@ -27,6 +27,7 @@ export const router = createBrowserRouter([
       { path: 'auctions', lazy: () => import('../discover/DiscoverPage') },
       { path: 'auctions/:id', lazy: () => import('../room/RoomPage') },
       { path: 'auctions/:id/bids', lazy: () => import('../room/BidHistory') },
+      { path: 'auctions/:id/pay', element: <PayDocument /> },
       { path: 'help', lazy: () => import('../help/HelpPage') },
       { path: 'help/:topic', lazy: () => import('../help/HelpPage') },
       {
@@ -35,7 +36,6 @@ export const router = createBrowserRouter([
           { path: 'account/*', element: <Placeholder /> },
           { path: 'watchlist', lazy: () => import('../watchlist/WatchlistPage') },
           { path: 'notifications', lazy: () => import('../notifications/NotificationsPage') },
-          { path: 'auctions/:id/pay', element: <Placeholder /> },
         ],
       },
       { element: <RequireRole role="admin" />, children: [{ path: 'admin/*', element: <Placeholder /> }] },
