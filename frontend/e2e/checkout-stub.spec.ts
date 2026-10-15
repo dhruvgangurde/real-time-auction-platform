@@ -42,11 +42,26 @@ async function signedIn(browser: Browser, who: Account, width = 1440) {
   return { ctx, page };
 }
 
-test("from the room's Pay: closing the window comes back to due; a failure inside it, then Try again, on the same order", async ({ browser, request }) => {
+// what only the buyer reads: a failed attempt and its retry
+const FAILURE = [p.failedTitle, p.failed, p.lastFailed, p.tryAgain, 'did not go through', 'attempt'];
+
+/** The seller's status (FR-69): who won, by name (BR-10), and whether the payment arrived; never the buyer's attempts. */
+async function sellerSees(browser: Browser, seller: Account, id: string, winner: Account, arrived: string | RegExp) {
+  const s = await signedIn(browser, seller);
+  await s.page.goto(`/auctions/${id}/pay`);
+  await expect(s.page.getByRole('heading', { name: p.statusTitle })).toBeVisible();
+  await expect(s.page.getByText(p.statusWon(winner.name, '₹9,500'), { exact: true })).toBeVisible();
+  await expect(s.page.getByText(arrived)).toBeVisible();
+  for (const text of FAILURE) await expect(s.page.getByText(text)).toHaveCount(0);
+  await expect(s.page.getByRole('button')).toHaveCount(0); // nothing to pay or retry
+  await s.ctx.close();
+}
+
+test("from the room's Pay: closing the window comes back to due; a failure inside it, then Try again, on the same order; the seller never sees the failure", async ({ browser, request }) => {
   test.skip(!reachable, GATEWAY);
   test.setTimeout(150_000);
   const title = `Rollei ${Math.random().toString(36).slice(2, 7)} 35`;
-  const { id, winner } = await wonAuction(request, title);
+  const { id, seller, winner } = await wonAuction(request, title);
   await waitForStatus(request, id, 'closed_sold', 60_000);
   const { ctx, page } = await signedIn(browser, winner);
   const violations = await watchViolations(page);
@@ -104,6 +119,9 @@ test("from the room's Pay: closing the window comes back to due; a failure insid
   await expect(pay).toBeVisible();
   expect(violations).toEqual([]);
   await ctx.close();
+
+  // the seller, with that failed attempt on record: awaiting, and no word of it
+  await sellerSees(browser, seller, id, winner, p.statusAwaiting);
 });
 
 test('a signed checkout callback leaves it confirming until a signed webhook pays it; the receipt; the seller sees it paid; the other bidder is refused', async ({ browser, request }) => {
@@ -140,16 +158,12 @@ test('a signed checkout callback leaves it confirming until a signed webhook pay
   expect(violations).toEqual([]);
   await ctx.close();
 
-  // the seller reads the status (FR-69); the other bidder is refused (FR-65)
-  for (const [who, line] of [
-    [seller, new RegExp(`^${winner.name} paid ₹9,500 on `)],
-    [other, new RegExp(`^${p.notWinner}$`)],
-  ] as const) {
-    const s = await signedIn(browser, who);
-    await s.page.goto(`/auctions/${id}/pay`);
-    await expect(s.page.getByText(line)).toBeVisible();
-    await s.ctx.close();
-  }
+  // the seller reads it paid (FR-69); the other bidder is refused (FR-65)
+  await sellerSees(browser, seller, id, winner, /^Paid on /);
+  const o = await signedIn(browser, other);
+  await o.page.goto(`/auctions/${id}/pay`);
+  await expect(o.page.getByText(p.notWinner, { exact: true })).toBeVisible();
+  await o.ctx.close();
 });
 
 test('with no order: a signed-out visit comes back through sign-in, refused starts say why, the script that does not load, no sale; 390, dark, keyboard', async ({ browser, request }) => {

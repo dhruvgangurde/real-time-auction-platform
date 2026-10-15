@@ -16,6 +16,7 @@ import { payEnIN as p } from '../strings/pay-en-IN';
 import styles from './pay.module.css';
 import { payReducer, type PayState } from './flow';
 import { checkoutIds, checkoutOptions, createLoader, type RazorpayCtor } from './razorpay';
+import { sellerLines } from './seller';
 
 const loadCheckout = createLoader(document, window as { Razorpay?: RazorpayCtor });
 const POLL_FAST_MS = 2_000;
@@ -196,19 +197,18 @@ export function PayPage() {
     case 'noSale':
       panel = <p className={styles.text}>{p.noSale}</p>;
       break;
-    case 'status': {
-      const st = state.settlement;
-      const name = st.winner?.full_name ?? '';
-      const amount = st.final_price === null ? '' : formatINR(st.final_price);
+    case 'status':
       panel = (
         <>
           <h2 className={styles.head}>{p.statusTitle}</h2>
-          <p className={styles.text}>{st.status === 'paid' && st.paid_at_ms !== null ? p.statusPaid(name, amount, at(st.paid_at_ms)) : p.statusDue(name, amount)}</p>
-          {st.status !== 'paid' && st.payment?.status === 'failed' ? <p className={styles.quiet}>{p.statusLastFailed}</p> : null}
+          {sellerLines(state.settlement, p, at).map((line, i) => (
+            <p key={line} className={i === 0 ? styles.text : `${styles.quiet} tabular`}>
+              {line}
+            </p>
+          ))}
         </>
       );
       break;
-    }
     case 'due':
     case 'opening':
     case 'failed': {

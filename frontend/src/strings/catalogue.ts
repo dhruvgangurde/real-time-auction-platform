@@ -602,9 +602,8 @@ export type PayCatalogue = {
   notFound: string;
   noSale: string;
   statusTitle: string;
-  statusDue: (name: string, amount: string) => string;
-  statusPaid: (name: string, amount: string, time: string) => string;
-  statusLastFailed: string;
+  statusWon: (name: string, amount: string) => string;
+  statusAwaiting: string;
   signInTitle: string;
   signInNote: string;
   signIn: string;

@@ -371,7 +371,10 @@ test('Checkout: due, its refusals, opening, the window, closed, failed, last att
   await signInUi(sp, seller);
   await sp.goto(PAY);
   await expect(sp.getByRole('heading', { name: p.statusTitle })).toBeVisible();
-  await shoot(sp, '37-pay-seller-awaiting', 'light', { note: 'the seller’s read-only status (FR-69)' });
+  await expect(sp.getByText(p.statusWon(winner.name, '₹9,500'), { exact: true })).toBeVisible();
+  await expect(sp.getByText(p.statusAwaiting, { exact: true })).toBeVisible();
+  await expect(sp.getByText(p.lastFailed)).toHaveCount(0);
+  await shoot(sp, '37-pay-seller-awaiting', 'light', { note: 'the seller’s read-only status (FR-69): who won (BR-10), not paid yet; the buyer’s failed attempt is not shown' });
 
   await pay.click();
   await expect.poll(() => opened(page)).toBe(1); // a new document since the reload
@@ -392,8 +395,9 @@ test('Checkout: due, its refusals, opening, the window, closed, failed, last att
   await ctx.close();
 
   await sp.reload();
-  await expect(sp.getByText(new RegExp(`^${winner.name} paid ₹9,500 on `))).toBeVisible();
-  await shoot(sp, '38-pay-seller-paid', 'light');
+  await expect(sp.getByText(/^Paid on /)).toBeVisible();
+  await expect(sp.getByText(p.statusWon(winner.name, '₹9,500'), { exact: true })).toBeVisible();
+  await shoot(sp, '38-pay-seller-paid', 'light', { note: 'who won and when it was paid' });
   await sp.goto(`/auctions/${unsold}/pay`);
   await expect(sp.getByText(p.noSale)).toBeVisible();
   await shoot(sp, '36-pay-no-sale', 'light');
