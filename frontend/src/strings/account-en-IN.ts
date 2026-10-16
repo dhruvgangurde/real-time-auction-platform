@@ -27,4 +27,16 @@ export const accountEnIN = guardSentences({
     sent: (email) => `Sent to ${email}. The link works for an hour.`,
   },
   signOut: { title: 'Sign out', note: 'Signs out this browser. Other devices stay signed in.' },
+  bids: {
+    title: 'Your bids',
+    lede: 'Every bid you have placed, newest first, those your maximum placed for you included.',
+    auction: 'Auction',
+    bid: (n, amount) => `Bid №${n}, ${amount}`,
+    byMaximum: 'placed by your maximum',
+    on: (time) => `on ${time}`,
+    empty: 'You have not bid yet.',
+    find: 'Find an auction',
+    more: 'Show more',
+    back: 'Your account',
+  },
 } satisfies AccountCatalogue);

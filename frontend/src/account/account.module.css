@@ -49,6 +49,22 @@
   gap: 10px;
 }
 
+.bids {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.bid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
 @media (max-width: 700px) {
   .facts > div {
     grid-template-columns: minmax(0, 1fr);

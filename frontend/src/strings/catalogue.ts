@@ -622,6 +622,18 @@ export type AccountCatalogue = {
     sent: (email: string) => string;
   };
   signOut: { title: string; note: string };
+  bids: {
+    title: string;
+    lede: string;
+    auction: string;
+    bid: (n: number, amount: string) => string;
+    byMaximum: string;
+    on: (time: string) => string;
+    empty: string;
+    find: string;
+    more: string;
+    back: string;
+  };
 };
 
 /** The administrator's strings (brief 9.9, UI-8), imported only by the admin chunk (strings/

@@ -13,7 +13,7 @@ import { Shell } from './Shell';
 // React.lazy inside RequireRole, not a route `lazy`: the router runs a matched route's `lazy`
 // before the guard renders, so a non-admin would download the admin chunk (slice 4 plan)
 const AdminArea = lazy(() => import('../admin/AdminArea'));
-const account = (name: 'Profile') => () => import('../account/screens').then((m) => ({ Component: m[name] }));
+const account = (name: 'Profile' | 'MyBids') => () => import('../account/screens').then((m) => ({ Component: m[name] }));
 const sell = (name: 'Dashboard' | 'NewListing' | 'Listing') => () => import('../sell/screens').then((m) => ({ Component: m[name] }));
 const auth = (name: 'Register' | 'CheckYourEmail' | 'VerifyEmail' | 'SignIn' | 'ForgotPassword' | 'ResetPassword') => () =>
   import('../auth/screens').then((m) => ({ Component: m[name] }));
@@ -40,6 +40,7 @@ export const router = createBrowserRouter([
         element: <RequireAuth />,
         children: [
           { path: 'account', lazy: account('Profile') },
+          { path: 'account/bids', lazy: account('MyBids') },
           { path: 'watchlist', lazy: () => import('../watchlist/WatchlistPage') },
           { path: 'notifications', lazy: () => import('../notifications/NotificationsPage') },
         ],

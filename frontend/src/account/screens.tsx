@@ -3,19 +3,22 @@
 // by role (at 390 the header has room for icons only), a new password through the reset email
 // (FR-8: it signs out every session, this one included, which the page says before sending), and
 // sign out for this browser at every width. Email choices stay on the notifications page.
-import { useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 
 import { ApiError } from '../api/client';
-import { useApp, useMe } from '../app/context';
+import { useApp, useMe, useViewerId } from '../app/context';
 import { FormError } from '../auth/Form';
 import { SignOutButton } from '../auth/screens';
 import styles from '../discover/discover.module.css';
+import { formatDay, formatLocal } from '../lib/clock';
+import { formatINR } from '../lib/money';
 import { accountEnIN as t } from '../strings/account-en-IN';
-import { useStrings } from '../strings/catalogue';
+import { errorMessage, useStrings } from '../strings/catalogue';
 import own from './account.module.css';
-import { updateName } from './api';
+import { myBids, updateName } from './api';
+import { limiter } from './limit';
 import { accountLinks, nameProblem, type AccountLink } from './profile';
 
 const HREF: Record<AccountLink, string> = { bids: '/account/bids', listings: '/sell', admin: '/admin', email: '/notifications#email-title' };
@@ -127,6 +130,97 @@ function NewPassword({ email }: { email: string }) {
         ) : null}
       </p>
     </>
+  );
+}
+
+// the auctions' titles, from their public detail: at most four at a time (Q3); GET /auctions/{id}
+// has no rate limit, and a failed lookup says "Auction" with the link, never an error row
+const lookup = limiter(4);
+const at = (ms: number) => `${formatDay(ms)}, ${formatLocal(ms)}`;
+
+/** One auction's title, read once and shared by every row of it (one cache entry per auction). */
+function AuctionTitle({ id }: { id: string }) {
+  const { api } = useApp();
+  const detail = useQuery({ queryKey: ['bid-auction', id], queryFn: () => lookup(() => api.detail(id)), staleTime: 300_000, retry: false });
+  return <>{detail.data?.title ?? t.bids.auction}</>;
+}
+
+/** /account/bids (FR-10) */
+export function MyBids() {
+  const s = useStrings();
+  const b = t.bids;
+  const { api } = useApp();
+  const viewer = useViewerId();
+  const bids = useInfiniteQuery({
+    queryKey: ['my-bids', viewer],
+    queryFn: ({ pageParam }) => myBids(api, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+  const items = bids.data?.pages.flatMap((p) => p.items) ?? [];
+
+  let body;
+  if (bids.isError && bids.data === undefined) {
+    body = (
+      <div className={styles.empty} role="alert">
+        <p className={styles.emptyHead}>{errorMessage(s, failure(bids.error).code)}</p>
+        <button type="button" className={styles.btnQuiet} onClick={() => void bids.refetch()}>
+          {s.common.tryAgain}
+        </button>
+      </div>
+    );
+  } else if (bids.data === undefined) {
+    body = (
+      <p className={styles.hint} role="status">
+        {s.common.loading}
+      </p>
+    );
+  } else if (items.length === 0) {
+    body = (
+      <div className={styles.empty}>
+        <p className={styles.emptyHead}>{b.empty}</p>
+        <Link className={styles.btnQuiet} to="/auctions">
+          {b.find}
+        </Link>
+      </div>
+    );
+  } else {
+    body = (
+      <>
+        <ul className={own.bids}>
+          {items.map((x) => (
+            <li key={x.id} className={own.bid}>
+              <Link className={styles.link} to={`/auctions/${x.auction_id}`}>
+                <AuctionTitle id={x.auction_id} />
+              </Link>
+              <span className="tabular">{b.bid(x.sequence_no, formatINR(x.amount))}</span>
+              {x.bid_type === 'automatic' ? <span className={styles.hint}>{b.byMaximum}</span> : null}
+              <span className={`${styles.hint} tabular`}>{b.on(at(x.created_at_ms))}</span>
+            </li>
+          ))}
+        </ul>
+        {bids.hasNextPage ? (
+          <p className={own.actions}>
+            <button type="button" className={styles.btnQuiet} onClick={() => void bids.fetchNextPage()} aria-disabled={bids.isFetchingNextPage}>
+              {bids.isFetchingNextPage ? s.common.loading : b.more}
+            </button>
+          </p>
+        ) : null}
+      </>
+    );
+  }
+
+  return (
+    <section className={styles.page}>
+      <p>
+        <Link className={styles.link} to="/account">
+          {b.back}
+        </Link>
+      </p>
+      <h1 className={styles.title}>{b.title}</h1>
+      <p className={styles.lede}>{b.lede}</p>
+      <div className={own.block}>{body}</div>
+    </section>
   );
 }
 
