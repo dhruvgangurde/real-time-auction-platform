@@ -70,6 +70,8 @@ test('a draft from the form, refused fields first; photos refused before and by 
   await expect(page.getByText(t.photos.failed('big.jpg', enIN.errors.IMAGE_TOO_LARGE))).toBeVisible();
   await expect(page.getByText(t.photos.failed('note.txt', enIN.errors.UNSUPPORTED_IMAGE))).toBeVisible();
   await expect(page.getByText(t.photos.failed('fake.jpg', enIN.errors.UNSUPPORTED_IMAGE))).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: t.photos.dismissLabel('big.jpg') }).click();
+  await expect(page.getByText(t.photos.failed('big.jpg', enIN.errors.IMAGE_TOO_LARGE))).toHaveCount(0);
   await page.getByLabel(t.photos.add).setInputFiles(IMAGE);
   await expect(page.getByAltText(t.photos.alt(1, 1))).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(t.photos.coverTag, { exact: true })).toBeVisible();

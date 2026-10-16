@@ -82,6 +82,8 @@ export const sellerEnIN = guardSentences({
     waiting: (name) => `${name}: waiting…`,
     uploading: (name) => `Uploading ${name}…`,
     failed: (name, why) => `${name}: ${why}`,
+    dismiss: 'Dismiss',
+    dismissLabel: (name) => `Dismiss ${name}`,
   },
   actions: {
     publish: 'Publish',

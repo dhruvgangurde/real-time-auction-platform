@@ -687,6 +687,8 @@ export type SellerCatalogue = {
     waiting: (name: string) => string;
     uploading: (name: string) => string;
     failed: (name: string, why: string) => string;
+    dismiss: string;
+    dismissLabel: (name: string) => string;
   };
   actions: {
     publish: string;

@@ -2,7 +2,7 @@
 // first being the cover (there is no reorder, gap S2), added one at a time with a local preview
 // (a blob: URL, allowed by img-src) and checked first as the server would, removed after a
 // confirmation. A listing that left draft keeps one; the server still decides everything.
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useReducer, useRef, useState } from 'react';
 
 import { ApiError } from '../api/client';
 import { useApp } from '../app/context';
@@ -12,11 +12,10 @@ import { ConfirmDialog } from '../room/ConfirmDialog';
 import { errorMessage, useStrings } from '../strings/catalogue';
 import { sellerEnIN as t } from '../strings/seller-en-IN';
 import { deleteImage, uploadImage } from './api';
-import { TYPES, precheck } from './images';
+import { TYPES, precheck, uploads, type Upload } from './images';
 import type { Editable } from './listing';
 import own from './sell.module.css';
 
-type Upload = { key: string; file: File; preview: string; state: 'waiting' | 'uploading' | 'failed'; code: string | null };
 const codeOf = (e: unknown) => (e instanceof ApiError ? e.code : 'SERVICE_UNAVAILABLE');
 
 export function Photos({
@@ -37,7 +36,7 @@ export function Photos({
   const { api } = useApp();
   const inputId = useId();
   const sorted = [...images].sort((a, b) => a.position - b.position || a.id - b.id);
-  const [uploads, setUploads] = useState<Upload[]>([]);
+  const [tiles, dispatch] = useReducer(uploads, []);
   const [removing, setRemoving] = useState<number | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const previews = useRef(new Set<string>());
@@ -45,10 +44,9 @@ export function Photos({
     const urls = previews.current;
     return () => urls.forEach((url) => URL.revokeObjectURL(url));
   }, []);
-  const busy = uploads.some((u) => u.state !== 'failed');
+  const busy = tiles.some((u) => u.state !== 'failed');
   const changeable = can !== 'none';
   const keepsOne = status !== 'draft' && sorted.length <= 1; // FR-13: it left draft with a photo
-  const update = (key: string, change: Partial<Upload>) => setUploads((list) => list.map((u) => (u.key === key ? { ...u, ...change } : u)));
 
   async function add(files: File[]) {
     let attached = sorted.length;
@@ -59,16 +57,17 @@ export function Photos({
       previews.current.add(preview);
       return { key: crypto.randomUUID(), file, preview, state: code === null ? 'waiting' : 'failed', code };
     });
-    setUploads(next);
+    dispatch({ type: 'add', uploads: next });
     for (const upload of next) {
       if (upload.state !== 'waiting') continue;
-      update(upload.key, { state: 'uploading' });
+      dispatch({ type: 'uploading', key: upload.key });
       try {
         await uploadImage(api, id, upload.file);
         await onChanged();
-        setUploads((list) => list.filter((u) => u.key !== upload.key));
+        dispatch({ type: 'done', key: upload.key });
+        URL.revokeObjectURL(upload.preview);
       } catch (e) {
-        update(upload.key, { state: 'failed', code: codeOf(e) });
+        dispatch({ type: 'failed', key: upload.key, code: codeOf(e) });
       }
     }
   }
@@ -112,13 +111,26 @@ export function Photos({
             ) : null}
           </li>
         ))}
-        {uploads.map((u) => (
+        {tiles.map((u) => (
           <li key={u.key} className={own.thumb} data-state={u.state}>
             {/* a refused file may not be an image at all: no preview for it */}
             {u.state === 'failed' ? <div className={own.blank} /> : <img src={u.preview} alt={ph.preview(u.file.name)} width={160} height={120} />}
             <span className={u.state === 'failed' ? styles.fieldError : styles.hint} role={u.state === 'failed' ? 'alert' : 'status'}>
               {u.state === 'failed' ? ph.failed(u.file.name, errorMessage(s, u.code ?? 'INTERNAL_ERROR')) : u.state === 'uploading' ? ph.uploading(u.file.name) : ph.waiting(u.file.name)}
             </span>
+            {u.state === 'failed' ? (
+              <button
+                type="button"
+                className={styles.btnQuiet}
+                aria-label={ph.dismissLabel(u.file.name)}
+                onClick={() => {
+                  URL.revokeObjectURL(u.preview);
+                  dispatch({ type: 'dismiss', key: u.key });
+                }}
+              >
+                {ph.dismiss}
+              </button>
+            ) : null}
           </li>
         ))}
       </ul>
