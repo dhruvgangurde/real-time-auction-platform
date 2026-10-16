@@ -27,6 +27,20 @@ function userPage(v: unknown): UserPage | null {
   return items.every((u): u is AdminUser => u !== null) ? { items, page: p.page, page_size: p.page_size, has_more: p.has_more } : null;
 }
 
+/** FR-76: suspension ends every session of the account; reinstatement lets it sign in again. */
+export async function suspendUser(api: Api, id: string, reason: string): Promise<void> {
+  await api.request('POST', `/admin/users/${id}/suspend`, { auth: 'required', body: { reason } });
+}
+
+export async function reinstateUser(api: Api, id: string, reason: string): Promise<void> {
+  await api.request('POST', `/admin/users/${id}/reinstate`, { auth: 'required', body: { reason } });
+}
+
+/** A revoke ends every session of the account, so it applies at once (decisions 2026-10-13). */
+export async function setRole(api: Api, id: string, role: Role, grant: boolean, reason: string): Promise<void> {
+  await api.request(grant ? 'PUT' : 'DELETE', `/admin/users/${id}/roles/${role}`, { auth: 'required', body: { reason } });
+}
+
 /** FR-76: by name or email, role and status; newest first. */
 export async function listUsers(api: Api, query: URLSearchParams): Promise<UserPage> {
   return parsed(await api.request('GET', `/admin/users?${query}`, { auth: 'required' }), userPage);

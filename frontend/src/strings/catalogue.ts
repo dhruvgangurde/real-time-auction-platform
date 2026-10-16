@@ -625,6 +625,33 @@ export type AdminCatalogue = {
     next: string;
     page: (n: number) => string;
   };
+  people: {
+    roleNoun: Record<'seller' | 'admin', string>;
+    suspend: string;
+    reinstate: string;
+    grant: (role: string) => string;
+    revoke: (role: string) => string;
+    actionFor: (action: string, name: string) => string;
+    suspendTitle: (name: string, email: string) => string;
+    suspendBody: string;
+    reinstateTitle: (name: string, email: string) => string;
+    reinstateBody: string;
+    grantTitle: (role: string, name: string, email: string) => string;
+    grantBody: string;
+    revokeTitle: (role: string, name: string, email: string) => string;
+    revokeBody: string;
+    keep: string;
+    suspended: (name: string) => string;
+    reinstated: (name: string) => string;
+    granted: (role: string, name: string) => string;
+    revoked: (role: string, name: string) => string;
+  };
+  access: {
+    title: string;
+    body: string;
+    retry: string;
+    checking: string;
+  };
   room: {
     heading: string;
     note: string;
