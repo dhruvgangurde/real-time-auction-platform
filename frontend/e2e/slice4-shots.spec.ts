@@ -8,10 +8,12 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
+import { accountEnIN } from '../src/strings/account-en-IN';
+import { adminEnIN } from '../src/strings/admin-en-IN';
 import { enIN } from '../src/strings/en-IN';
 import { sellerEnIN as t } from '../src/strings/seller-en-IN';
 import { apiReachesRazorpay, newPaymentId, sendWebhook } from './fixtures/pay';
-import { API, IMAGE, bearer, newAccount, newAuction, restBid, signInUi, waitForStatus, type Account } from './fixtures/stack';
+import { API, IMAGE, bearer, grantRole, newAccount, newAuction, restBid, restProxy, signInUi, waitForStatus, type Account } from './fixtures/stack';
 
 const OUT = fileURLToPath(new URL('../../design/shots/06-slice4', import.meta.url));
 mkdirSync(OUT, { recursive: true });
@@ -201,15 +203,106 @@ test('Seller: dashboard, the form and its errors, photos, publish, every status,
   }
 });
 
+test('Admin and account: users, a suspension, denied, access changed, the audit diff, categories, the room panel; the account, a new password, your bids', async ({ browser, request }) => {
+  test.setTimeout(300_000);
+  const admin = await newAccount(request, 'admin', 'admin');
+  const seller = await newAccount(request, 'seller', 'seller');
+  const target = await newAccount(request, 'target');
+  const bidder = await newAccount(request, 'bidder');
+  const k = tag();
+  const listed = await newAuction(request, seller, { title: `Audited ${k} Pentax`, startInS: 2, endInS: 1800, reservePrice: 1025000 });
+  await request.patch(`${API}/auctions/${listed}`, { headers: bearer(seller), data: { reserve_price: 1100000 } });
+  const other = await newAuction(request, seller, { title: `Olympus ${k} XA2`, startInS: 2, endInS: 1800, reservePrice: null });
+  for (const id of [listed, other]) await waitForStatus(request, id, 'live');
+  await (await restBid(request, bidder, listed, 900000)).json();
+  await (await restProxy(request, bidder, listed, 1234567)).json();
+  await (await restBid(request, target, listed, 950000)).json(); // the maximum answers: an automatic bid
+  await (await restBid(request, bidder, other, 900000)).json();
+
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await signInUi(page, admin);
+  await page.goto(`/admin/users?q=e2e-target`);
+  await expect(page.locator('main li').first()).toBeVisible();
+  await shoot(page, '22-admin-users', 'light', { note: 'search and filters in the URL; each action offered by the account’s state' });
+  await page.getByRole('button', { name: adminEnIN.people.actionFor(adminEnIN.people.suspend, target.name), exact: true }).first().click();
+  await page.getByRole('dialog').getByLabel(adminEnIN.room.reasonLabel).fill('shot: shill bidding');
+  await shoot(page, '23-admin-suspend-confirm', 'light', { note: 'names the person; a reason is required (UI-8, BR-12)', viewport: true });
+  await page.getByRole('button', { name: adminEnIN.people.keep }).click();
+  await page.goto(`/admin/audit?type=auction&id=${listed}`);
+  await expect(page.getByText('auction updated')).toBeVisible();
+  await shoot(page, '26-admin-audit', 'light', { note: 'before and after as a diff; the reserve shown as hidden (Q2)' });
+  await page.goto('/admin/categories');
+  await expect(page.getByRole('button', { name: adminEnIN.categories.editLabel('Electronics') })).toBeVisible();
+  await shoot(page, '27-admin-categories', 'light');
+  await page.getByRole('button', { name: adminEnIN.categories.removeLabel('Electronics'), exact: true }).click();
+  await page.getByRole('dialog').getByLabel(adminEnIN.room.reasonLabel).fill('shot: in use');
+  await page.getByRole('dialog').getByRole('button', { name: adminEnIN.categories.remove }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+  await shoot(page, '28-admin-category-in-use', 'light', { note: 'CATEGORY_IN_USE in the code’s words', viewport: true });
+  await page.getByRole('button', { name: adminEnIN.categories.keep }).click();
+  await page.goto(`/auctions/${other}`);
+  await page.getByRole('button', { name: adminEnIN.room.forceClose, exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await shoot(page, '29-room-admin-force-close', 'light', { note: 'in the admin chunk, loaded for administrators only; names the lot', viewport: true });
+  await page.getByRole('button', { name: adminEnIN.room.keepOpen }).click();
+  await ctx.close();
+
+  const dark = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' });
+  const dp = await dark.newPage();
+  await signInUi(dp, admin);
+  await dp.goto(`/admin/users?q=e2e-target`);
+  await expect(dp.locator('main li').first()).toBeVisible();
+  await shoot(dp, '22-admin-users', 'dark');
+  await dp.goto(`/admin/audit?type=auction&id=${listed}`);
+  await expect(dp.getByText('auction updated')).toBeVisible();
+  await shoot(dp, '26-admin-audit', 'dark');
+  await dark.close();
+
+  // a bidder: denied in place; a role granted mid-session: access changed (the real 403)
+  const bp = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  await signInUi(bp, bidder);
+  await bp.goto('/admin');
+  await expect(bp.getByRole('heading', { name: enIN.guards.deniedTitle })).toBeVisible();
+  await shoot(bp, '24-admin-access-denied', 'light', { note: 'in place, no redirect, no admin file downloaded' });
+  const promoted = await newAccount(request, 'promoted');
+  const pp = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  await signInUi(pp, promoted);
+  grantRole(promoted.email, 'admin');
+  await pp.waitForTimeout(61_000); // the cached profile goes stale; the token still lacks the role
+  await pp.evaluate(() => {
+    history.pushState({}, '', '/admin/users');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(pp.getByText(adminEnIN.access.title)).toBeVisible({ timeout: 15_000 });
+  await shoot(pp, '25-admin-access-changed', 'light', { note: 'a role granted after sign-in: the API answered 403; Check again renews the token' });
+
+  // the account
+  await bp.goto('/account');
+  await expect(bp.getByRole('heading', { name: accountEnIN.title, level: 1 })).toBeVisible();
+  await shoot(bp, '30-account', 'light', { note: 'the name; email, status and roles read-only (FR-9); no avatar (C1)' });
+  await bp.getByRole('button', { name: accountEnIN.password.send }).click();
+  await expect(bp.getByText(accountEnIN.password.sent(bidder.email))).toBeVisible();
+  await shoot(bp, '31-account-password-sent', 'light', { note: 'said before sending: it signs you out everywhere, this tab included (Q7)' });
+  await bp.goto('/account/bids');
+  await expect(bp.getByRole('link', { name: `Audited ${k} Pentax` }).first()).toBeVisible();
+  await shoot(bp, '32-account-bids', 'light', { note: 'each auction named from its detail, four lookups at a time (Q3)' });
+  const bd = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' })).newPage();
+  await signInUi(bd, target);
+  await bd.goto('/account');
+  await expect(bd.getByRole('heading', { name: accountEnIN.title, level: 1 })).toBeVisible();
+  await shoot(bd, '30-account', 'dark');
+});
+
 test.afterAll(() => {
   rows.sort((a, b) => a.state.localeCompare(b.state) || a.file.localeCompare(b.file));
   const esc = (s: string) => s.replace(/\|/g, '\\|').trim();
   const lines = [
     '# 06-slice4 shots',
     '',
-    'The seller’s screens and the paid room as built (`frontend/src/sell/`, `room/BidControl.tsx`), rendered from real state on 8011 by `frontend/e2e/slice4-shots.spec.ts`. Every frame is a real state driven through the API and the UI; only the uploading frame routes a call (the upload held 4 s). PNGs are local (`design/` is git-ignored); re-make them with `cd frontend && npm run e2e -- e2e/slice4-shots.spec.ts`.',
+    'The seller’s screens, the paid room, the administration and the account as built (`frontend/src/sell/`, `admin/`, `account/`, `room/BidControl.tsx`), rendered from real state on 8011 by `frontend/e2e/slice4-shots.spec.ts`. Every frame is a real state driven through the API and the UI; only the uploading frame routes a call (the upload held 4 s), and the access-changed frame is the real 403 after a role granted mid-session. PNGs are local (`design/` is git-ignored); re-make them with `cd frontend && npm run e2e -- e2e/slice4-shots.spec.ts`.',
     '',
-    'Light at 1440 and 390 for every state; the dashboard and the sold listing also in dark.',
+    'Light at 1440 and 390 for every state; the dashboard, the sold listing, the users list, the audit log and the account also in dark.',
     '',
     '| State | File |',
     '|---|---|',
@@ -217,7 +310,8 @@ test.afterAll(() => {
     '',
     '## Not shot here',
     '',
-    '- **Admin and account screens**: slice 4b.',
+    '- **LAST_ADMIN**: the e2e data has many active administrators, so the last one cannot be suspended or demoted here; the refusal is the server’s, shown in the code’s words like CANNOT_TARGET_SELF and NOT_SUSPENDED (`e2e/admin.spec.ts` checks NOT_SUSPENDED).',
+    '- **The admin overview** (FR-81) and **Purchases**: not built; no backend source (gaps A1 and G9).',
     ...notShot,
     '',
   ];
