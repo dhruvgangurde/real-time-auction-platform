@@ -23,6 +23,7 @@ export const enIN = guardSentences({
     notificationsLabel: (n) => (n > 0 ? `Notifications, ${n > 99 ? 'more than 99' : n} unread` : 'Notifications'),
     account: 'Your account',
     sell: 'Sell',
+    admin: 'Admin',
   },
   home: {
     title: 'Real-time auctions, decided in order',

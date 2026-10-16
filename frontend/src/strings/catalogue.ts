@@ -93,6 +93,7 @@ export type Catalogue = {
     notificationsLabel: (n: number) => string;
     account: string;
     sell: string;
+    admin: string;
   };
   home: {
     title: string;
@@ -600,6 +601,30 @@ export type PayCatalogue = {
 /** The administrator's strings (brief 9.9, UI-8), imported only by the admin chunk (strings/
  * admin-en-IN.ts): a non-admin never downloads them. Error codes still come from Catalogue. */
 export type AdminCatalogue = {
+  area: {
+    title: string;
+    nav: string;
+    users: string;
+    audit: string;
+    categories: string;
+  };
+  users: {
+    title: string;
+    q: string;
+    role: string;
+    anyRole: string;
+    status: string;
+    anyStatus: string;
+    search: string;
+    roles: Record<'bidder' | 'seller' | 'admin', string>;
+    statuses: Record<'pending_verification' | 'active' | 'suspended', string>;
+    you: string;
+    joined: (day: string) => string;
+    empty: string;
+    previous: string;
+    next: string;
+    page: (n: number) => string;
+  };
   room: {
     heading: string;
     note: string;

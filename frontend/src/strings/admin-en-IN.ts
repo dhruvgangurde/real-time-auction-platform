@@ -2,6 +2,30 @@
 import { guardSentences, type AdminCatalogue } from './catalogue';
 
 export const adminEnIN = guardSentences({
+  area: {
+    title: 'Administration',
+    nav: 'Administration sections',
+    users: 'Users',
+    audit: 'Audit log',
+    categories: 'Categories',
+  },
+  users: {
+    title: 'Users',
+    q: 'Name or email',
+    role: 'Role',
+    anyRole: 'Any role',
+    status: 'Status',
+    anyStatus: 'Any status',
+    search: 'Search',
+    roles: { bidder: 'Bidder', seller: 'Seller', admin: 'Administrator' },
+    statuses: { pending_verification: 'Not verified', active: 'Active', suspended: 'Suspended' },
+    you: '(you)',
+    joined: (day) => `Joined ${day}`,
+    empty: 'No one matches these filters.',
+    previous: 'Previous page',
+    next: 'Next page',
+    page: (n) => `Page ${n}`,
+  },
   room: {
     heading: 'Administration',
     note: 'Every action needs a reason and is written to the audit log.',

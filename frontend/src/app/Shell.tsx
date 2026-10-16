@@ -80,6 +80,11 @@ export function Shell() {
                     <span className={styles.deskOnly}>{s.nav.sell}</span>
                   </NavLink>
                 ) : null}
+                {me.data?.roles.includes('admin') ? (
+                  <NavLink className={() => styles.deskOnly} to="/admin">
+                    {s.nav.admin}
+                  </NavLink>
+                ) : null}
                 <NavLink className={() => styles.account} to="/account">
                   {me.data?.full_name ?? s.nav.account}
                 </NavLink>

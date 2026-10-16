@@ -1,6 +1,7 @@
 // Routes and their chunks (brief 11.5): the shell, Home and NotFound are in the entry; every
 // other screen loads through a dynamic import, so the entry never holds room, socket or reducer
 // code (src/app/chunks.test.ts). The token loaders run before anything renders (item 23).
+import { lazy } from 'react';
 import { createBrowserRouter } from 'react-router';
 
 import { takeTokenFromHash } from '../auth/token';
@@ -9,6 +10,9 @@ import { Home } from './Home';
 import { NotFound } from './NotFound';
 import { Shell } from './Shell';
 
+// React.lazy inside RequireRole, not a route `lazy`: the router runs a matched route's `lazy`
+// before the guard renders, so a non-admin would download the admin chunk (slice 4 plan)
+const AdminArea = lazy(() => import('../admin/AdminArea'));
 const sell = (name: 'Dashboard' | 'NewListing' | 'Listing') => () => import('../sell/screens').then((m) => ({ Component: m[name] }));
 const auth = (name: 'Register' | 'CheckYourEmail' | 'VerifyEmail' | 'SignIn' | 'ForgotPassword' | 'ResetPassword') => () =>
   import('../auth/screens').then((m) => ({ Component: m[name] }));
@@ -39,7 +43,7 @@ export const router = createBrowserRouter([
           { path: 'notifications', lazy: () => import('../notifications/NotificationsPage') },
         ],
       },
-      { element: <RequireRole role="admin" />, children: [{ path: 'admin/*', element: <Placeholder /> }] },
+      { element: <RequireRole role="admin" />, children: [{ path: 'admin/*', element: <AdminArea /> }] },
       {
         element: <RequireRole role="seller" />,
         children: [
