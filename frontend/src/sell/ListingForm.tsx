@@ -134,8 +134,13 @@ export function ListingForm({
       setTimeout(() => form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0); // after the re-render
     };
     const values = read(form, initial);
-    // the server checks the start only when it changes (auctions.py update)
-    const found = validate(values, clock.now(), { checkStart: mode === 'create' || values.start !== initial.start });
+    // the server checks the start only when it changes (auctions.py update); times left alone are
+    // shown to the minute, so their order is the server's to check
+    const created = mode === 'create';
+    const found = validate(values, clock.now(), {
+      checkStart: created || values.start !== initial.start,
+      checkOrder: created || values.start !== initial.start || values.end !== initial.end,
+    });
     if (Object.keys(found).length > 0) {
       fail(found, new ApiError('VALIDATION_ERROR', '', 422));
       return;

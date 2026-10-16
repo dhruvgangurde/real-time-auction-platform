@@ -58,6 +58,12 @@ describe('validate', () => {
     expect(validate({ ...good, start: 'soon' }, NOW)).toEqual({ start: 'invalid' });
   });
 
+  test('an edit that leaves both times alone is not refused because the form shows them to the minute', () => {
+    const sameMinute = { ...good, start: local(NOW + 60_000), end: local(NOW + 60_000) }; // stored 30 s apart, say
+    expect(validate(sameMinute, NOW, { checkStart: false, checkOrder: false })).toEqual({});
+    expect(validate(sameMinute, NOW)).toEqual({ end: 'endBeforeStart' });
+  });
+
   test('soft close: whole seconds from 10 to 600', () => {
     for (const bad of ['9', '601', '1.5', 'abc']) {
       expect(validate({ ...good, threshold: bad, extension: bad }, NOW)).toEqual({ threshold: 'seconds', extension: 'seconds' });

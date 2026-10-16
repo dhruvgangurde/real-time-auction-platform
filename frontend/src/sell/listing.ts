@@ -57,7 +57,9 @@ const paise = (text: string) => parseRupees(text);
 const time = (local: string) => new Date(local).getTime();
 const rupees = (amount: number) => formatINR(amount).replace('₹', '');
 
-export function validate(v: ListingValues, nowMs: number, { checkStart = true } = {}): Problems {
+/** checkStart: the server checks the start only when it changes; checkOrder: the form shows stored
+ * times to the minute, so two it leaves alone may read as equal (the server checks the stored ones). */
+export function validate(v: ListingValues, nowMs: number, { checkStart = true, checkOrder = true } = {}): Problems {
   const p: Problems = {};
   if (v.title.trim() === '') p.title = 'required';
   if (v.description.trim() === '') p.description = 'required';
@@ -82,7 +84,7 @@ export function validate(v: ListingValues, nowMs: number, { checkStart = true } 
   else if (checkStart && from < nowMs) p.start = 'past';
   if (v.end === '') p.end = 'required';
   else if (Number.isNaN(to)) p.end = 'invalid';
-  else if (!Number.isNaN(from) && to <= from) p.end = 'endBeforeStart';
+  else if (checkOrder && !Number.isNaN(from) && to <= from) p.end = 'endBeforeStart';
 
   for (const name of ['threshold', 'extension'] as const) {
     const s = v[name].trim();
