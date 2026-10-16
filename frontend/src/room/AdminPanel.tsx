@@ -71,10 +71,10 @@ export function AdminPanel({ state }: { state: RoomState }) {
         </button>
       </div>
       {open === 'force' ? (
-        <ConfirmDialog title={a.forceTitle} body={forceBody} confirmLabel={a.forceClose} error={error} onClose={close} onConfirm={(r) => void run('force', r)} />
+        <ConfirmDialog title={a.forceTitle} body={forceBody} confirmLabel={a.forceClose} dismissLabel={a.keepOpen} reason={{ label: a.reasonLabel, note: a.reasonNote }} error={error} onClose={close} onConfirm={(r) => void run('force', r)} />
       ) : null}
       {open === 'cancel' ? (
-        <ConfirmDialog title={a.cancelTitle} body={cancelBody} confirmLabel={a.cancel} error={error} onClose={close} onConfirm={(r) => void run('cancel', r)} />
+        <ConfirmDialog title={a.cancelTitle} body={cancelBody} confirmLabel={a.cancel} dismissLabel={a.keepOpen} reason={{ label: a.reasonLabel, note: a.reasonNote }} error={error} onClose={close} onConfirm={(r) => void run('cancel', r)} />
       ) : null}
     </div>
   );
