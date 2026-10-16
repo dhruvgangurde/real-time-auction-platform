@@ -16,6 +16,7 @@ import { createListing, sellerAuctions, updateListing } from './api';
 import { sections } from './dashboard';
 import { EMPTY, editable, fromDetail, toCreate, toPatch } from './listing';
 import { ListingForm } from './ListingForm';
+import { Photos } from './Photos';
 import own from './sell.module.css';
 
 const SKELETONS = [0, 1, 2];
@@ -95,6 +96,7 @@ export function Listing() {
           {p.room}
         </Link>
       </p>
+      {mine ? <Photos id={id} images={d.images} status={d.status} can={can} onChanged={() => listing.refetch()} /> : null}
       {mine ? (
         <ListingForm
           key={version}

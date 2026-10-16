@@ -668,6 +668,25 @@ export type SellerCatalogue = {
     unchanged: string;
     notYours: string;
   };
+  photos: {
+    title: string;
+    cover: string;
+    none: string;
+    coverTag: string;
+    alt: (n: number, total: number) => string;
+    preview: (name: string) => string;
+    remove: string;
+    removeLabel: (n: number, total: number) => string;
+    removeTitle: (n: number, total: number) => string;
+    removeBody: string;
+    keep: string;
+    keepOne: string;
+    add: string;
+    addHint: string;
+    waiting: (name: string) => string;
+    uploading: (name: string) => string;
+    failed: (name: string, why: string) => string;
+  };
 };
 
 /**

@@ -22,6 +22,53 @@
   margin: 20px 0 4px;
 }
 
+/* ---- photos */
+.photos {
+  max-width: 720px;
+  margin-top: 32px;
+}
+
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+}
+
+.thumb {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  width: 160px;
+}
+
+.thumb img,
+.blank {
+  width: 160px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--paper-2);
+}
+
+.thumb[data-state='uploading'] img,
+.thumb[data-state='waiting'] img {
+  opacity: 0.6;
+}
+
+.tag {
+  font: var(--label);
+  color: var(--ink-2);
+}
+
+.file {
+  display: block;
+  max-width: 100%;
+  font: var(--ui-md);
+}
+
 /* ---- the listing form */
 .form {
   max-width: 720px;
