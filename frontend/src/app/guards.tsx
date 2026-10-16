@@ -71,14 +71,3 @@ export function RequireRole({ role }: { role: 'seller' | 'admin' }) {
   }
   return <Outlet />;
 }
-
-/** A screen of a later slice: says so instead of rendering nothing. */
-export function Placeholder() {
-  const s = useStrings();
-  return (
-    <section>
-      <h1 className={styles.title}>{s.placeholder.title}</h1>
-      <p className={styles.lede}>{s.placeholder.body}</p>
-    </section>
-  );
-}

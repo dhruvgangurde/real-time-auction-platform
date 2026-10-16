@@ -1,0 +1,56 @@
+/* the account pages (brief 9.10): what discover.module.css does not already give them */
+.block {
+  max-width: 720px;
+  margin-top: 36px;
+}
+
+.blockTitle {
+  font: 400 22px/28px var(--font-serif);
+  margin: 0 0 14px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin: 8px 0 0;
+}
+
+.facts {
+  margin: 24px 0 0;
+}
+
+.facts > div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.facts dt {
+  font: var(--label);
+  color: var(--ink-2);
+}
+
+.facts dd {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 700px) {
+  .facts > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

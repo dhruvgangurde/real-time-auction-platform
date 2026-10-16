@@ -5,6 +5,7 @@
 // the web service's log and no browser request carries them except the two auth request bodies.
 import { expect, test, type Page } from '@playwright/test';
 
+import { accountEnIN } from '../src/strings/account-en-IN';
 import { enIN } from '../src/strings/en-IN';
 import { API, mailToken, newAccount, watchTokenLeaks, webLogsSince } from './fixtures/stack';
 
@@ -96,7 +97,7 @@ test('RequireAuth redirects an anonymous visitor to sign in and back to the same
   await page.getByLabel(enIN.auth.signIn.password).fill(a.password);
   await page.getByRole('button', { name: enIN.auth.signIn.submit, exact: true }).click();
   await page.waitForURL(/\/account$/);
-  await expect(page.getByRole('heading', { name: enIN.placeholder.title })).toBeVisible();
+  await expect(page.getByRole('heading', { name: accountEnIN.title, level: 1 })).toBeVisible();
 });
 
 // Q1: a refresh that cannot reach the server (5xx) is not a sign-out; 401 still is
@@ -112,7 +113,7 @@ test('RequireAuth offers a retry when the load-time refresh fails with a 5xx, an
   // the server is back: the retry restores the session in place, still on the same URL
   await page.unroute('**/api/v1/auth/refresh');
   await page.getByRole('button', { name: enIN.common.tryAgain }).click();
-  await expect(page.getByRole('heading', { name: enIN.placeholder.title })).toBeVisible();
+  await expect(page.getByRole('heading', { name: accountEnIN.title, level: 1 })).toBeVisible();
   await expect(page).toHaveURL(/\/account$/);
 
   // a 401 says the session is gone: that is a sign-out, so sign in again

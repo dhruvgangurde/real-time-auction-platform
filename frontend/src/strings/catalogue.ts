@@ -474,10 +474,6 @@ export type Catalogue = {
     unreachableTitle: string;
     unreachable: string;
   };
-  placeholder: {
-    title: string;
-    body: string;
-  };
   help: {
     title: string;
     lede: string;
@@ -596,6 +592,36 @@ export type PayCatalogue = {
   signInNote: string;
   signIn: string;
   testMode: string;
+};
+
+/** The account pages' strings (brief 9.10; FR-9, FR-10), imported only by the account chunk
+ * (strings/account-en-IN.ts). Error codes still come from Catalogue. */
+export type AccountCatalogue = {
+  title: string;
+  profile: {
+    title: string;
+    name: string;
+    nameHint: string;
+    save: string;
+    saving: string;
+    saved: string;
+    email: string;
+    emailNote: string;
+    status: string;
+    roles: string;
+    statuses: Record<'pending_verification' | 'active' | 'suspended', string>;
+    roleNames: Record<'bidder' | 'seller' | 'admin', string>;
+    problems: Record<'required' | 'long', string>;
+  };
+  links: { title: string } & Record<'bids' | 'listings' | 'admin' | 'email', string>;
+  password: {
+    title: string;
+    note: string;
+    send: string;
+    sending: string;
+    sent: (email: string) => string;
+  };
+  signOut: { title: string; note: string };
 };
 
 /** The administrator's strings (brief 9.9, UI-8), imported only by the admin chunk (strings/

@@ -5,7 +5,7 @@ import { lazy } from 'react';
 import { createBrowserRouter } from 'react-router';
 
 import { takeTokenFromHash } from '../auth/token';
-import { PayDocument, Placeholder, RequireAuth, RequireRole } from './guards';
+import { PayDocument, RequireAuth, RequireRole } from './guards';
 import { Home } from './Home';
 import { NotFound } from './NotFound';
 import { Shell } from './Shell';
@@ -13,6 +13,7 @@ import { Shell } from './Shell';
 // React.lazy inside RequireRole, not a route `lazy`: the router runs a matched route's `lazy`
 // before the guard renders, so a non-admin would download the admin chunk (slice 4 plan)
 const AdminArea = lazy(() => import('../admin/AdminArea'));
+const account = (name: 'Profile') => () => import('../account/screens').then((m) => ({ Component: m[name] }));
 const sell = (name: 'Dashboard' | 'NewListing' | 'Listing') => () => import('../sell/screens').then((m) => ({ Component: m[name] }));
 const auth = (name: 'Register' | 'CheckYourEmail' | 'VerifyEmail' | 'SignIn' | 'ForgotPassword' | 'ResetPassword') => () =>
   import('../auth/screens').then((m) => ({ Component: m[name] }));
@@ -38,7 +39,7 @@ export const router = createBrowserRouter([
       {
         element: <RequireAuth />,
         children: [
-          { path: 'account/*', element: <Placeholder /> },
+          { path: 'account', lazy: account('Profile') },
           { path: 'watchlist', lazy: () => import('../watchlist/WatchlistPage') },
           { path: 'notifications', lazy: () => import('../notifications/NotificationsPage') },
         ],

@@ -412,10 +412,6 @@ export const enIN = guardSentences({
     unreachableTitle: "Can't reach the server",
     unreachable: 'We could not check whether you are signed in. Check your connection, then try again.',
   },
-  placeholder: {
-    title: 'This page is on its way',
-    body: 'It is built in a later slice. Live auctions and the auction room are ready now.',
-  },
   help: {
     title: 'How bidding works',
     lede: 'Four short answers to the questions the room raises. Every amount is in rupees.',
