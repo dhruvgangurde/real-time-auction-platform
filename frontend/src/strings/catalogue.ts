@@ -652,6 +652,32 @@ export type AdminCatalogue = {
     retry: string;
     checking: string;
   };
+  audit: {
+    title: string;
+    actor: string;
+    type: string;
+    anyType: string;
+    types: Record<'auction' | 'user' | 'category' | 'settlement' | 'payment' | 'bid', string>;
+    kinds: Record<'auction' | 'user' | 'category' | 'settlement' | 'payment' | 'bid', string>;
+    byActorLabel: (actor: string) => string;
+    id: string;
+    from: string;
+    to: string;
+    filter: string;
+    system: string;
+    by: (actor: string) => string;
+    reason: (reason: string) => string;
+    entity: (type: string, id: string) => string;
+    field: string;
+    before: string;
+    after: string;
+    hidden: string;
+    none: string;
+    yes: string;
+    no: string;
+    empty: string;
+    more: string;
+  };
   room: {
     heading: string;
     note: string;

@@ -92,6 +92,48 @@
   margin-top: 20px;
 }
 
+/* ---- the audit log */
+.entry {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.entryHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin: 0;
+}
+
+.entry > p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.diff {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font: var(--ui-sm);
+}
+
+.diff th,
+.diff td {
+  text-align: left;
+  padding: 4px 12px 4px 0;
+  border-top: 1px solid var(--rule);
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.diff thead th {
+  color: var(--ink-2);
+  font-weight: 600;
+  border-top: 0;
+}
+
 @media (max-width: 700px) {
   .row {
     grid-template-columns: minmax(0, 1fr);

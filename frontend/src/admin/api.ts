@@ -41,6 +41,42 @@ export async function setRole(api: Api, id: string, role: Role, grant: boolean, 
   await api.request(grant ? 'PUT' : 'DELETE', `/admin/users/${id}/roles/${role}`, { auth: 'required', body: { reason } });
 }
 
+export type AuditEntry = {
+  id: number;
+  actor_id: string | null;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  reason: string | null;
+  created_at_ms: number;
+};
+export type AuditPage = { items: AuditEntry[]; next_before_id: number | null };
+
+const record = (v: unknown): v is Record<string, unknown> | null => v === null || (typeof v === 'object' && !Array.isArray(v));
+function entry(v: unknown): AuditEntry | null {
+  const e = v as Partial<Record<keyof AuditEntry, unknown>> | null;
+  if (e === null || typeof e !== 'object') return null;
+  const { id, actor_id, entity_type, entity_id, action, before, after, reason, created_at_ms } = e;
+  if (typeof id !== 'number' || (actor_id !== null && typeof actor_id !== 'string') || typeof entity_type !== 'string' || typeof entity_id !== 'string') return null;
+  if (typeof action !== 'string' || !record(before) || !record(after) || (reason !== null && typeof reason !== 'string') || typeof created_at_ms !== 'number') return null;
+  return { id, actor_id, entity_type, entity_id, action, before, after, reason, created_at_ms };
+}
+function auditPage(v: unknown): AuditPage | null {
+  const p = v as { items?: unknown; next_before_id?: unknown } | null;
+  if (p === null || !Array.isArray(p.items) || (p.next_before_id !== null && typeof p.next_before_id !== 'number')) return null;
+  const items = p.items.map(entry);
+  return items.every((x): x is AuditEntry => x !== null) ? { items, next_before_id: p.next_before_id } : null;
+}
+
+/** FR-80: newest first, keyset on the entry id. */
+export async function auditLog(api: Api, query: string, beforeId?: number): Promise<AuditPage> {
+  const q = new URLSearchParams(query);
+  if (beforeId !== undefined) q.set('before_id', String(beforeId));
+  return parsed(await api.request('GET', `/admin/audit?${q}`, { auth: 'required' }), auditPage);
+}
+
 /** FR-76: by name or email, role and status; newest first. */
 export async function listUsers(api: Api, query: URLSearchParams): Promise<UserPage> {
   return parsed(await api.request('GET', `/admin/users?${query}`, { auth: 'required' }), userPage);
