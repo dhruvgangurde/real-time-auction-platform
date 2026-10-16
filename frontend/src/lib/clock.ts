@@ -76,6 +76,12 @@ export function toUtcIso(localInput: string): string {
 
 const pad = (n: number, width = 2) => String(n).padStart(width, '0');
 
+/** A stored instant as a datetime-local input value in the viewer's zone, to the minute (edit forms). */
+export function toLocalInput(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** "4:05", "0:09", "1:02:30": a span rounded up to whole seconds, for countdowns and extensions. */
 export function formatRemaining(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));

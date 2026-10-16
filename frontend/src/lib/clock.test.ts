@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { enIN } from '../strings/en-IN';
-import { ServerClock, formatDay, formatDecided, formatLocal, formatRemaining, formatSpan, formatWindow, toUtcIso } from './clock';
+import { ServerClock, formatDay, formatDecided, formatLocal, formatRemaining, formatSpan, formatWindow, toLocalInput, toUtcIso } from './clock';
 
 test('keeps the offset from the fastest round trip', () => {
   let local = 1_000_000;
@@ -83,4 +83,11 @@ describe('spans and labels (room time)', () => {
     expect(formatDecided(ms, 'Asia/Kolkata')).toBe('20:01:12.406');
     expect(formatDay(ms, 'Asia/Kolkata')).toBe('14 Oct');
   });
+});
+
+test('a stored time fills a datetime-local input in the viewer zone, to the minute, and goes back unchanged (OR-1)', () => {
+  const ms = Date.UTC(2026, 9, 17, 12, 34);
+  expect(toLocalInput(ms)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  expect(toUtcIso(toLocalInput(ms))).toBe(new Date(ms).toISOString());
+  expect(toLocalInput(ms + 45_000)).toBe(toLocalInput(ms)); // seconds dropped, as the input shows none
 });
