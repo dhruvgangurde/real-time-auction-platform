@@ -1,5 +1,6 @@
-// A listing card (brief 9.2): photo, title linking to the room, the status as a word and a mark
-// (never colour alone), the price with its label, and the time line. Shared with the watchlist.
+// A listing card (brief 9.2): photo, title linking to the room (or, on the seller's dashboard, to
+// the listing), the status as a word and a mark (never colour alone), the price with its label,
+// and the time line. Shared with the watchlist and the seller's dashboard.
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 
@@ -14,7 +15,20 @@ import styles from './discover.module.css';
 const DECORATIVE = '';
 const DAY_MS = 86_400_000;
 
-export function Card({ card, nowMs, action }: { card: AuctionCard; nowMs: number; action?: ReactNode }) {
+export function Card({
+  card,
+  nowMs,
+  action,
+  to = `/auctions/${card.id}`,
+  level = 'h2',
+}: {
+  card: AuctionCard;
+  nowMs: number;
+  action?: ReactNode;
+  to?: string;
+  level?: 'h2' | 'h3';
+}) {
+  const Heading = level;
   const c = useStrings().cards;
   const view = cardView(card, nowMs);
   const at = (ms: number) => `${formatDay(ms)}, ${formatLocal(ms)}`;
@@ -22,6 +36,7 @@ export function Card({ card, nowMs, action }: { card: AuctionCard; nowMs: number
   let price: number | null = null;
   let line: string;
   switch (view.kind) {
+    case 'draft':
     case 'scheduled':
       [label, price, line] = [c.startingBid, view.price, c.startsAt(at(view.startsAtMs))];
       break;
@@ -51,11 +66,11 @@ export function Card({ card, nowMs, action }: { card: AuctionCard; nowMs: number
           <span className={styles.mark} aria-hidden="true" />
           {c.status[view.kind]}
         </p>
-        <h2 className={styles.cardTitle}>
-          <Link className={styles.cardLink} to={`/auctions/${card.id}`} data-card>
+        <Heading className={styles.cardTitle}>
+          <Link className={styles.cardLink} to={to} data-card>
             {card.title}
           </Link>
-        </h2>
+        </Heading>
         {label === null || price === null ? null : (
           <p className={styles.price}>
             <span className={styles.priceLabel}>{label}</span>

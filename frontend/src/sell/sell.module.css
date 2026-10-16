@@ -1,0 +1,17 @@
+/* the seller's screens (brief 9.8): what discover.module.css does not already give them */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section {
+  margin-top: 32px;
+}
+
+.sectionTitle {
+  font: 400 22px/28px var(--font-serif);
+  margin: 0 0 14px;
+}

@@ -4,6 +4,7 @@
 // section 9 and every close code of section 10 must have a message, so a missing one fails tsc.
 import { createContext, createElement, useContext, type ReactNode } from 'react';
 
+import type { SectionKey } from '../sell/dashboard';
 import type { Problem } from '../sell/listing';
 
 export type ErrorCode =
@@ -91,6 +92,7 @@ export type Catalogue = {
     /** the bell's accessible name: "Notifications" or "Notifications, 3 unread" */
     notificationsLabel: (n: number) => string;
     account: string;
+    sell: string;
   };
   home: {
     title: string;
@@ -331,7 +333,7 @@ export type Catalogue = {
   };
   /** a listing card, on Discover and the watchlist (brief 9.2, 9.7) */
   cards: {
-    status: Record<'scheduled' | 'live' | 'closing' | 'sold' | 'noSale' | 'cancelled', string>;
+    status: Record<'draft' | 'scheduled' | 'live' | 'closing' | 'sold' | 'noSale' | 'cancelled', string>;
     startingBid: string;
     currentBid: string;
     soldFor: string;
@@ -617,6 +619,14 @@ export type PayCatalogue = {
  * seller-en-IN.ts), so the entry does not carry them; error codes still come from Catalogue. */
 export type SellerCatalogue = {
   problems: Record<Problem, string>;
+  dashboard: {
+    title: string;
+    lede: string;
+    list: string;
+    empty: string;
+    more: string;
+    sections: Record<SectionKey, string>;
+  };
 };
 
 /**

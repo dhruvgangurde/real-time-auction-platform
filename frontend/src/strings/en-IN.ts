@@ -22,6 +22,7 @@ export const enIN = guardSentences({
     unread: (n) => `${n} unread`,
     notificationsLabel: (n) => (n > 0 ? `Notifications, ${n > 99 ? 'more than 99' : n} unread` : 'Notifications'),
     account: 'Your account',
+    sell: 'Sell',
   },
   home: {
     title: 'Real-time auctions, decided in order',
@@ -268,7 +269,7 @@ export const enIN = guardSentences({
     trying: 'Trying…',
   },
   cards: {
-    status: { scheduled: 'Scheduled', live: 'Live', closing: 'Closing', sold: 'Sold', noSale: 'Not sold', cancelled: 'Cancelled' },
+    status: { draft: 'Draft', scheduled: 'Scheduled', live: 'Live', closing: 'Closing', sold: 'Sold', noSale: 'Not sold', cancelled: 'Cancelled' },
     startingBid: 'Starting bid',
     currentBid: 'Current bid',
     soldFor: 'Sold for',
@@ -277,7 +278,7 @@ export const enIN = guardSentences({
     endsOn: (time) => `Ends ${time}`,
     closingNote: 'Bidding has ended; the result is on its way.',
     noSaleNote: 'Bidding ended without a sale.',
-    cancelledNote: 'Cancelled by the platform. Nothing is sold or charged.',
+    cancelledNote: 'Cancelled. Nothing is sold or charged.', // by its seller or an administrator
     bids: (n) => `${n} ${plural.select(n) === 'one' ? 'bid' : 'bids'}`,
   },
   watch: {

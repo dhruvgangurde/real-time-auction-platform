@@ -4,6 +4,7 @@
 import type { AuctionCard, AuctionStatus } from '../lib/contract';
 
 export type CardView =
+  | { kind: 'draft'; price: number; startsAtMs: number }
   | { kind: 'scheduled'; price: number; startsAtMs: number }
   | { kind: 'live'; price: number; hasBids: boolean; bids: number; endTimeMs: number; remainingMs: number }
   | { kind: 'closing'; price: number; hasBids: boolean; bids: number }
@@ -27,7 +28,9 @@ export function cardView(c: AuctionCard, nowMs: number): CardView {
       return { kind: 'noSale' };
     case 'cancelled':
       return { kind: 'cancelled' };
-    default: // scheduled (a draft is never listed)
+    case 'draft': // only on its seller's dashboard (FR-30)
+      return { kind: 'draft', price: c.starting_price, startsAtMs: c.start_time_ms };
+    default:
       return { kind: 'scheduled', price: c.starting_price, startsAtMs: c.start_time_ms };
   }
 }

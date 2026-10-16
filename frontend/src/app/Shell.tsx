@@ -72,6 +72,14 @@ export function Shell() {
                     </span>
                   )}
                 </NavLink>
+                {me.data?.roles.includes('seller') ? (
+                  <NavLink className={() => styles.bell} to="/sell" aria-label={s.nav.sell}>
+                    <svg className={styles.heartIcon} viewBox="0 0 16 16" aria-hidden="true">
+                      <path d="M2.5 2.5h5l6 6-5 5-6-6Z M5.2 5.2h.01" />
+                    </svg>
+                    <span className={styles.deskOnly}>{s.nav.sell}</span>
+                  </NavLink>
+                ) : null}
                 <NavLink className={() => styles.account} to="/account">
                   {me.data?.full_name ?? s.nav.account}
                 </NavLink>

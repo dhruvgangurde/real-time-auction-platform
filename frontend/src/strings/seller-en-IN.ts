@@ -15,4 +15,12 @@ export const sellerEnIN = guardSentences({
     category: 'That category no longer exists. Choose another.',
     images: 'Add at least one photo before publishing.',
   },
+  dashboard: {
+    title: 'Your listings',
+    lede: 'Everything you have listed, with drafts only you can see.',
+    list: 'List an item',
+    empty: 'Nothing listed yet.',
+    more: 'Show more',
+    sections: { draft: 'Drafts', scheduled: 'Scheduled', live: 'Live and closing', closed: 'Closed', cancelled: 'Cancelled' },
+  },
 } satisfies SellerCatalogue);

@@ -274,7 +274,7 @@ export function createApi(deps: ApiDeps) {
   };
 }
 
-function parsed<T>(body: unknown, parse: (v: unknown) => T | null): T {
+export function parsed<T>(body: unknown, parse: (v: unknown) => T | null): T {
   const value = parse(body);
   if (value === null) throw malformed();
   return value;

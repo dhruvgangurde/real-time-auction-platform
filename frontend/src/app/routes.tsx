@@ -9,6 +9,7 @@ import { Home } from './Home';
 import { NotFound } from './NotFound';
 import { Shell } from './Shell';
 
+const sell = (name: 'Dashboard') => () => import('../sell/screens').then((m) => ({ Component: m[name] }));
 const auth = (name: 'Register' | 'CheckYourEmail' | 'VerifyEmail' | 'SignIn' | 'ForgotPassword' | 'ResetPassword') => () =>
   import('../auth/screens').then((m) => ({ Component: m[name] }));
 
@@ -39,7 +40,13 @@ export const router = createBrowserRouter([
         ],
       },
       { element: <RequireRole role="admin" />, children: [{ path: 'admin/*', element: <Placeholder /> }] },
-      { element: <RequireRole role="seller" />, children: [{ path: 'sell/*', element: <Placeholder /> }] },
+      {
+        element: <RequireRole role="seller" />,
+        children: [
+          { path: 'sell', lazy: sell('Dashboard') },
+          { path: 'sell/*', element: <Placeholder /> },
+        ],
+      },
       { path: '*', element: <NotFound /> },
     ],
   },

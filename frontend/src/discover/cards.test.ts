@@ -18,6 +18,12 @@ describe('a card in each status', () => {
     });
   });
 
+  test("a draft, on its seller's dashboard only (FR-19, FR-30): the starting bid and the planned start", () => {
+    expect(cardView(card({ status: 'draft', current_price: null, bid_count: 0, start_time_ms: NOW + 3_600_000 }), NOW)).toEqual({
+      kind: 'draft', price: 900000, startsAtMs: NOW + 3_600_000,
+    });
+  });
+
   test('live: the current bid, or the starting bid before the first one, with the time left', () => {
     expect(cardView(card(), NOW)).toEqual({ kind: 'live', price: 950000, hasBids: true, bids: 2, endTimeMs: NOW + 90_000, remainingMs: 90_000 });
     expect(cardView(card({ current_price: null, bid_count: 0 }), NOW)).toMatchObject({ kind: 'live', price: 900000, hasBids: false });
