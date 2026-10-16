@@ -499,7 +499,6 @@ export type Catalogue = {
   help: {
     title: string;
     lede: string;
-    apiDocs: string;
     close: string;
     openLabel: (title: string) => string;
     topics: Record<

@@ -89,7 +89,7 @@ export function Shell() {
               </>
             ) : (
               <>
-                <NavLink className={() => styles.deskOnly} to="/how-it-works">
+                <NavLink className={() => styles.deskOnly} to="/help">
                   {s.nav.how}
                 </NavLink>
                 <NavLink to="/sign-in">{s.nav.signIn}</NavLink>

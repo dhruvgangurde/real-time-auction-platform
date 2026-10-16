@@ -437,7 +437,6 @@ export const enIN = guardSentences({
   help: {
     title: 'How bidding works',
     lede: 'Four short answers to the questions the room raises. Every amount is in rupees.',
-    apiDocs: 'The API reference',
     close: 'Close help',
     openLabel: (title) => `Help: ${title}`,
     topics: {

@@ -69,6 +69,20 @@
   font: var(--ui-md);
 }
 
+.helpLink {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: var(--ui-sm);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 /* ---- the listing form */
 .form {
   max-width: 720px;

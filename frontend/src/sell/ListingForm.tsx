@@ -10,8 +10,10 @@ import { ApiError } from '../api/client';
 import { useApp } from '../app/context';
 import { FormError } from '../auth/Form';
 import styles from '../discover/discover.module.css';
+import { HelpDrawer } from '../help/HelpDrawer';
 import type { Category } from '../lib/contract';
 import { ConfirmDialog } from '../room/ConfirmDialog';
+import { useStrings, type HelpTopic } from '../strings/catalogue';
 import { sellerEnIN as t } from '../strings/seller-en-IN';
 import { EMPTY, fromServer, validate, type Editable, type ListingValues, type Problems } from './listing';
 import own from './sell.module.css';
@@ -36,7 +38,29 @@ function options(tree: Category[], depth = 0): { id: number; label: string }[] {
 
 type Control = { id: string; 'aria-invalid'?: true; 'aria-describedby'?: string };
 
-function Row({ label, hint, problem, control }: { label: string; hint?: string; problem: string | undefined; control: (a: Control) => ReactNode }) {
+/** The topic's question, opening its help (UD-4; brief 9.1: reachable from the control it explains). */
+function HelpLink({ topic, onHelp }: { topic: HelpTopic; onHelp: (t: HelpTopic) => void }) {
+  const s = useStrings();
+  return (
+    <button type="button" className={own.helpLink} onClick={() => onHelp(topic)}>
+      {s.help.topics[topic].question}
+    </button>
+  );
+}
+
+function Row({
+  label,
+  hint,
+  problem,
+  control,
+  help,
+}: {
+  label: string;
+  hint?: string;
+  problem: string | undefined;
+  control: (a: Control) => ReactNode;
+  help?: ReactNode;
+}) {
   const id = useId();
   const described = [hint === undefined ? null : `${id}-hint`, problem === undefined ? null : `${id}-error`].filter(Boolean).join(' ');
   return (
@@ -50,6 +74,7 @@ function Row({ label, hint, problem, control }: { label: string; hint?: string; 
           {hint}
         </p>
       )}
+      {help}
       {problem === undefined ? null : (
         <p id={`${id}-error`} className={styles.fieldError}>
           {problem}
@@ -81,6 +106,7 @@ export function ListingForm({
   const [problems, setProblems] = useState<Problems>({});
   const [error, setError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
+  const [helpTopic, setHelpTopic] = useState<HelpTopic | null>(null);
   // a ref, read when a navigation starts: a successful save clears it before its own navigation
   const dirty = useRef(false);
   const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty.current && currentLocation.pathname !== nextLocation.pathname);
@@ -173,6 +199,7 @@ export function ListingForm({
         <Row
           label={f.minIncrement}
           hint={f.incrementHint}
+          help={<HelpLink topic="increment" onHelp={setHelpTopic} />}
           problem={said('minIncrement')}
           control={(a) => <input {...a} className={styles.input} name="minIncrement" defaultValue={initial.minIncrement} inputMode="decimal" autoComplete="off" disabled={lockTerms} />}
         />
@@ -180,6 +207,7 @@ export function ListingForm({
       <Row
         label={f.reserve}
         hint={f.reserveHint}
+        help={<HelpLink topic="reserve" onHelp={setHelpTopic} />}
         problem={said('reserve')}
         control={(a) => <input {...a} className={styles.input} name="reserve" defaultValue={initial.reserve} inputMode="decimal" autoComplete="off" disabled={lockTerms} />}
       />
@@ -214,6 +242,7 @@ export function ListingForm({
           />
         </div>
         <p className={styles.hint}>{f.softCloseHint}</p>
+        <HelpLink topic="clock" onHelp={setHelpTopic} />
       </fieldset>
       {lockText ? null : (
         <>
@@ -230,6 +259,7 @@ export function ListingForm({
           </p>
         </>
       )}
+      <HelpDrawer topic={helpTopic} onClose={() => setHelpTopic(null)} />
       {blocker.state === 'blocked' ? (
         <ConfirmDialog
           title={f.leaveTitle}

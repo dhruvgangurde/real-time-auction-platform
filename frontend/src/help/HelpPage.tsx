@@ -19,9 +19,6 @@ export function HelpPage() {
             <Link to={`/help/${t}`}>{s.help.topics[t].question}</Link>
           </li>
         ))}
-        <li>
-          <a href="/api/v1/docs">{s.help.apiDocs}</a>
-        </li>
       </ul>
       {(only ? [only] : HELP_TOPICS).map((t: HelpTopic) => (
         <Topic key={t} topic={t} heading={only ? 'h2' : 'h2'} />
