@@ -98,7 +98,6 @@ export const sellerEnIN = guardSentences({
   },
   closed: {
     title: 'Result',
-    soldFor: (amount) => `Sold for ${amount}.`,
     notSold: 'Not sold.',
     reserveNotMet: 'Bidding did not reach your reserve.',
   },

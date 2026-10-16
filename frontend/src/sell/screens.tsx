@@ -7,9 +7,6 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { useApp, useMe, useViewerId } from '../app/context';
 import { formatDay, formatLocal } from '../lib/clock';
-import { formatINR } from '../lib/money';
-import { sellerLines } from '../pay/seller';
-import { payEnIN } from '../strings/pay-en-IN';
 import { Card } from '../discover/Card';
 import styles from '../discover/discover.module.css';
 import { useNow } from '../discover/useNow';
@@ -22,6 +19,7 @@ import { sections } from './dashboard';
 import { EMPTY, editable, fromDetail, fromServer, toCreate, toPatch } from './listing';
 import { ListingForm } from './ListingForm';
 import { Photos } from './Photos';
+import { resultLines } from './result';
 import own from './sell.module.css';
 
 const SKELETONS = [0, 1, 2];
@@ -158,30 +156,23 @@ export function Listing() {
           <h2 id="result-title" className={own.sectionTitle}>
             {c.title}
           </h2>
-          {d.status === 'closed_no_sale' ? (
-            <p className={styles.lede}>{d.reserve_met === false ? `${c.notSold} ${c.reserveNotMet}` : c.notSold}</p>
+          {d.status === 'closed_sold' && settlement.isError ? (
+            <p className={own.actions}>
+              <span className={styles.fieldError} role="alert">
+                {errorMessage(s, settlement.error instanceof ApiError ? settlement.error.code : 'SERVICE_UNAVAILABLE')}
+              </span>
+              <button type="button" className={styles.btnQuiet} onClick={() => void settlement.refetch()}>
+                {s.common.tryAgain}
+              </button>
+            </p>
+          ) : d.status === 'closed_sold' && settlement.data === undefined ? (
+            <p className={styles.hint}>{s.common.loading}</p>
           ) : (
-            <>
-              <p className={styles.lede}>{c.soldFor(formatINR(d.current_price ?? d.start_price))}</p>
-              {settlement.isError ? (
-                <p className={own.actions}>
-                  <span className={styles.fieldError} role="alert">
-                    {errorMessage(s, settlement.error instanceof ApiError ? settlement.error.code : 'SERVICE_UNAVAILABLE')}
-                  </span>
-                  <button type="button" className={styles.btnQuiet} onClick={() => void settlement.refetch()}>
-                    {s.common.tryAgain}
-                  </button>
-                </p>
-              ) : settlement.data === undefined ? (
-                <p className={styles.hint}>{s.common.loading}</p>
-              ) : (
-                sellerLines(settlement.data, payEnIN, at).map((line, i) => (
-                  <p key={line} className={i === 0 ? styles.lede : `${styles.hint} tabular`}>
-                    {line}
-                  </p>
-                ))
-              )}
-            </>
+            resultLines(d.status, d.reserve_met, settlement.data, at).map((line, i) => (
+              <p key={line} className={i === 0 ? styles.lede : `${styles.hint} tabular`}>
+                {line}
+              </p>
+            ))
           )}
         </section>
       ) : null}

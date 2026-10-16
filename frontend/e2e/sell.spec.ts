@@ -136,10 +136,9 @@ test('live: only the text until the first bid, then read-only (BR-4); sold: the 
   await waitForStatus(request, id, 'closed_sold', 60_000);
   await page.reload();
   const result = page.getByRole('region', { name: t.closed.title });
-  await expect(result).toContainText(t.closed.soldFor('₹9,000'));
   await expect(result).toContainText(payEnIN.statusWon(buyer.name, '₹9,000'));
   await expect(result).toContainText(payEnIN.statusAwaiting);
-  await expect(result).not.toContainText(/attempt|did not go through/i);
+  await expect(result).not.toContainText(/attempt|did not go through|Sold for/i); // one line: who won at what price
 });
 
 test('at 390 in dark, from the keyboard: the dashboard, the form and the listing page fit; Tab reaches every field and Save; Enter submits and the first problem takes the focus', async ({ browser, request }) => {

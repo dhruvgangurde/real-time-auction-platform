@@ -703,7 +703,6 @@ export type SellerCatalogue = {
   };
   closed: {
     title: string;
-    soldFor: (amount: string) => string;
     notSold: string;
     reserveNotMet: string;
   };
