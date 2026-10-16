@@ -4,6 +4,8 @@
 // section 9 and every close code of section 10 must have a message, so a missing one fails tsc.
 import { createContext, createElement, useContext, type ReactNode } from 'react';
 
+import type { Problem } from '../sell/listing';
+
 export type ErrorCode =
   | 'ACCOUNT_SUSPENDED'
   | 'ALREADY_CLOSED'
@@ -609,6 +611,12 @@ export type PayCatalogue = {
   signInNote: string;
   signIn: string;
   testMode: string;
+};
+
+/** The seller screens' strings (brief 9.8), imported only by the seller chunk (strings/
+ * seller-en-IN.ts), so the entry does not carry them; error codes still come from Catalogue. */
+export type SellerCatalogue = {
+  problems: Record<Problem, string>;
 };
 
 /**
