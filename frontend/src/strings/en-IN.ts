@@ -175,6 +175,8 @@ export const enIN = guardSentences({
       registerPrompt: 'New here? Creating an account takes a minute and an email check.',
       register: 'Create an account',
       pay: (amount) => `Pay ${amount}`,
+      paidOn: (time) => `Paid on ${time}.`,
+      receipt: 'See the receipt',
       pendingNote: 'Your bid is on its way; it shows as pending in the ledger until the live service decides it.',
       retryingHead: 'Checking your bid.',
       retryingNote: 'The live service was briefly unavailable, so we are sending the same request again. It can only be placed once.',

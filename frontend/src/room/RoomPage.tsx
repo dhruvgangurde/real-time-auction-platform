@@ -7,12 +7,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { ApiError } from '../api/client';
-import { useApp, useMe, useToken } from '../app/context';
+import { useApp, useMe, useToken, useViewerId } from '../app/context';
 import { NotFound } from '../app/NotFound';
 import { HelpDrawer } from '../help/HelpDrawer';
 import { errorMessage, useStrings, type HelpTopic } from '../strings/catalogue';
 import { Banner } from './Banner';
-import { blockedBy } from './account';
+import { blockedBy, paidAt } from './account';
 import { AdminPanel } from './AdminPanel';
 import { BidControl } from './BidControl';
 import { Countdown } from './Countdown';
@@ -42,6 +42,14 @@ export function RoomPage() {
   });
   const me = useMe();
   const { state, session } = useRoom(id, !detail.isError);
+  // the winner's room reads the settlement once won, so a paid lot shows Paid, not Pay (FR-68)
+  const viewer = useViewerId();
+  const settlement = useQuery({
+    queryKey: ['settlement', id, viewer],
+    queryFn: () => api.settlement(id),
+    enabled: state.own.result === 'won' && token !== null,
+    retry: false,
+  });
   const [helpTopic, setHelpTopic] = useState<HelpTopic | null>(null);
   const closeHelp = useCallback(() => setHelpTopic(null), []);
   const d = detail.data;
@@ -97,7 +105,7 @@ export function RoomPage() {
             <AdminPanel state={state} />
           ) : (
             <>
-              <BidControl state={state} session={session} profile={me.data} signedIn={token !== null} startTimeMs={d.start_time_ms} onResend={resend} />
+              <BidControl state={state} session={session} profile={me.data} signedIn={token !== null} startTimeMs={d.start_time_ms} paidAtMs={paidAt(settlement.data)} onResend={resend} />
               {token === null || blockedBy(state, me.data) !== null ? null : <ProxyControl state={state} session={session} startTimeMs={d.start_time_ms} />}
             </>
           )}

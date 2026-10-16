@@ -109,6 +109,12 @@ describe('index states', () => {
     expect(cap.said.polite).toBe('Extended by 2 minutes, 10 of 10. No further extensions. Closes at 20:50:00.');
   });
 
+  test('a won room opened later does not say "You won … Pay" again: it was said when it happened, and it may be paid', () => {
+    const opened = connected({ you_lead: true, your_max: null, your_result: 'won' }, { status: 'closed_sold', current_price: 2200000 });
+    expect(opened.state.own.result).toBe('won');
+    expect(opened.said.assertive).toBeUndefined();
+  });
+
   test('15 closing, 16 won, 17 lost, 18 no sale, 20 cancelled', () => {
     const closing = step(connected(null, { end_time_ms: END + 20 * 60_000 }).state, { type: 'countdownZero' });
     expect(closing.said).toEqual({ polite: 'Closing. Bidding ended at 20:50:00; the result is on its way.' });

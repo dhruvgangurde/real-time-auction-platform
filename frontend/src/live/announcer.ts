@@ -47,7 +47,8 @@ export function announce(prev: RoomState, next: RoomState, deps: AnnounceDeps): 
         : s.room.outbid(price(next.own.outbidAt), price(next.minNext)),
     );
   }
-  if (next.own.result === 'won' && prev.own.result !== 'won') assertive(a.won(price(next.finalPrice ?? next.price)));
+  // only when it happens while watching: a room opened after the win (no status yet) says nothing
+  if (next.own.result === 'won' && prev.own.result !== 'won' && prev.status !== null) assertive(a.won(price(next.finalPrice ?? next.price)));
 
   // room-wide changes (polite): the latest wins when several happen in one step
   if (next.closedCode === 4004 && prev.closedCode !== 4004) polite(a.signedOut);

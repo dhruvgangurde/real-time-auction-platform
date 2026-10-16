@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
-import { formatLocal } from '../lib/clock';
+import { formatDay, formatLocal } from '../lib/clock';
 import type { UserProfile } from '../lib/contract';
 import { formatINR, parseRupees } from '../lib/money';
 import { canBid, type RoomState } from '../live/room';
@@ -25,10 +25,12 @@ type Props = {
   profile: UserProfile | undefined;
   signedIn: boolean;
   startTimeMs: number | null;
+  /** the won lot's payment time, from the settlement; null shows Pay */
+  paidAtMs: number | null;
   onResend: () => void;
 };
 
-export function BidControl({ state, session, profile, signedIn, startTimeMs, onResend }: Props) {
+export function BidControl({ state, session, profile, signedIn, startTimeMs, paidAtMs, onResend }: Props) {
   const s = useStrings();
   const b = s.roomUi.bid;
   const rupee = s.roomUi.rupee;
@@ -124,14 +126,26 @@ export function BidControl({ state, session, profile, signedIn, startTimeMs, onR
     );
   }
   if (state.own.result === 'won') {
+    // the payment page is its own document with its own CSP: a full load, for Pay and the receipt
+    const page = `/auctions/${state.auctionId}/pay`;
     return (
       <div className={styles.panel}>
-        <div className={styles.actions}>
-          {/* the payment page is its own document with its own CSP: a full load */}
-          <a className={styles.btnPrimary} href={`/auctions/${state.auctionId}/pay`}>
-            {b.pay(formatINR(state.finalPrice ?? state.price ?? 0))}
-          </a>
-        </div>
+        {paidAtMs === null ? (
+          <div className={styles.actions}>
+            <a className={styles.btnPrimary} href={page}>
+              {b.pay(formatINR(state.finalPrice ?? state.price ?? 0))}
+            </a>
+          </div>
+        ) : (
+          <>
+            <p className={`${styles.hint} tabular`}>{b.paidOn(`${formatDay(paidAtMs)}, ${formatLocal(paidAtMs)}`)}</p>
+            <div className={styles.actions}>
+              <a className={styles.btnQuiet} href={page}>
+                {b.receipt}
+              </a>
+            </div>
+          </>
+        )}
       </div>
     );
   }

@@ -237,6 +237,8 @@ export type Catalogue = {
       registerPrompt: string;
       register: string;
       pay: (amount: string) => string;
+      paidOn: (time: string) => string;
+      receipt: string;
       pendingNote: string;
       retryingHead: string;
       retryingNote: string;
