@@ -102,9 +102,15 @@ export function createApi(deps: ApiDeps) {
   function send(method: string, path: string, options: Options, token: string | null): Promise<Response> {
     const headers: Record<string, string> = { Accept: 'application/json', ...options.headers };
     if (token !== null) headers.Authorization = `Bearer ${token}`;
-    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
     const init: RequestInit = { method, headers, credentials: 'same-origin' };
-    if (options.body !== undefined) init.body = JSON.stringify(options.body);
+    if (options.body instanceof Blob) {
+      // a file (an image upload) is the body itself; a Blob can be sent again on the retry
+      headers['Content-Type'] = options.body.type || 'application/octet-stream';
+      init.body = options.body;
+    } else if (options.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(options.body);
+    }
     return deps.fetch(BASE + path, init);
   }
 

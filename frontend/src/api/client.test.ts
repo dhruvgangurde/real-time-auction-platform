@@ -98,6 +98,18 @@ describe('requests', () => {
     expect(refreshes).toBe(2);
   });
 
+  test('a file body goes as its own bytes with its type, not as JSON, and again on the retry (an image upload)', async () => {
+    const expired = json(401, { error: { code: 'TOKEN_EXPIRED', message: 'expired' } });
+    const { fetch, calls } = fakeFetch([expired, json(201, { id: 1 })]);
+    const file = new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: 'image/jpeg' });
+    const api = createApi(deps(fetch, { refresh: async () => 'tok-2' }));
+    expect(await api.request('POST', '/auctions/a/images', { body: file })).toEqual({ id: 1 });
+    for (const call of calls) {
+      expect(call.init.body).toBe(file);
+      expect((call.init.headers as Record<string, string>)['Content-Type']).toBe('image/jpeg');
+    }
+  });
+
   test('a required-auth call with no token refreshes first and fails as INVALID_TOKEN', async () => {
     const { fetch, calls } = fakeFetch([]);
     const api = createApi(deps(fetch, { getToken: () => null }));
