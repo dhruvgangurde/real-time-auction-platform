@@ -9,17 +9,15 @@ celerybeat-schedule*
 # Playwright MCP browser artifacts (snapshots, screenshots, console logs)
 .playwright-mcp/
 
-# local session notes, never committed
-docs/context-transfer.md
+# Claude Code local settings
+.claude/
 
-# third-party reference screenshots for design research (kept local, not redistributed)
-design/refs/
-
-# Superdesign scratch HTML (never committed)
-.superdesign/tmp/
-
-# rendered mockup frames: re-made from the committed mockup HTML (01 and 02 stay tracked)
-design/shots/**/*.png
+# kept local, not published: design work, Superdesign files, and all docs but these two
+design/
+.superdesign/
+docs/*
+!docs/architecture.md
+!docs/decisions.md
 
 # the built SPA, served by the web service (Phase 10c builds it)
 frontend/dist/
