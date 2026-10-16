@@ -2,13 +2,16 @@
 // listing page. Uncontrolled inputs; on submit the text is checked the way the server would
 // (listing.ts), each problem shown under its input and the first focused; the server's own `fields`
 // land the same way, the code's message at the top. What the status no longer allows is disabled.
-import { useId, useState, type FormEvent, type ReactNode } from 'react';
+// Leaving with unsaved changes asks first (web guidelines: a router guard and beforeunload).
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useBlocker } from 'react-router';
 
 import { ApiError } from '../api/client';
 import { useApp } from '../app/context';
 import { FormError } from '../auth/Form';
 import styles from '../discover/discover.module.css';
 import type { Category } from '../lib/contract';
+import { ConfirmDialog } from '../room/ConfirmDialog';
 import { sellerEnIN as t } from '../strings/seller-en-IN';
 import { EMPTY, fromServer, validate, type Editable, type ListingValues, type Problems } from './listing';
 import own from './sell.module.css';
@@ -63,6 +66,7 @@ export function ListingForm({
   categories,
   submitLabel,
   onSave,
+  note,
 }: {
   initial: ListingValues;
   can: Editable;
@@ -70,12 +74,23 @@ export function ListingForm({
   categories: Category[];
   submitLabel: string;
   onSave: (values: ListingValues) => Promise<void>;
+  note?: string;
 }) {
   const f = t.form;
   const { clock } = useApp();
   const [problems, setProblems] = useState<Problems>({});
   const [error, setError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
+  // a ref, read when a navigation starts: a successful save clears it before its own navigation
+  const dirty = useRef(false);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty.current && currentLocation.pathname !== nextLocation.pathname);
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (dirty.current) event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, []);
   const lockTerms = can !== 'all'; // price, schedule, category: draft and scheduled only (FR-17)
   const lockText = can === 'none';
   const said = (key: keyof Problems) => {
@@ -102,9 +117,11 @@ export function ListingForm({
     setPending(true);
     setProblems({});
     setError(null);
+    dirty.current = false;
     try {
       await onSave(values);
     } catch (e) {
+      dirty.current = true;
       const failure = e instanceof ApiError ? e : new ApiError('INTERNAL_ERROR', '', 0);
       fail(fromServer(failure.fields ?? {}), failure);
     } finally {
@@ -113,7 +130,14 @@ export function ListingForm({
   }
 
   return (
-    <form className={own.form} onSubmit={(e) => void submit(e)} noValidate>
+    <form
+      className={own.form}
+      onSubmit={(e) => void submit(e)}
+      onInput={() => {
+        dirty.current = true;
+      }}
+      noValidate
+    >
       <Row
         label={f.title}
         problem={said('title')}
@@ -198,9 +222,25 @@ export function ListingForm({
             <button type="submit" className={styles.btnPrimary} aria-disabled={pending}>
               {pending ? f.saving : submitLabel}
             </button>
+            {note === undefined ? null : (
+              <span className={styles.hint} role="status">
+                {note}
+              </span>
+            )}
           </p>
         </>
       )}
+      {blocker.state === 'blocked' ? (
+        <ConfirmDialog
+          title={f.leaveTitle}
+          body={<p>{f.leaveBody}</p>}
+          confirmLabel={f.leave}
+          dismissLabel={f.stay}
+          error={null}
+          onConfirm={() => blocker.proceed()}
+          onClose={() => blocker.reset()}
+        />
+      ) : null}
     </form>
   );
 }

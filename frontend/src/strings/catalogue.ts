@@ -651,6 +651,22 @@ export type SellerCatalogue = {
     softCloseHint: string;
     create: string;
     saving: string;
+    leaveTitle: string;
+    leaveBody: string;
+    leave: string;
+    stay: string;
+  };
+  page: {
+    back: string;
+    room: string;
+    draftNote: string;
+    descriptive: string;
+    locked: string;
+    ended: string;
+    save: string;
+    saved: string;
+    unchanged: string;
+    notYours: string;
   };
 };
 

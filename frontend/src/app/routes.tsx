@@ -9,7 +9,7 @@ import { Home } from './Home';
 import { NotFound } from './NotFound';
 import { Shell } from './Shell';
 
-const sell = (name: 'Dashboard' | 'NewListing') => () => import('../sell/screens').then((m) => ({ Component: m[name] }));
+const sell = (name: 'Dashboard' | 'NewListing' | 'Listing') => () => import('../sell/screens').then((m) => ({ Component: m[name] }));
 const auth = (name: 'Register' | 'CheckYourEmail' | 'VerifyEmail' | 'SignIn' | 'ForgotPassword' | 'ResetPassword') => () =>
   import('../auth/screens').then((m) => ({ Component: m[name] }));
 
@@ -45,7 +45,7 @@ export const router = createBrowserRouter([
         children: [
           { path: 'sell', lazy: sell('Dashboard') },
           { path: 'sell/new', lazy: sell('NewListing') },
-          { path: 'sell/*', element: <Placeholder /> },
+          { path: 'sell/:id', lazy: sell('Listing') },
         ],
       },
       { path: '*', element: <NotFound /> },

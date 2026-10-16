@@ -12,6 +12,11 @@ export async function sellerAuctions(api: Api, page: number): Promise<AuctionPag
   return parsed(await api.request('GET', `/seller/auctions?page=${page}`, { auth: 'required' }), parseAuctionPage);
 }
 
+/** Only the changed fields (FR-17); the server re-checks what the status allows. */
+export async function updateListing(api: Api, id: string, body: Record<string, unknown>): Promise<void> {
+  await api.request('PATCH', `/auctions/${id}`, { auth: 'required', body });
+}
+
 /** A new draft (FR-11); its id. Ten per hour per seller (NFR-22). */
 export async function createListing(api: Api, body: Record<string, unknown>): Promise<string> {
   return parsed(await api.request('POST', '/auctions', { auth: 'required', body }), created);
