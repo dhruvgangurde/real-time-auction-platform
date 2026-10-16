@@ -10,7 +10,7 @@ import { expect, type APIRequestContext, type APIResponse } from '@playwright/te
 export const API = 'http://localhost:8011/api/v1';
 const MAILPIT = 'http://localhost:8025/api/v1';
 export const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
-export const IMAGE = fileURLToPath(new URL('../../../design/mockups/images/pentax-k1000.jpg', import.meta.url));
+export const IMAGE = fileURLToPath(new URL('./test-lot.jpg', import.meta.url));
 
 export type Role = 'seller' | 'admin';
 export type Account = { email: string; password: string; name: string; id: string; token: string };
