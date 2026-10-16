@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { ApiError } from '../api/client';
-import { useApp, useToken } from '../app/context';
+import { useApp, useMe, useToken } from '../app/context';
 import { NotFound } from '../app/NotFound';
 import { HelpDrawer } from '../help/HelpDrawer';
 import { errorMessage, useStrings, type HelpTopic } from '../strings/catalogue';
@@ -40,7 +40,7 @@ export function RoomPage() {
     // a token change (sign-in, or a 4004 forgetting it) refetches; keep this auction's lot meanwhile
     placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[1] === id ? previous : undefined),
   });
-  const me = useQuery({ queryKey: ['me', token], queryFn: () => api.me(), enabled: token !== null, staleTime: 60_000 });
+  const me = useMe();
   const { state, session } = useRoom(id, !detail.isError);
   const [helpTopic, setHelpTopic] = useState<HelpTopic | null>(null);
   const closeHelp = useCallback(() => setHelpTopic(null), []);

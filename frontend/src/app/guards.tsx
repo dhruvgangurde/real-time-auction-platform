@@ -2,12 +2,12 @@
 // the same URL; RequireRole shows access denied in place, so there is never a redirect loop.
 // Neither decides before the load-time restore has settled (brief 13 item 22), and neither signs
 // anyone out because the server could not be reached: that offers a retry instead (brief 9.1).
-import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, Navigate, Outlet, useLocation, useParams } from 'react-router';
 
-import { useStrings } from '../strings/catalogue';
-import { useApp, useAuthReady, useAuthUnreachable, useToken } from './context';
+import { ApiError } from '../api/client';
+import { errorMessage, useStrings } from '../strings/catalogue';
+import { useAuthReady, useAuthUnreachable, useMe, useToken } from './context';
 import styles from './Home.module.css';
 import { NotFound } from './NotFound';
 import { Unreachable } from './Unreachable';
@@ -41,13 +41,23 @@ export function RequireAuth() {
 
 export function RequireRole({ role }: { role: 'seller' | 'admin' }) {
   const s = useStrings();
-  const { api } = useApp();
   const ready = useAuthReady();
   const token = useToken();
-  const me = useQuery({ queryKey: ['me', token], queryFn: () => api.me(), enabled: token !== null, staleTime: 60_000 });
+  const me = useMe();
   if (!ready) return null;
   if (token === null) return <SignedOut />;
-  if (me.data === undefined) return null;
+  if (me.data === undefined) {
+    if (!me.isError) return null;
+    // the roles could not be read: say why and offer a retry, never a blank page
+    return (
+      <section>
+        <p className={styles.lede}>{errorMessage(s, me.error instanceof ApiError ? me.error.code : 'SERVICE_UNAVAILABLE')}</p>
+        <button type="button" className={styles.button} onClick={() => void me.refetch()} aria-disabled={me.isFetching}>
+          {me.isFetching ? s.common.trying : s.common.tryAgain}
+        </button>
+      </section>
+    );
+  }
   if (!me.data.roles.includes(role)) {
     return (
       <section>

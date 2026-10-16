@@ -1,5 +1,6 @@
 // The app's long-lived services (auth, the API client) and the hook that reads the in-memory
 // token. Created once in main.tsx; components reach them through context, never through globals.
+import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useMemo, useSyncExternalStore } from 'react';
 
 import type { Auth } from '../api/auth';
@@ -35,6 +36,17 @@ export function subject(token: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/** The profile query's key: the user, not the token, so a refresh never empties it (a guarded
+ * page would unmount and lose a half-filled form). */
+export const meKey = (token: string | null) => ['me', subject(token)] as const;
+
+/** The signed-in user's profile, roles from the database; one cache for the shell, guards and room. */
+export function useMe() {
+  const { api } = useApp();
+  const token = useToken();
+  return useQuery({ queryKey: meKey(token), queryFn: () => api.me(), enabled: token !== null, staleTime: 60_000 });
 }
 
 /** The signed-in user's id (null when anonymous), stable across token refreshes. */

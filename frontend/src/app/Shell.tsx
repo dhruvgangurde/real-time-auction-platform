@@ -1,12 +1,12 @@
 // The app shell: skip link, header, main landmark and the two live regions (brief 9.1, 11.4).
 // Every string comes from the catalogue; every colour from the tokens.
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useRef } from 'react';
 import { Link, NavLink, Outlet, ScrollRestoration } from 'react-router';
 
 import { announcePolite } from '../lib/polite';
 import { useStrings } from '../strings/catalogue';
-import { useApp, useToken } from './context';
+import { useMe, useToken } from './context';
 import styles from './Shell.module.css';
 import { arrived, badge } from './unread';
 import { useUnreadCount } from './useUnread';
@@ -34,14 +34,8 @@ function useUnread(): number {
 
 export function Shell() {
   const s = useStrings();
-  const { api } = useApp();
   const token = useToken();
-  const me = useQuery({
-    queryKey: ['me', token],
-    queryFn: () => api.me(),
-    enabled: token !== null,
-    staleTime: 60_000,
-  });
+  const me = useMe();
   const signedIn = token !== null;
   const unread = useUnread();
   return (

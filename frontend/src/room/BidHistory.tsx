@@ -2,10 +2,10 @@
 // pseudonyms and times in the viewer's zone. A regular viewer sees aliases only (BR-10); an
 // admin also gets bidder ids, so their own rows are marked "You". A degraded note appears when
 // the most recent bids may be missing.
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 
-import { useApp, useToken } from '../app/context';
+import { useApp, useMe } from '../app/context';
 import { formatDay, formatLocal } from '../lib/clock';
 import { formatINR } from '../lib/money';
 import { useStrings } from '../strings/catalogue';
@@ -15,8 +15,7 @@ export function BidHistory() {
   const { id = '' } = useParams();
   const h = useStrings().history;
   const { api } = useApp();
-  const token = useToken();
-  const me = useQuery({ queryKey: ['me', token], queryFn: () => api.me(), enabled: token !== null, staleTime: 60_000 });
+  const me = useMe();
   const query = useInfiniteQuery({
     queryKey: ['history', id],
     queryFn: ({ pageParam }) => api.history(id, pageParam),
