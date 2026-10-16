@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test, type Page } from '@playwright/test';
 
+import { adminEnIN } from '../src/strings/admin-en-IN';
 import { enIN } from '../src/strings/en-IN';
 import { ROOT, bidInLastWindow, live, newAccount, newAuction, restBid, signInUi, waitForStatus } from './fixtures/stack';
 
@@ -223,9 +224,9 @@ test('roles and misc: anonymous, scheduled, draft, seller, admin, other-tab', as
   const adp = await adc.newPage();
   await signInUi(adp, admin);
   await adp.goto(`/auctions/${id}`);
-  await adp.getByRole('button', { name: enIN.roomUi.admin.forceClose, exact: true }).click();
+  await adp.getByRole('button', { name: adminEnIN.room.forceClose, exact: true }).click();
   await expect(adp.getByRole('dialog')).toBeVisible();
-  await adp.getByLabel(enIN.roomUi.admin.reasonLabel).fill('shot: the reason is written to the audit log');
+  await adp.getByLabel(adminEnIN.room.reasonLabel).fill('shot: the reason is written to the audit log');
   await shoot(adp, '29-admin-force-close', 'light');
   await adc.close();
 

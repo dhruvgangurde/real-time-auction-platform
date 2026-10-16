@@ -1,0 +1,23 @@
+// The administrator's strings, English (India) (brief 9.9, UI-8). Amounts arrive formatted.
+import { guardSentences, type AdminCatalogue } from './catalogue';
+
+export const adminEnIN = guardSentences({
+  room: {
+    heading: 'Administration',
+    note: 'Every action needs a reason and is written to the audit log.',
+    forceClose: 'Force-close',
+    cancel: 'Cancel auction',
+    forceTitle: (title) => `Force-close “${title}”?`,
+    forceBody: 'Bidding ends now and the auction settles like any other close. The result is decided from the ledger when bidding stops.',
+    current: (amount, seq, reserve) => `The highest bid is №${seq}, ${amount}, which ${reserve}`,
+    reserveMet: 'meets the reserve.',
+    reserveNotMet: 'does not meet the reserve.',
+    noBidsYet: 'There are no bids yet.',
+    cannotUndo: 'This cannot be undone.',
+    cancelTitle: (title) => `Cancel “${title}”?`,
+    cancelBody: 'Nobody can bid on it any more, and nothing is sold or charged. This cannot be undone.',
+    reasonLabel: 'Reason',
+    reasonNote: 'A reason is required. It is written to the audit log with your name.',
+    keepOpen: 'Keep it open',
+  },
+} satisfies AdminCatalogue);

@@ -284,25 +284,6 @@ export type Catalogue = {
       cantBid: string;
       biddersSee: string;
     };
-    admin: {
-      heading: string;
-      note: string;
-      forceClose: string;
-      cancel: string;
-      forceTitle: string;
-      forceBody: string;
-      current: (amount: string, seq: number, reserve: string) => string;
-      reserveMet: string;
-      reserveNotMet: string;
-      noBidsYet: string;
-      cannotUndo: string;
-      cancelTitle: string;
-      cancelBody: string;
-      reasonLabel: string;
-      reasonNote: string;
-      keepOpen: string;
-      failed: string;
-    };
   };
   /** the live-region text (brief 11.4), exactly as design/shots/03-room/index.md lists it */
   announce: {
@@ -614,6 +595,29 @@ export type PayCatalogue = {
   signInNote: string;
   signIn: string;
   testMode: string;
+};
+
+/** The administrator's strings (brief 9.9, UI-8), imported only by the admin chunk (strings/
+ * admin-en-IN.ts): a non-admin never downloads them. Error codes still come from Catalogue. */
+export type AdminCatalogue = {
+  room: {
+    heading: string;
+    note: string;
+    forceClose: string;
+    cancel: string;
+    forceTitle: (title: string) => string;
+    forceBody: string;
+    current: (amount: string, seq: number, reserve: string) => string;
+    reserveMet: string;
+    reserveNotMet: string;
+    noBidsYet: string;
+    cannotUndo: string;
+    cancelTitle: (title: string) => string;
+    cancelBody: string;
+    reasonLabel: string;
+    reasonNote: string;
+    keepOpen: string;
+  };
 };
 
 /** The seller screens' strings (brief 9.8), imported only by the seller chunk (strings/

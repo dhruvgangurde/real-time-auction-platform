@@ -2,6 +2,9 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-17 Phase 10c slice 4b, admin and account
+- The room's admin panel and its strings are in the admin chunk (Q4 of the slice 4 plan): `admin/RoomAdminPanel.tsx`, loaded with `React.lazy` by the room only when the viewer's roles include admin, its strings in `AdminCatalogue` (`strings/admin-en-IN.ts`) and its two calls in `admin/api.ts`, all out of the entry; a non-admin downloads no admin code anywhere (`chunks.test.ts`). The SPA entry fell from 124.4 to 123.8 KB. The panel now offers force-close only while the auction is live or closing and cancel only while it is a draft, scheduled or live (`roomActions`, as the API allows), its dialogs name the lot, and a refusal shows the code's own message instead of one generic line.
+
 ## 2026-10-17 Phase 10c slice 4a, review fixes
 - The room follows the cards' Watch rule (changes the 2026-10-15 slice 3 entry, where the room kept "every status but an unwatched cancelled auction"): a sold, unsold or cancelled lot shows no Watch unless it is already watched, then "Watching" so it can be removed (`cardWatch`). The room decides on its live status, so a close seen in the open room hides it too (`cardFromDetail(detail, status)`). Watching a finished lot brings nothing.
 

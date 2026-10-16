@@ -3,7 +3,7 @@
 // reads only its slice. The bid and proxy controls, the seller and admin panels sit in the live
 // column between the countdown and the ledger (S6, S7).
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { ApiError } from '../api/client';
@@ -13,7 +13,6 @@ import { HelpDrawer } from '../help/HelpDrawer';
 import { errorMessage, useStrings, type HelpTopic } from '../strings/catalogue';
 import { Banner } from './Banner';
 import { blockedBy, paidAt } from './account';
-import { AdminPanel } from './AdminPanel';
 import { BidControl } from './BidControl';
 import { Countdown } from './Countdown';
 import { Ledger } from './Ledger';
@@ -24,6 +23,9 @@ import { SellerPanel } from './SellerPanel';
 import styles from './room.module.css';
 import { StatusLine } from './StatusLine';
 import { useRoom } from './useRoom';
+
+// the admin chunk, fetched only when the viewer is an administrator (slice 4 plan, Q4)
+const RoomAdminPanel = lazy(() => import('../admin/RoomAdminPanel'));
 
 // the phone header's thumbnail repeats the title beside it, so it is decorative (empty alt)
 const DECORATIVE = '';
@@ -102,7 +104,9 @@ export function RoomPage() {
           {isSeller ? (
             <SellerPanel detail={d} state={state} />
           ) : isAdmin ? (
-            <AdminPanel state={state} />
+            <Suspense fallback={null}>
+              <RoomAdminPanel state={state} title={d.title} status={state.status ?? d.status} />
+            </Suspense>
           ) : (
             <>
               <BidControl state={state} session={session} profile={me.data} signedIn={token !== null} startTimeMs={d.start_time_ms} paidAtMs={paidAt(settlement.data)} onResend={resend} />
