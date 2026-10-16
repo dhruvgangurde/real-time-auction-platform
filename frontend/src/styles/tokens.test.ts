@@ -1,20 +1,9 @@
-// tokens.css must carry exactly the brief's section 4.1 table, in both themes, and the
+// tokens.css must carry exactly the brief's section 4.1 table (tokens.expected.ts), in both themes, and the
 // prefers-color-scheme block must equal the [data-theme="dark"] override.
 import { expect, test } from 'vitest';
 
-import brief from '../../../docs/design-brief.md?raw';
 import tokens from './tokens.css?raw';
-
-function briefTable(): { light: Record<string, string>; dark: Record<string, string> } {
-  const section = brief.slice(brief.indexOf('### 4.1 Tokens'), brief.indexOf('### 4.2 Contrast'));
-  const light: Record<string, string> = {};
-  const dark: Record<string, string> = {};
-  for (const m of section.matchAll(/^\| `(--[a-z0-9-]+)` \| `(#[0-9A-F]{6})` \| `(#[0-9A-F]{6})` \|/gm)) {
-    light[m[1]!] = m[2]!;
-    dark[m[1]!] = m[3]!;
-  }
-  return { light, dark };
-}
+import { expectedTokens as table } from './tokens.expected';
 
 function block(selector: string): Record<string, string> {
   const start = tokens.indexOf(selector);
@@ -24,8 +13,6 @@ function block(selector: string): Record<string, string> {
   for (const m of body.matchAll(/(--[a-z0-9-]+):\s*(#[0-9A-F]{6});/g)) out[m[1]!] = m[2]!;
   return out;
 }
-
-const table = briefTable();
 
 test('the brief lists fifteen tokens', () => {
   expect(Object.keys(table.light)).toHaveLength(15);
