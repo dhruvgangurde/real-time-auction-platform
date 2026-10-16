@@ -100,3 +100,40 @@ test('the skip link reaches main with the keyboard', async ({ page }) => {
   await page.keyboard.press('Enter');
   expect(await page.evaluate(() => document.activeElement?.id)).toBe('main');
 });
+
+test('at 390, signed in with an unread badge and the Sell icon, the header is one line: the wordmark never wraps, a long name truncates and keeps its full accessible name', async ({ browser, request }) => {
+  test.setTimeout(90_000);
+  const { API, bearer, newAccount, newAuction, restBid, signInUi, waitForStatus } = await import('./fixtures/stack');
+  const name = 'AnanthaPadmanabhanKrishnaswamy'; // the email is built from it: no spaces
+  const seller = await newAccount(request, 'seller', 'seller');
+  const viewer = await newAccount(request, name, 'seller');
+  const other = await newAccount(request, 'other');
+  const id = await newAuction(request, seller, { startInS: 2, endInS: 600, reservePrice: null });
+  await waitForStatus(request, id, 'live');
+  await (await restBid(request, viewer, id, 900000)).json();
+  await (await restBid(request, other, id, 950000)).json(); // the viewer is outbid: an unread row
+  await expect
+    .poll(async () => ((await (await request.get(`${API}/notifications?unread=true`, { headers: bearer(viewer) })).json()) as { items: unknown[] }).items.length, { timeout: 20_000 })
+    .toBeGreaterThan(0);
+
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await signInUi(page, viewer);
+  const header = page.getByRole('banner');
+  await expect(header.getByRole('link', { name: enIN.nav.notificationsLabel(1) })).toBeVisible();
+  const account = header.getByRole('link', { name, exact: true }); // the full name stays its accessible name
+  await expect(account).toBeVisible();
+  const box = await page.evaluate(() => {
+    const mark = document.querySelector('header a') as HTMLElement;
+    const acct = [...document.querySelectorAll('header a')].at(-1) as HTMLElement;
+    const lineHeight = parseFloat(getComputedStyle(mark).lineHeight);
+    return {
+      markLines: Math.round(mark.getBoundingClientRect().height / lineHeight),
+      truncated: acct.scrollWidth > acct.clientWidth,
+      header: document.querySelector('header')!.getBoundingClientRect().height,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+  expect(box).toEqual({ markLines: 1, truncated: true, header: 57, overflow: 0 }); // 56 px row + its 1 px rule
+  await ctx.close();
+});

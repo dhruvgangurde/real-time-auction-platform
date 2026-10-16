@@ -138,13 +138,26 @@
     gap: 16px;
   }
 
-  .nav {
-    gap: 16px;
+  /* one line: the wordmark keeps its width, the name gives way (an ellipsis; its accessible name
+     stays whole) */
+  .mark {
+    flex: none;
+    white-space: nowrap;
   }
 
-  /* a long name never pushes the header past the screen */
+  .nav {
+    gap: 14px;
+    min-width: 0;
+    align-items: center;
+  }
+
+  .bell {
+    flex: none;
+  }
+
   .account {
-    max-width: 30vw;
+    display: block;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
