@@ -241,13 +241,30 @@ export function Listing() {
         />
       ) : null}
       {mine ? <Photos id={id} images={d.images} status={d.status} can={can} onChanged={() => listing.refetch()} /> : null}
-      {mine ? (
+      {/* the inputs are uncontrolled: the category select must have its options when it mounts */}
+      {mine && categories.data === undefined ? (
+        categories.isError ? (
+          <p className={own.actions}>
+            <span className={styles.fieldError} role="alert">
+              {errorMessage(s, categories.error instanceof ApiError ? categories.error.code : 'SERVICE_UNAVAILABLE')}
+            </span>
+            <button type="button" className={styles.btnQuiet} onClick={() => void categories.refetch()}>
+              {s.common.tryAgain}
+            </button>
+          </p>
+        ) : (
+          <p className={styles.hint} role="status">
+            {s.common.loading}
+          </p>
+        )
+      ) : null}
+      {mine && categories.data !== undefined ? (
         <ListingForm
           key={version}
           initial={initial}
           can={can}
           mode="edit"
-          categories={categories.data ?? []}
+          categories={categories.data}
           submitLabel={p.save}
           {...(note === undefined ? {} : { note })}
           onSave={async (values) => {
@@ -287,12 +304,16 @@ export function NewListing() {
             {s.common.tryAgain}
           </button>
         </div>
+      ) : categories.data === undefined ? (
+        <p className={styles.hint} role="status">
+          {s.common.loading}
+        </p>
       ) : (
         <ListingForm
           initial={EMPTY}
           can="all"
           mode="create"
-          categories={categories.data ?? []}
+          categories={categories.data}
           submitLabel={f.create}
           onSave={async (values) => {
             const id = await createListing(api, toCreate(values));

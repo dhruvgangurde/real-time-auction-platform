@@ -126,8 +126,14 @@ test('live: only the text until the first bid, then read-only (BR-4); sold: the 
   const id = await newAuction(request, seller, { title: `Nikon ${tag()} F`, startInS: 2, endInS: 40, thresholdS: 10, extensionS: 10, reservePrice: null });
   await waitForStatus(request, id, 'live');
   await signInUi(page, seller);
+  // the category tree answering after the listing (routed 1.5 s later), as on a slow first load
+  await page.route('**/api/v1/categories', async (route) => {
+    await new Promise((r) => setTimeout(r, 1_500));
+    await route.continue().catch(() => undefined);
+  });
   await page.goto(`/sell/${id}`);
   await expect(page.getByText(t.page.descriptive)).toBeVisible();
+  await expect(field(page, f.category)).toHaveValue('1'); // the stored category, also on a load where the tree comes later
   await expect(field(page, f.title)).toBeEnabled();
   for (const label of [f.category, f.startingPrice, f.minIncrement, f.reserve, f.start, f.end, f.threshold]) await expect(field(page, label)).toBeDisabled();
   await expect(page.getByRole('button', { name: t.actions.publish })).toHaveCount(0);
