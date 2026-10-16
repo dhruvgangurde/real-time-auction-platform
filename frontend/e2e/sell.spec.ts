@@ -188,3 +188,37 @@ test('at 390 in dark, from the keyboard: the dashboard, the form and the listing
   await fits();
   await ctx.close();
 });
+
+// the dashboard's height at 390 with these six listings as full-width cards, measured before the
+// compact rows (2026-10-17): the rows must take at most half of it
+const CARDS_AT_390 = 3080;
+
+test('at 390 the dashboard lists compact rows, thumbnail beside the title, status, price and time: no sideways scroll, at most half the height of cards', async ({ browser, request }) => {
+  test.setTimeout(90_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const k = tag();
+  for (const n of [1, 2]) await newAuction(request, seller, { title: `Draft ${k} ${n}`, publish: false, startInS: 3600, endInS: 7200 });
+  for (const n of [1, 2, 3]) await newAuction(request, seller, { title: `Scheduled ${k} ${n}`, startInS: 3600, endInS: 7200 });
+  const gone = await newAuction(request, seller, { title: `Cancelled ${k}`, startInS: 3600, endInS: 7200 });
+  await request.post(`${API}/auctions/${gone}/cancel`, { headers: bearer(seller) });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await signInUi(page, seller);
+  await page.goto('/sell');
+  await expect(page.locator('article')).toHaveCount(6);
+  const shape = await page.evaluate(() => {
+    const row = document.querySelector('article')!;
+    const [thumb, body] = [...row.children].map((c) => c.getBoundingClientRect());
+    return {
+      height: document.documentElement.scrollHeight,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      beside: thumb!.right <= body!.left && Math.abs(thumb!.top - body!.top) < 40, // the thumbnail beside the text, not above it
+    };
+  });
+  console.log('dashboard at 390:', shape);
+  expect(shape.overflow).toBeLessThanOrEqual(0);
+  expect(shape.beside).toBe(true);
+  expect(shape.height).toBeLessThanOrEqual(CARDS_AT_390 / 2);
+  for (const what of [enIN.cards.status.draft, enIN.cards.startingBid, '₹9,000']) await expect(page.locator('article').first()).toContainText(what);
+  await ctx.close();
+});

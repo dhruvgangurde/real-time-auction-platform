@@ -365,7 +365,7 @@ export function Dashboard() {
             <h2 id={`section-${section.key}`} className={own.sectionTitle}>
               {d.sections[section.key]}
             </h2>
-            <ul className={styles.grid}>
+            <ul className={`${styles.grid} ${own.rows}`}>
               {section.items.map((c) => (
                 <li key={c.id}>
                   <Card card={c} nowMs={now} to={`/sell/${c.id}`} level="h3" />
