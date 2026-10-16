@@ -96,4 +96,10 @@ export const sellerEnIN = guardSentences({
     keep: 'Keep it listed',
     cancelled: 'Cancelled.',
   },
+  closed: {
+    title: 'Result',
+    soldFor: (amount) => `Sold for ${amount}.`,
+    notSold: 'Not sold.',
+    reserveNotMet: 'Bidding did not reach your reserve.',
+  },
 } satisfies SellerCatalogue);

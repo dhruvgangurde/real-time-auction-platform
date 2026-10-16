@@ -700,6 +700,12 @@ export type SellerCatalogue = {
     keep: string;
     cancelled: string;
   };
+  closed: {
+    title: string;
+    soldFor: (amount: string) => string;
+    notSold: string;
+    reserveNotMet: string;
+  };
 };
 
 /**

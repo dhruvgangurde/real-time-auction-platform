@@ -90,7 +90,7 @@ export function Photos({
       <h2 id={`${inputId}-title`} className={own.sectionTitle}>
         {ph.title}
       </h2>
-      <p className={styles.hint}>{ph.cover}</p>
+      {changeable ? <p className={styles.hint}>{ph.cover}</p> : null}
       {sorted.length === 0 ? <p className={styles.lede}>{ph.none}</p> : null}
       <ul className={own.thumbs}>
         {sorted.map((image, i) => (

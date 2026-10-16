@@ -7,6 +7,9 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { useApp, useMe, useViewerId } from '../app/context';
 import { formatDay, formatLocal } from '../lib/clock';
+import { formatINR } from '../lib/money';
+import { sellerLines } from '../pay/seller';
+import { payEnIN } from '../strings/pay-en-IN';
 import { Card } from '../discover/Card';
 import styles from '../discover/discover.module.css';
 import { useNow } from '../discover/useNow';
@@ -45,7 +48,18 @@ export function Listing() {
   const me = useMe();
   const client = useQueryClient();
   // read again only after this page's own save: a background refetch must not reset the inputs
-  const listing = useQuery({ queryKey: ['listing', id, viewer], queryFn: () => api.detail(id), retry: false, staleTime: Infinity, refetchOnWindowFocus: false });
+  const listing = useQuery({
+    queryKey: ['listing', id, viewer],
+    queryFn: () => api.detail(id),
+    retry: false,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    // while bidding runs, read again so the outcome arrives; the inputs are not reset (no remount)
+    refetchInterval: (q) => (q.state.data?.status === 'live' || q.state.data?.status === 'closing' ? 15_000 : false),
+  });
+  const sold = listing.data?.status === 'closed_sold' && listing.data.seller.id === me.data?.id;
+  // the winner's name (BR-10) and whether the payment arrived (FR-64, FR-69); the buyer's attempts are not shown
+  const settlement = useQuery({ queryKey: ['settlement', id, viewer], queryFn: () => api.settlement(id), enabled: sold, retry: false });
   const categories = useQuery({ queryKey: ['categories'], queryFn: () => api.categories(), staleTime: 300_000 });
   const [version, setVersion] = useState(0);
   const [note, setNote] = useState<string | undefined>(undefined);
@@ -108,7 +122,20 @@ export function Listing() {
   const can = mine ? editable(d.status, d.sequence_no) : 'none';
   const initial = fromDetail(d);
   const where =
-    d.status === 'draft' ? p.draftNote : can === 'descriptive' ? p.descriptive : can === 'all' ? null : ENDED.has(d.status) ? p.ended : p.locked;
+    d.status === 'draft'
+      ? p.draftNote
+      : can === 'descriptive'
+        ? p.descriptive
+        : can === 'all'
+          ? null
+          : d.status === 'closing'
+            ? s.cards.closingNote
+            : d.status === 'cancelled'
+              ? s.cards.cancelledNote
+              : ENDED.has(d.status)
+                ? p.ended
+                : p.locked;
+  const c = t.closed;
 
   return (
     <section className={styles.page}>
@@ -126,6 +153,38 @@ export function Listing() {
           {p.room}
         </Link>
       </p>
+      {mine && (d.status === 'closed_sold' || d.status === 'closed_no_sale') ? (
+        <section className={own.photos} aria-labelledby="result-title">
+          <h2 id="result-title" className={own.sectionTitle}>
+            {c.title}
+          </h2>
+          {d.status === 'closed_no_sale' ? (
+            <p className={styles.lede}>{d.reserve_met === false ? `${c.notSold} ${c.reserveNotMet}` : c.notSold}</p>
+          ) : (
+            <>
+              <p className={styles.lede}>{c.soldFor(formatINR(d.current_price ?? d.start_price))}</p>
+              {settlement.isError ? (
+                <p className={own.actions}>
+                  <span className={styles.fieldError} role="alert">
+                    {errorMessage(s, settlement.error instanceof ApiError ? settlement.error.code : 'SERVICE_UNAVAILABLE')}
+                  </span>
+                  <button type="button" className={styles.btnQuiet} onClick={() => void settlement.refetch()}>
+                    {s.common.tryAgain}
+                  </button>
+                </p>
+              ) : settlement.data === undefined ? (
+                <p className={styles.hint}>{s.common.loading}</p>
+              ) : (
+                sellerLines(settlement.data, payEnIN, at).map((line, i) => (
+                  <p key={line} className={i === 0 ? styles.lede : `${styles.hint} tabular`}>
+                    {line}
+                  </p>
+                ))
+              )}
+            </>
+          )}
+        </section>
+      ) : null}
       {mine && (d.status === 'draft' || d.status === 'scheduled') ? (
         <p className={own.actions}>
           {d.status === 'draft' ? (
