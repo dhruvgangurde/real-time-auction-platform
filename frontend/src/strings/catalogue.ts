@@ -627,6 +627,31 @@ export type SellerCatalogue = {
     more: string;
     sections: Record<SectionKey, string>;
   };
+  form: {
+    newTitle: string;
+    newLede: string;
+    title: string;
+    description: string;
+    descriptionHint: string;
+    category: string;
+    categoryChoose: string;
+    startingPrice: string;
+    startingHint: string;
+    minIncrement: string;
+    incrementHint: string;
+    reserve: string;
+    reserveHint: string;
+    schedule: string;
+    start: string;
+    end: string;
+    zone: (zone: string) => string;
+    softClose: string;
+    threshold: string;
+    extension: string;
+    softCloseHint: string;
+    create: string;
+    saving: string;
+  };
 };
 
 /**

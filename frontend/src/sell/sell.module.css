@@ -15,3 +15,56 @@
   font: 400 22px/28px var(--font-serif);
   margin: 0 0 14px;
 }
+
+/* ---- the listing form */
+.form {
+  max-width: 720px;
+  margin-top: 28px;
+}
+
+.textarea {
+  composes: input from '../discover/discover.module.css';
+  height: 160px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+
+.fieldset {
+  border: 0;
+  margin: 8px 0 24px;
+  padding: 0;
+  min-width: 0;
+}
+
+.legend {
+  font: 400 20px/26px var(--font-serif);
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-top: 8px;
+}
+
+/* what the status no longer allows reads as fixed, not broken (FR-17) */
+.form :disabled {
+  background: var(--paper-2);
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+@media (max-width: 700px) {
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
