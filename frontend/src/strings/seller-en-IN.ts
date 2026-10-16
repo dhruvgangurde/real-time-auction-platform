@@ -83,4 +83,17 @@ export const sellerEnIN = guardSentences({
     uploading: (name) => `Uploading ${name}…`,
     failed: (name, why) => `${name}: ${why}`,
   },
+  actions: {
+    publish: 'Publish',
+    publishTitle: (title) => `Publish “${title}”?`,
+    publishBody: (start, end, zone) => `Bidding opens ${start} and ends ${end} (${zone}).`,
+    publishNote: 'It is published as saved. Until it starts you can still change everything.',
+    notYet: 'Not yet',
+    published: 'Published. It opens for bidding at its start time.',
+    cancel: 'Cancel listing',
+    cancelTitle: (title) => `Cancel “${title}”?`,
+    cancelBody: 'Nobody can bid on it, and this cannot be undone.',
+    keep: 'Keep it listed',
+    cancelled: 'Cancelled.',
+  },
 } satisfies SellerCatalogue);

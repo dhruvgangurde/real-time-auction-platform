@@ -687,6 +687,19 @@ export type SellerCatalogue = {
     uploading: (name: string) => string;
     failed: (name: string, why: string) => string;
   };
+  actions: {
+    publish: string;
+    publishTitle: (title: string) => string;
+    publishBody: (start: string, end: string, zone: string) => string;
+    publishNote: string;
+    notYet: string;
+    published: string;
+    cancel: string;
+    cancelTitle: (title: string) => string;
+    cancelBody: string;
+    keep: string;
+    cancelled: string;
+  };
 };
 
 /**

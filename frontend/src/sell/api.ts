@@ -26,6 +26,16 @@ export async function deleteImage(api: Api, id: string, imageId: number): Promis
   await api.request('DELETE', `/auctions/${id}/images/${imageId}`, { auth: 'required' });
 }
 
+/** draft to scheduled; needs a photo and a start that has not passed (FR-13, FR-12) */
+export async function publishListing(api: Api, id: string): Promise<void> {
+  await api.request('POST', `/auctions/${id}/publish`, { auth: 'required' });
+}
+
+/** draft or scheduled to cancelled, by its seller only (FR-18, BR-9); no reason is taken */
+export async function cancelListing(api: Api, id: string): Promise<void> {
+  await api.request('POST', `/auctions/${id}/cancel`, { auth: 'required' });
+}
+
 /** A new draft (FR-11); its id. Ten per hour per seller (NFR-22). */
 export async function createListing(api: Api, body: Record<string, unknown>): Promise<string> {
   return parsed(await api.request('POST', '/auctions', { auth: 'required', body }), created);

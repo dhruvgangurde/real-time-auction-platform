@@ -6,15 +6,17 @@ import { Link, useNavigate, useParams } from 'react-router';
 
 import { ApiError } from '../api/client';
 import { useApp, useMe, useViewerId } from '../app/context';
+import { formatDay, formatLocal } from '../lib/clock';
 import { Card } from '../discover/Card';
 import styles from '../discover/discover.module.css';
 import { useNow } from '../discover/useNow';
 import type { AuctionStatus } from '../lib/contract';
+import { ConfirmDialog } from '../room/ConfirmDialog';
 import { errorMessage, useStrings } from '../strings/catalogue';
 import { sellerEnIN as t } from '../strings/seller-en-IN';
-import { createListing, sellerAuctions, updateListing } from './api';
+import { cancelListing, createListing, publishListing, sellerAuctions, updateListing } from './api';
 import { sections } from './dashboard';
-import { EMPTY, editable, fromDetail, toCreate, toPatch } from './listing';
+import { EMPTY, editable, fromDetail, fromServer, toCreate, toPatch } from './listing';
 import { ListingForm } from './ListingForm';
 import { Photos } from './Photos';
 import own from './sell.module.css';
@@ -30,6 +32,8 @@ const KIND = {
   cancelled: 'cancelled',
 } as const satisfies Record<AuctionStatus, string>;
 const ENDED = new Set<AuctionStatus>(['closed_sold', 'closed_no_sale', 'cancelled']);
+const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const at = (ms: number) => `${formatDay(ms)}, ${formatLocal(ms)}`;
 
 /** /sell/:id: one listing of the seller's own, editable as far as its status allows (FR-17). */
 export function Listing() {
@@ -45,6 +49,32 @@ export function Listing() {
   const categories = useQuery({ queryKey: ['categories'], queryFn: () => api.categories(), staleTime: 300_000 });
   const [version, setVersion] = useState(0);
   const [note, setNote] = useState<string | undefined>(undefined);
+  const [dialog, setDialog] = useState<'publish' | 'cancel' | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const a = t.actions;
+
+  /** publish or cancel, then the page and the dashboard read again */
+  async function act(kind: 'publish' | 'cancel') {
+    try {
+      await (kind === 'publish' ? publishListing(api, id) : cancelListing(api, id));
+      await client.invalidateQueries({ queryKey: ['seller-auctions'] });
+      await listing.refetch();
+      setVersion((v) => v + 1);
+      setDialog(null);
+      setDone(kind === 'publish' ? a.published : a.cancelled);
+    } catch (e) {
+      const failure = e instanceof ApiError ? e : new ApiError('INTERNAL_ERROR', '', 0);
+      // a missing photo or a start now past says what to fix, in the form's words
+      const problem = Object.values(fromServer(failure.fields ?? {}))[0];
+      setActionError(problem === undefined ? errorMessage(s, failure.code) : t.problems[problem]);
+    }
+  }
+  const open = (kind: 'publish' | 'cancel') => {
+    setActionError(null);
+    setDone(null);
+    setDialog(kind);
+  };
 
   if (listing.isError) {
     const code = listing.error instanceof ApiError ? listing.error.code : 'SERVICE_UNAVAILABLE';
@@ -96,6 +126,50 @@ export function Listing() {
           {p.room}
         </Link>
       </p>
+      {mine && (d.status === 'draft' || d.status === 'scheduled') ? (
+        <p className={own.actions}>
+          {d.status === 'draft' ? (
+            <button type="button" className={styles.btnPrimary} onClick={() => open('publish')}>
+              {a.publish}
+            </button>
+          ) : null}
+          <button type="button" className={styles.btnQuiet} onClick={() => open('cancel')}>
+            {a.cancel}
+          </button>
+        </p>
+      ) : null}
+      {done === null ? null : (
+        <p className={styles.hint} role="status">
+          {done}
+        </p>
+      )}
+      {dialog === 'publish' ? (
+        <ConfirmDialog
+          title={a.publishTitle(d.title)}
+          body={
+            <>
+              <p>{a.publishBody(at(d.start_time_ms), at(d.end_time_ms), ZONE)}</p>
+              <p>{a.publishNote}</p>
+            </>
+          }
+          confirmLabel={a.publish}
+          dismissLabel={a.notYet}
+          error={actionError}
+          onConfirm={() => void act('publish')}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
+      {dialog === 'cancel' ? (
+        <ConfirmDialog
+          title={a.cancelTitle(d.title)}
+          body={<p>{a.cancelBody}</p>}
+          confirmLabel={a.cancel}
+          dismissLabel={a.keep}
+          error={actionError}
+          onConfirm={() => void act('cancel')}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
       {mine ? <Photos id={id} images={d.images} status={d.status} can={can} onChanged={() => listing.refetch()} /> : null}
       {mine ? (
         <ListingForm
