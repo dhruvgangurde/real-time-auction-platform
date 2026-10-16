@@ -138,7 +138,7 @@ Editing, publishing and adding or removing images require the seller role as wel
 - **Status codes for lifecycle actions.** Edits and image changes on closing, closed or cancelled auctions give `ALREADY_CLOSED`; publish or cancel of a live or closing auction `AUCTION_ALREADY_LIVE`; publish of a scheduled auction `NOT_DRAFT`. "Start not in the past" (FR-12) is checked when the start time is set and again at publish, so a scheduled auction about to start can still have its title fixed. An auction that has left draft keeps at least one image (FR-13). Cancel is owner-only for now; an administrator cancel with a reason comes with the Phase 8 admin work.
 - **Bid history (FR-27, BR-10).** Keyset on `sequence_no`; for live and closing auctions the outbox is merged up to the state's sequence (same MULTI read as the snapshot); admins also see bidder ids. The seller's view of the winner's identity (BR-10) needs a settlement, so it is Phase 8.
 
-## 2026-10-12 Phase 6 fix pass (from docs/audit-phase6-7.md)
+## 2026-10-12 Phase 6 fix pass (from the Phase 6 and 7 audit)
 - **D2: only live and closing auctions have Redis state (FR-15, FR-26, FR-30, DC-1, FR-43).** `/live` and `subscribe` serve every other status from Postgres (`degraded: false`) and write no Redis key except presence; `init_live_state` raises `AuctionNotLive` for any other status, so nothing can create such state. Reason: a `scheduled` hash created by viewing was never refreshed, and the auction kept rejecting bids after going live. Each reconciliation run also removes state left for auctions Postgres no longer calls live or closing; `cleanup_state.lua` re-checks inside Redis and keeps any hash whose own status is live, closing or rebuilding, or whose outbox is non-empty, so racing an activation or a rebuild never deletes state in use.
 - **D3: one socket per session (CI-3).** The newest socket of a session wins: registering takes a generation from a global counter (`ws_claim.lua`), older sockets of that session close with **4012 SESSION_REPLACED** at once on the same instance and through `session_replaced` on the user channel elsewhere; the higher generation always wins, so simultaneous opens are deterministic. A user may hold at most 5 sessions (`ws_max_sessions_per_user`); a held session may always reconnect. Re-authenticating a socket requires a token of the same session (a refreshed one); another session's token closes 4002. Client contract: never auto-reconnect after 4002, 4004 or 4012.
 - **D4: no idle timeout for authenticated sockets (FR-29, FR-30 spectating).** Close code 4011 is retired. Dead peers are dropped by the protocol keepalive (uvicorn `--ws-ping-interval 20 --ws-ping-timeout 20`), which browsers answer without application code; a quiet spectator is never closed. The 5 s authenticate timeout stays.
@@ -240,7 +240,7 @@ The WebSocket layer authenticates its first message with the access token (CI-4,
 - Dev dependencies (pytest, ruff) are installed in the image so tests and lint run with `docker compose exec api`.
 
 ## 2026-10-11 Native Windows with Docker Desktop
-Repo lives at `C:\dev\auction` (moved out of OneDrive) and Claude Code runs on native Windows, not WSL. `.gitattributes` forces LF so line endings stay normal inside containers.
+`.gitattributes` forces LF so line endings stay normal inside containers.
 
 ## 2026-10-11 Non-default host ports
 API 8010, Postgres 5442, Redis 6389. Another project on this machine uses 5432 and 8000. Compose project name `auction`, no `container_name`.

@@ -1,6 +1,6 @@
 # Frontend
 
-React + TypeScript (strict) with Vite. The design brief (`docs/design-brief.md`) is the spec; the room's client rules are its section 13 and `docs/architecture.md` section 4.
+React + TypeScript (strict) with Vite. The design brief is the spec; the room's client rules are its section 13 and `docs/architecture.md` section 4.
 
 ## Commands
 
