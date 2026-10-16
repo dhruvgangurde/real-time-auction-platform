@@ -86,7 +86,7 @@ export function Photos({
   }
 
   return (
-    <section className={own.photos} aria-labelledby={`${inputId}-title`}>
+    <section id="photos" className={own.photos} aria-labelledby={`${inputId}-title`} tabIndex={-1}>
       <h2 id={`${inputId}-title`} className={own.sectionTitle}>
         {ph.title}
       </h2>

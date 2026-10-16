@@ -16,7 +16,7 @@ import { errorMessage, useStrings } from '../strings/catalogue';
 import { sellerEnIN as t } from '../strings/seller-en-IN';
 import { cancelListing, createListing, publishListing, sellerAuctions, updateListing } from './api';
 import { sections } from './dashboard';
-import { EMPTY, editable, fromDetail, fromServer, toCreate, toPatch } from './listing';
+import { EMPTY, editable, fromDetail, fromServer, publishProblem, toCreate, toPatch } from './listing';
 import { ListingForm } from './ListingForm';
 import { Photos } from './Photos';
 import { resultLines } from './result';
@@ -64,6 +64,7 @@ export function Listing() {
   const [dialog, setDialog] = useState<'publish' | 'cancel' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [notYet, setNotYet] = useState<string | null>(null);
   const a = t.actions;
 
   /** publish or cancel, then the page and the dashboard read again */
@@ -179,7 +180,21 @@ export function Listing() {
       {mine && (d.status === 'draft' || d.status === 'scheduled') ? (
         <p className={own.actions}>
           {d.status === 'draft' ? (
-            <button type="button" className={styles.btnPrimary} onClick={() => open('publish')}>
+            <button
+              type="button"
+              className={styles.btnPrimary}
+              onClick={() => {
+                // no photo: say so here and go to the photos, without asking the server
+                const problem = publishProblem(d.images.length);
+                if (problem === null) {
+                  setNotYet(null);
+                  open('publish');
+                  return;
+                }
+                setNotYet(t.problems[problem]);
+                document.getElementById('photos')?.focus();
+              }}
+            >
               {a.publish}
             </button>
           ) : null}
@@ -191,6 +206,11 @@ export function Listing() {
       {done === null ? null : (
         <p className={styles.hint} role="status">
           {done}
+        </p>
+      )}
+      {notYet === null || d.images.length > 0 ? null : (
+        <p className={styles.fieldError} role="alert">
+          {notYet}
         </p>
       )}
       {dialog === 'publish' ? (

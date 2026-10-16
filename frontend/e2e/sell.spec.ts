@@ -52,6 +52,15 @@ test('a draft from the form, refused fields first; photos refused before and by 
   expect(await status(page)).toBe(enIN.cards.status.draft);
   await expect(page.getByText(t.page.draftNote)).toBeVisible();
 
+  // Publish with no photo: the reason here, the focus on the photos, and no request at all (FR-13)
+  const publishes: string[] = [];
+  page.on('request', (r) => r.url().endsWith('/publish') && publishes.push(r.url()));
+  await page.getByRole('button', { name: t.actions.publish }).click();
+  await expect(page.getByRole('alert').filter({ hasText: t.problems.images })).toBeVisible();
+  await expect(page.getByRole('region', { name: t.photos.title })).toBeFocused();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(publishes).toEqual([]);
+
   // photos: two refused here, one refused by the server (it decodes the file), one added as the cover
   await page.getByLabel(t.photos.add).setInputFiles([
     { name: 'big.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(6 * 1024 * 1024) },

@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { AuctionDetail } from '../lib/contract';
-import { EMPTY, editable, fromDetail, fromServer, toCreate, toPatch, validate, type ListingValues } from './listing';
+import { EMPTY, editable, fromDetail, fromServer, publishProblem, toCreate, toPatch, validate, type ListingValues } from './listing';
 
 const NOW = Date.UTC(2026, 9, 17, 10, 0);
 const local = (ms: number) => {
@@ -148,4 +148,9 @@ test("the server's field errors land on the same fields, in the form's own words
     images: 'images',
     startingPrice: 'startingMin',
   });
+});
+
+test('a draft with no photo is not sent to publish: the reason is said here (FR-13)', () => {
+  expect(publishProblem(0)).toBe('images');
+  expect(publishProblem(1)).toBeNull();
 });

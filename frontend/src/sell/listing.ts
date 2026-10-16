@@ -154,6 +154,11 @@ export function fromDetail(d: AuctionDetail): ListingValues {
   };
 }
 
+/** Why a draft cannot be published yet, said before asking the server: it needs a photo (FR-13). */
+export function publishProblem(images: number): Problem | null {
+  return images === 0 ? 'images' : null;
+}
+
 const SERVER: Record<string, [Target, Problem]> = {
   title: ['title', 'invalid'],
   description: ['description', 'invalid'],
