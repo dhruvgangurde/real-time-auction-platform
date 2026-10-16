@@ -9,11 +9,12 @@ import styles from '../discover/discover.module.css';
 import { adminEnIN } from '../strings/admin-en-IN';
 import own from './admin.module.css';
 import { Audit } from './Audit';
+import { Categories } from './Categories';
 import { Users } from './Users';
 
 // the section is the rest of the path under /admin/*: picked here rather than with <Routes>, whose
 // code would land in the entry's shared router chunk (the entry is at its budget)
-const SECTIONS = { '': Users, users: Users, audit: Audit } as const;
+const SECTIONS = { '': Users, users: Users, audit: Audit, categories: Categories } as const;
 
 export default function AdminArea() {
   const a = adminEnIN.area;
@@ -27,6 +28,7 @@ export default function AdminArea() {
           {a.users}
         </NavLink>
         <NavLink to="/admin/audit">{a.audit}</NavLink>
+        <NavLink to="/admin/categories">{a.categories}</NavLink>
       </nav>
       {Section === undefined ? <NotFound /> : <Section />}
     </section>

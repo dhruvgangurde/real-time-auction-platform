@@ -77,6 +77,19 @@ export async function auditLog(api: Api, query: string, beforeId?: number): Prom
   return parsed(await api.request('GET', `/admin/audit?${q}`, { auth: 'required' }), auditPage);
 }
 
+/** FR-20: categories change only by an administrator, each with a reason (FR-75). */
+export async function createCategory(api: Api, body: { name: string; slug: string; parent_id: number | null; reason: string }): Promise<void> {
+  await api.request('POST', '/categories', { auth: 'required', body });
+}
+
+export async function updateCategory(api: Api, id: number, body: Record<string, unknown>): Promise<void> {
+  await api.request('PATCH', `/categories/${id}`, { auth: 'required', body });
+}
+
+export async function deleteCategory(api: Api, id: number, reason: string): Promise<void> {
+  await api.request('DELETE', `/categories/${id}`, { auth: 'required', body: { reason } });
+}
+
 /** FR-76: by name or email, role and status; newest first. */
 export async function listUsers(api: Api, query: URLSearchParams): Promise<UserPage> {
   return parsed(await api.request('GET', `/admin/users?${query}`, { auth: 'required' }), userPage);

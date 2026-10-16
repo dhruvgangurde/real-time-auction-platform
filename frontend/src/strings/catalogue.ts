@@ -652,6 +652,32 @@ export type AdminCatalogue = {
     retry: string;
     checking: string;
   };
+  categories: {
+    title: string;
+    newTitle: string;
+    name: string;
+    slug: string;
+    slugHint: string;
+    parent: string;
+    top: string;
+    create: string;
+    edit: string;
+    editLabel: (name: string) => string;
+    editTitle: (name: string) => string;
+    save: string;
+    cancel: string;
+    remove: string;
+    removeLabel: (name: string) => string;
+    removeTitle: (name: string) => string;
+    removeBody: string;
+    keep: string;
+    created: (name: string) => string;
+    saved: (name: string) => string;
+    removed: (name: string) => string;
+    unchanged: string;
+    empty: string;
+    problems: Record<'required' | 'long' | 'slug', string>;
+  };
   audit: {
     title: string;
     actor: string;

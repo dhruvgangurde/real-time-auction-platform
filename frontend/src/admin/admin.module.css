@@ -92,6 +92,42 @@
   margin-top: 20px;
 }
 
+/* ---- categories: a nested list, so the tree indents without inline styles (CSP) */
+.tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree .tree {
+  padding-left: 24px;
+  border-left: 1px solid var(--rule);
+}
+
+.node {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.node p {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.addCategory {
+  margin-top: 36px;
+}
+
+.categoryForm {
+  max-width: 720px;
+  padding: 16px 0 8px;
+}
+
 /* ---- the audit log */
 .entry {
   padding: 14px 0;
