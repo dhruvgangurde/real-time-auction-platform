@@ -6,6 +6,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { ApiError } from '../api/client';
 import type { AuctionCard, AuctionDetail, Watchlist } from '../lib/contract';
+import { cardWatch } from '../discover/cards';
 import { cardFromDetail, watchOptions } from './watch';
 
 const KEY = ['watchlist', 't'];
@@ -92,4 +93,18 @@ test('the room builds its card from the auction detail', () => {
     id: 'x', title: 'K1000', status: 'live', category_id: 4, starting_price: 900000, current_price: null,
     bid_count: 0, start_time_ms: 10, end_time_ms: 20, thumbnail_url: '/media/1.webp',
   });
+});
+
+test('a room that saw its close offers no Watch for the finished lot unless watched, as the cards do (FR-24)', () => {
+  const detail = {
+    auction_id: 'x', title: 'K1000', status: 'live', category: null, start_price: 900000, current_price: 950000, bid_count: 1,
+    start_time_ms: 10, end_time_ms: 20, images: [],
+  } as unknown as AuctionDetail;
+  for (const status of ['closed_sold', 'closed_no_sale', 'cancelled'] as const) {
+    const card = cardFromDetail(detail, status); // the room's live status, not the detail read at load
+    expect(card.status).toBe(status);
+    expect(cardWatch(card.status, false)).toBe(false);
+    expect(cardWatch(card.status, true)).toBe(true); // a watched one stays, so it can be removed
+  }
+  expect(cardWatch(cardFromDetail(detail, 'live').status, false)).toBe(true);
 });

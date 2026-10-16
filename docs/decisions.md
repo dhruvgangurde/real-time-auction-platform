@@ -2,6 +2,9 @@
 
 Newest first. Add an entry whenever a decision is made or changed. Format: date, decision, reason.
 
+## 2026-10-17 Phase 10c slice 4a, review fixes
+- The room follows the cards' Watch rule (changes the 2026-10-15 slice 3 entry, where the room kept "every status but an unwatched cancelled auction"): a sold, unsold or cancelled lot shows no Watch unless it is already watched, then "Watching" so it can be removed (`cardWatch`). The room decides on its live status, so a close seen in the open room hides it too (`cardFromDetail(detail, status)`). Watching a finished lot brings nothing.
+
 ## 2026-10-17 Phase 10c slice 4a, seller
 - The help page no longer links to the API reference (Q1 of the slice 4 plan): through the web origin (8011) `/api/v1/docs` loads Swagger UI's script from a CDN, which the CSP blocks (architecture.md section 15), and FastAPI serves the schema at its default `/openapi.json`, which nginx does not forward, so the link led nowhere. UD-4's "API reference generated from the application schema" waits for gap H1 (Phase 11: serve the schema under `/api/v1`, then link to it); Swagger stays on 8010 for development. The signed-out header's "How it works" now opens `/help` (it pointed at a route that does not exist), and the listing form's reserve, increment and soft-close fields open their help topics in the same drawer as the room (brief 9.1: each topic reachable from the control it explains).
 - The winner's room reads the settlement once the room says won (`GET /auctions/{id}/settlement`, the winner's own), so a paid lot shows "Paid on <time>" and a link to the receipt instead of "Pay ₹X" (`paidAt`, FR-68, FR-69); a read that fails leaves Pay, and the payment page decides. The assertive "You won … Pay …" is said only when the win happens while the room is open: a room opened later (no status yet before its first snapshot) no longer repeats it on every load, paid or not.

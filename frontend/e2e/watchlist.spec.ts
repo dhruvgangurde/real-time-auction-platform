@@ -181,3 +181,24 @@ test('at 390, signed in, the header reaches the watchlist from the keyboard', as
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   await ctx.close();
 });
+
+test('a won room offers no Watch for the finished lot, unless it is watched (as the cards, FR-24)', async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const seller = await newAccount(request, 'seller', 'seller');
+  const winner = await newAccount(request, 'winner');
+  const plain = await newAuction(request, seller, { startInS: 2, endInS: 20, thresholdS: 10, extensionS: 10, reservePrice: null });
+  const watched = await newAuction(request, seller, { startInS: 2, endInS: 20, thresholdS: 10, extensionS: 10, reservePrice: null });
+  for (const id of [plain, watched]) await waitForStatus(request, id, 'live');
+  await request.put(`${API}/watchlist/${watched}`, { headers: bearer(winner) });
+  for (const id of [plain, watched]) {
+    await (await request.post(`${API}/auctions/${id}/bids`, { headers: bearer(winner), data: { amount: 900000, request_id: `w-${tag()}` } })).json();
+  }
+  for (const id of [plain, watched]) await waitForStatus(request, id, 'closed_sold', 60_000);
+  await signInUi(page, winner);
+  await page.goto(`/auctions/${plain}`);
+  await expect(page.getByRole('link', { name: enIN.roomUi.bid.pay('₹9,000') })).toBeVisible();
+  await expect(page.getByRole('button', { name: w.watch })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: w.watching })).toHaveCount(0);
+  await page.goto(`/auctions/${watched}`);
+  await expect(page.getByRole('button', { name: w.watching })).toBeVisible(); // so it can be removed
+});

@@ -111,7 +111,7 @@ export function RoomPage() {
           )}
           <Ledger state={state} />
         </section>
-        <Lot detail={d} onHelp={setHelpTopic} />
+        <Lot detail={d} status={state.status ?? d.status} onHelp={setHelpTopic} />
       </div>
       <HelpDrawer topic={helpTopic} onClose={closeHelp} />
     </>

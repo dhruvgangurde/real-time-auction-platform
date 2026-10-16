@@ -2,14 +2,15 @@
 // (times in the viewer's zone, the reserve as a fact, the amount for its owner only, BR-6) and
 // the four help questions, which open the drawer (UD-4).
 import { formatDay, formatLocal, formatRemaining, formatWindow } from '../lib/clock';
-import type { AuctionDetail } from '../lib/contract';
+import { cardWatch } from '../discover/cards';
+import type { AuctionDetail, AuctionStatus } from '../lib/contract';
 import { formatINR } from '../lib/money';
 import { HELP_TOPICS, useStrings, type HelpTopic } from '../strings/catalogue';
 import { cardFromDetail } from '../watch/watch';
 import { WatchButton } from '../watch/WatchButton';
 import styles from './room.module.css';
 
-export function Lot({ detail, onHelp }: { detail: AuctionDetail; onHelp: (topic: HelpTopic) => void }) {
+export function Lot({ detail, status, onHelp }: { detail: AuctionDetail; status: AuctionStatus; onHelp: (topic: HelpTopic) => void }) {
   const s = useStrings();
   const l = s.roomUi.lot;
   const [first, ...rest] = [...detail.images].sort((a, b) => a.position - b.position);
@@ -37,7 +38,8 @@ export function Lot({ detail, onHelp }: { detail: AuctionDetail; onHelp: (topic:
       )}
       <h1 className={styles.title}>{detail.title}</h1>
       <div className={styles.watchRow}>
-        <WatchButton card={cardFromDetail(detail)} note={s.watch.note} />
+        {/* a finished lot only while watched, so it can be removed: the cards' rule (FR-24) */}
+        <WatchButton card={cardFromDetail(detail, status)} note={s.watch.note} visible={(watched) => cardWatch(status, watched)} />
       </div>
       <p className={styles.desc}>{detail.description}</p>
       <dl className={styles.facts}>

@@ -4,7 +4,7 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
 import { ApiError, type Api } from '../api/client';
-import type { AuctionCard, AuctionDetail, Watchlist } from '../lib/contract';
+import type { AuctionCard, AuctionDetail, AuctionStatus, Watchlist } from '../lib/contract';
 
 export type WatchVars = { auctionId: string; watch: boolean; card?: AuctionCard };
 
@@ -39,13 +39,14 @@ export function watchOptions(client: QueryClient, api: Pick<Api, 'watch' | 'unwa
   };
 }
 
-/** The room's lot as a card, for the optimistic entry until the watchlist is fetched again. */
-export function cardFromDetail(d: AuctionDetail): AuctionCard {
+/** The room's lot as a card, for the optimistic entry until the watchlist is fetched again; with
+ * the room's live status, which moves on after the detail was read (a close seen in the room). */
+export function cardFromDetail(d: AuctionDetail, status: AuctionStatus = d.status): AuctionCard {
   const first = [...d.images].sort((a, b) => a.position - b.position)[0];
   return {
     id: d.auction_id,
     title: d.title,
-    status: d.status,
+    status,
     category_id: d.category?.id ?? 0,
     starting_price: d.start_price,
     current_price: d.current_price,
