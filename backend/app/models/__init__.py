@@ -3,6 +3,7 @@ from app.models.audit import AuditLog
 from app.models.base import Base
 from app.models.bid import Bid, ProxyBid
 from app.models.category import Category
+from app.models.demo import DemoRun
 from app.models.notification import Notification, NotificationPreference
 from app.models.settlement import Payment, PaymentEvent, Settlement
 from app.models.user import EmailVerificationToken, PasswordResetToken, Session, User, UserRole
@@ -15,6 +16,7 @@ __all__ = [
     "Base",
     "Bid",
     "Category",
+    "DemoRun",
     "EmailVerificationToken",
     "Notification",
     "NotificationPreference",

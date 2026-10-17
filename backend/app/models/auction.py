@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Computed,
     DateTime,
@@ -87,6 +88,8 @@ class Auction(Base):
     # D7: from the ledger, kept by the persister; live state in Redis may be ahead
     current_price: Mapped[int | None] = mapped_column(BigInteger)
     bid_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # a demo lot (brief 12.3): kept out of listings and notifications, never payable
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )

@@ -24,7 +24,8 @@ class Settlement(Base):
     __tablename__ = "settlements"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending_payment', 'paid', 'no_sale')",
+            # demo: a demo lot's sale, never payable (B2 Q1)
+            "status IN ('pending_payment', 'paid', 'no_sale', 'demo')",
             name="status",
         ),
         CheckConstraint(

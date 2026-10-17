@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -39,6 +40,8 @@ class User(Base):
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="pending_verification"
     )
+    # demo mode's bots, watcher and seller (brief 12.3): never shown, notified or emailed
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
