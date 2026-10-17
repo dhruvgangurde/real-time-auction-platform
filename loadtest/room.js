@@ -2,20 +2,24 @@
 // service. AS-4: one auction, 100 and more connected bidders, bidding concentrated in the final
 // minute. Every bidder is one minted account (loadtest-setup) with one socket: it authenticates,
 // subscribes, then bids the minimum it last saw, holding back while it leads, one bid in flight
-// at a time; every 2 s (jittered) in the steady phase, every 1 s in the final minute. A reader
+// at a time; every 2 s (jittered) in the steady phase, every 1 s in the final minute. Each
+// bidder times its own bids (its first one anywhere in the first gap after the opening), so
+// bids reach the server spread out, as independent people's would: the first run's shared
+// 50 ms tick fired in step across bidders and sent them in bursts (docs/decisions.md). A reader
 // requests listings, search and detail at a constant rate meanwhile (NFR-6).
 //
 // Measured here (client side): the acknowledgement time; NFR-3 (each room event's receipt minus
 // its server_time_ms, stamped by the publishing instance) at every socket; NFR-2 for one's own
 // bids (send to one's own bid_placed); REST durations per endpoint (NFR-6). Logged for the
-// report: every acknowledged bid (NFR-28 check 6, NFR-2's join), every bid_placed at every fifth
+// report: every acknowledged bid (NFR-28 check 6, NFR-2's join) and every rejected one, with its
+// send time (NFR-4: which bids could still have won when sent), every bid_placed at every fifth
 // socket (NFR-2 at other subscribers), and each socket's deliveries and replies at the end (NFR-5).
 import { check } from 'k6';
 import { SharedArray } from 'k6/data';
 import exec from 'k6/execution';
 import http from 'k6/http';
 import { Counter, Trend } from 'k6/metrics';
-import { clearInterval, setInterval, setTimeout } from 'k6/timers';
+import { clearTimeout, setTimeout } from 'k6/timers';
 import { WebSocket } from 'k6/websockets';
 
 const PLAN = JSON.parse(open('/loadtest/.run/plan.json'));
@@ -27,6 +31,7 @@ const STEADY_GAP_MS = 2000;
 const FINAL_GAP_MS = 1000;
 const FINAL_MINUTE_MS = 60000;
 const REPLY_TIMEOUT_MS = 5000;
+const RECHECK_MS = 50; // due while leading or awaiting a reply: look again in 25 to 75 ms
 // every fifth socket logs every bid_placed it receives (NFR-2's join); both parities of the
 // connection order, so both instances behind the round robin
 const SAMPLE_EVERY = 5;
@@ -97,7 +102,8 @@ export function bidder() {
   let mySeq = 0;
   let endMs = PLAN.end_ms;
   let inflight = null; // the request_id awaiting its reply
-  let nextAt = 0;
+  let bidTimer = null; // this bidder's own timer for its next bid
+  let replyTimer = null;
   let ended = false;
 
   const send = (message) => ws.send(JSON.stringify(message));
@@ -113,10 +119,15 @@ export function bidder() {
     }
   };
 
+  const stop = (timer) => {
+    if (timer !== null) clearTimeout(timer);
+  };
   const finish = () => {
     if (ended) return;
     ended = true;
-    clearInterval(ticker);
+    stop(bidTimer);
+    stop(replyTimer);
+    stop(deadline);
     let missing = null;
     if (finalSeq !== null && fromSeq !== null) {
       missing = 0;
@@ -130,23 +141,36 @@ export function bidder() {
     ws.close();
   };
 
-  const tick = () => {
-    const now = Date.now();
-    if (now >= DEADLINE_MS) return finish();
-    if (inflight !== null && now - pending[inflight].sent > REPLY_TIMEOUT_MS) {
-      tally.timeouts += 1;
-      inflight = null;
-    }
-    if (!isSubscribed || !live || closed || inflight !== null || leading() || now < nextAt) return;
-    const gap = now >= endMs - FINAL_MINUTE_MS ? FINAL_GAP_MS : STEADY_GAP_MS;
-    nextAt = now + gap * (0.75 + Math.random() * 0.5);
-    tally.sent += 1;
-    inflight = `b${index}-${tally.sent}`;
-    pending[inflight] = { amount: minNext, sent: now };
-    sent.add(1);
-    send({ type: 'place_bid', auction_id: AUCTION, amount: minNext, request_id: inflight });
+  const gapMs = () => (Date.now() >= endMs - FINAL_MINUTE_MS ? FINAL_GAP_MS : STEADY_GAP_MS);
+  const arm = (ms) => {
+    stop(bidTimer);
+    bidTimer = setTimeout(attempt, ms);
   };
-  const ticker = setInterval(tick, 50);
+  const attempt = () => {
+    bidTimer = null;
+    if (ended || closed || !isSubscribed || !live) return;
+    if (inflight !== null || leading()) return arm(RECHECK_MS * (0.5 + Math.random()));
+    tally.sent += 1;
+    const rid = `b${index}-${tally.sent}`;
+    inflight = rid;
+    pending[rid] = { amount: minNext, sent: Date.now() };
+    sent.add(1);
+    send({ type: 'place_bid', auction_id: AUCTION, amount: minNext, request_id: rid });
+    stop(replyTimer);
+    replyTimer = setTimeout(() => {
+      if (inflight === rid) {
+        tally.timeouts += 1;
+        inflight = null;
+      }
+    }, REPLY_TIMEOUT_MS);
+    arm(gapMs() * (0.75 + Math.random() * 0.5));
+  };
+  const goLive = () => {
+    if (live) return;
+    live = true;
+    arm(Math.random() * gapMs()); // the first bid anywhere in the first gap, not all at once
+  };
+  const deadline = setTimeout(finish, Math.max(0, DEADLINE_MS - Date.now()));
 
   // the reply to a bid of ours, matched by request_id even after its timeout
   const reply = (f) => {
@@ -177,11 +201,11 @@ export function bidder() {
         minNext = snap.min_next;
         lastSeq = snap.sequence_no;
         endMs = snap.end_time_ms;
-        live = snap.status === 'live';
+        if (snap.status === 'live') goLive();
         break;
       }
       case 'auction_started':
-        live = true;
+        goLive();
         break;
       case 'bid_placed': {
         if (received.has(f.sequence_no)) duplicates++;
@@ -213,9 +237,11 @@ export function bidder() {
         break;
       }
       case 'bid_rejected': {
-        if (reply(f) === null) break;
+        const p = reply(f);
+        if (p === null) break;
         bump(tally.rejected, f.code);
         if (f.min_next) minNext = Math.max(minNext, f.min_next);
+        console.log(JSON.stringify({ e: 'rej', vu: index, amount: p.amount, sent: p.sent, code: f.code }));
         break;
       }
       case 'auction_closed':
