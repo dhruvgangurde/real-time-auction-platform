@@ -141,7 +141,7 @@ docker compose logs demo                       # the demo runner
 docker compose exec api pytest tests/discovery/test_nfr6.py -s   # NFR-6 p50/p95 with 2,000 auctions, query plans
 docker compose exec api python -m app.cli grant-role <email> seller   # roles only via CLI (D6); revoke-role too
 docker compose exec api python -m app.cli seed-categories   # default category tree (idempotent)
-docker compose exec api python -m app.cli seed-demo   # demo set for a video (dev stack only, not e2e); --fresh, --live-minutes N, --starts-in M
+docker compose exec api python -m app.cli seed-demo   # demo set for a video (dev stack only, not e2e); --fresh, --live-minutes N, --starts-in M; writes ../auction-private/demo-credentials.md
 docker compose exec api python -m app.cli reinstate <email> --reason "..."   # recovery (e.g. no active admin)
 docker compose exec worker celery -A app.workers.celery_app inspect registered   # worker tasks
 docker compose exec api ruff check .           # lint

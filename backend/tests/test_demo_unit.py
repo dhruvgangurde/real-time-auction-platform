@@ -1,6 +1,9 @@
 """The demo seed runs only on the plain dev stack: never outside development, never on the e2e
 stack (docker-compose.e2e.yml sets E2E_STACK=1). It refuses before any connection is made."""
 
+import stat
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
@@ -135,6 +138,58 @@ async def test_a_configured_password_registration_would_refuse_stops_the_seed_un
     err = capsys.readouterr().err
     assert "DEMO_ACCOUNTS_PASSWORD must be 10 to 128 characters (FR-2)" in err
     assert value not in err
+
+
+# the local credentials file, outside the repository: every account with its password, the six
+# lots with their state and end time in IST, and the URLs; replaced on each run, owner-only
+
+
+def test_the_credentials_file_lists_every_account_lot_and_url() -> None:
+    accounts = [
+        ("seller", "Meera Shah", "meera.shah@example.com", "Pw1forMeera2026"),
+        ("bidder", "Asha Rao", "asha.rao@example.com", "Pw2forAsha2026x"),
+        ("bidder", "Ravi Kumar", "ravi.kumar@example.com", "a|pipe-in-it"),
+        ("admin", "Kavya Nair", "kavya.nair@example.com", "Pw4forKavya2026"),
+    ]
+    noon = datetime(2026, 10, 17, 12, 0, tzinfo=UTC)  # 17:30 in IST (UTC+5:30)
+    lots = [
+        (key, f"Lot {key}", f"state of {key}", noon + timedelta(minutes=i), f"{demo.WEB}/x/{key}")
+        for i, key in enumerate("abcdef")
+    ]
+    text = demo.credentials(accounts, lots, noon - timedelta(hours=1))
+    assert "Written by seed-demo at 2026-10-17 16:30:00 IST." in text
+    assert "| seller | Meera Shah | meera.shah@example.com | Pw1forMeera2026 |" in text
+    assert "| bidder | Ravi Kumar | ravi.kumar@example.com | a\\|pipe-in-it |" in text  # escaped
+    assert "| admin | Kavya Nair | kavya.nair@example.com | Pw4forKavya2026 |" in text
+    assert (
+        "| a | Lot a | state of a | 2026-10-17 17:30:00 IST | http://localhost:8011/x/a |" in text
+    )
+    assert (
+        "| f | Lot f | state of f | 2026-10-17 17:35:00 IST | http://localhost:8011/x/f |" in text
+    )
+    assert "- The app: http://localhost:8011" in text
+    assert "- Mailpit, every email the platform sends: http://localhost:8025" in text
+
+
+def test_the_credentials_file_replaces_the_last_one_and_is_owner_only(tmp_path: Path) -> None:
+    older = tmp_path / "demo-credentials.md"
+    older.write_text("the set before", encoding="utf-8")
+    demo.write_private(older, "the new set")
+    assert older.read_text(encoding="utf-8") == "the new set"
+    fresh = tmp_path / "fresh.md"
+    demo.write_private(fresh, "a set")
+    assert stat.S_IMODE(fresh.stat().st_mode) == 0o600
+
+
+async def test_the_seed_refuses_before_any_connection_without_the_private_mount(
+    untouched: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(settings, "app_env", "local")
+    monkeypatch.setattr(settings, "e2e_stack", False)
+    monkeypatch.setattr(settings, "demo_accounts_password", SecretStr(""))
+    monkeypatch.setattr(demo, "CREDENTIALS", Path("/not-mounted/demo-credentials.md"))
+    assert await cli.run(["seed-demo"], untouched) == 1
+    assert "/not-mounted is not mounted" in capsys.readouterr().err
 
 
 # lot (a)'s length and lot (b)'s start: whole minutes, bounded, refused by the parser (exit 2)

@@ -17,18 +17,21 @@ from the real services, so what a video shows is what the platform did:
 
 No row is written by SQL. Passwords: when DEMO_ACCOUNTS_PASSWORD is set (in .env, local demo
 only) every account gets it, and it is never printed; otherwise each run generates them and
-prints them once.
+prints them once. Each run writes the accounts with their passwords, the six lots and the URLs
+to demo-credentials.md in the host's DEMO_PRIVATE_DIR (../auction-private by default), outside
+the repository, which docker-compose.override.yml mounts at /private.
 """
 
 import asyncio
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import sys
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -59,6 +62,10 @@ from app.workers.dispatch import enqueue, schedule_outbid, schedule_persist
 
 IMAGES = Path(__file__).resolve().parents[1] / "demo" / "images"
 WEB = "http://localhost:8011"  # the web service's default host port (CLAUDE.md section 4)
+MAILPIT = "http://localhost:8025"  # Mailpit's web UI, dev only (CLAUDE.md section 4)
+# the dev override mounts the host's DEMO_PRIVATE_DIR (../auction-private by default) here
+CREDENTIALS = Path("/private/demo-credentials.md")
+IST = timezone(timedelta(hours=5, minutes=30), "IST")
 SOURCE = "seed-demo"  # stands in for the client address in rate limits
 FROM_ENV = "password from DEMO_ACCOUNTS_PASSWORD"  # shown in its place: never the value
 
@@ -181,6 +188,12 @@ def refusal() -> str | None:
     configured = settings.demo_accounts_password.get_secret_value()
     if configured and not PASSWORD_MIN <= len(configured) <= PASSWORD_MAX:
         return f"DEMO_ACCOUNTS_PASSWORD must be {PASSWORD_MIN} to {PASSWORD_MAX} characters (FR-2)"
+    if not CREDENTIALS.parent.is_dir():
+        return (
+            f"{CREDENTIALS.parent} is not mounted, so the credentials file has nowhere to go: "
+            "docker-compose.override.yml mounts DEMO_PRIVATE_DIR (../auction-private by default) "
+            "there; recreate the api container with `docker compose up -d`"
+        )
     return None
 
 
@@ -326,11 +339,64 @@ class _Seeder:
         return (await settlement_view(self.sessions, winner, auction_id))["status"]
 
 
+def credentials(
+    accounts: list[tuple[str, str, str, str]],
+    lots: list[tuple[str, str, str, datetime, str]],
+    written: datetime,
+) -> str:
+    """The local credentials file: every account as (role, name, email, password), the six lots
+    as (key, title, state, end time, link) with the end in IST, and where to open them."""
+
+    def ist(at: datetime) -> str:
+        return at.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+
+    def cell(value: str) -> str:
+        return value.replace("|", "\\|")
+
+    return "\n".join(
+        [
+            "# Demo credentials",
+            "",
+            f"Written by seed-demo at {ist(written)}. Local only, outside the repository: never "
+            "commit or share this file.",
+            "",
+            "## Accounts",
+            "",
+            "| Role | Name | Email | Password |",
+            "|---|---|---|---|",
+            *[f"| {r} | {n} | {e} | {cell(p)} |" for r, n, e, p in accounts],
+            "",
+            "## Lots",
+            "",
+            "| Lot | Title | State | Ends (IST) | Link |",
+            "|---|---|---|---|---|",
+            *[f"| {k} | {cell(t)} | {cell(s)} | {ist(at)} | {u} |" for k, t, s, at, u in lots],
+            "",
+            "## URLs",
+            "",
+            f"- The app: {WEB}",
+            f"- Mailpit, every email the platform sends: {MAILPIT}",
+            "",
+        ]
+    )
+
+
+def write_private(path: Path, text: str) -> None:
+    """Owner-only where the filesystem allows it (a Windows bind mount ignores the mode)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as out:
+        out.write(text)
+
+
+def _link(key: str, auction_id: UUID) -> str:
+    return f"{WEB}/sell/{auction_id}" if key == "f" else f"{WEB}/auctions/{auction_id}"
+
+
 def _print_accounts(people: dict[Person, tuple[CurrentUser, str, str]]) -> None:
     if settings.demo_accounts_password.get_secret_value():
         _say(f"\nDemo set ready. Every account signs in with the {FROM_ENV}.\n")
     else:
-        _say("\nDemo set ready. The passwords are shown once, here, and stored nowhere else.\n")
+        _say("\nDemo set ready. The passwords are shown once, here, and in the credentials file.\n")
     for person, (user, email, password) in people.items():
         _say(f"  {person.name:<11} {email:<28} {shown(password)}  {', '.join(user.roles)}")
 
@@ -407,9 +473,23 @@ async def seed(
         "e": f"not sold, reserve not met (highest {rupees(BIDS['e'][-1][1])})",
         "f": f"draft, {MEERA.name}'s to publish",
     }
+    async with sessions() as session:
+        stored = await AuctionRepository(session).get_many(list(ids.values()))
+    accounts = [
+        (person.role or "bidder", person.name, email, password)
+        for person, (_, email, password) in people.items()
+    ]
+    lots = [
+        (key, LOTS[key].title, states[key], stored[ids[key]].end_time, _link(key, ids[key]))
+        for key in "abcdef"
+    ]
+    write_private(CREDENTIALS, credentials(accounts, lots, s.clock.now()))
     _print_accounts(people)
     _say("")
     for key in "abcdef":
-        path = f"/sell/{ids[key]}" if key == "f" else f"/auctions/{ids[key]}"
-        _say(f"  {key}) {LOTS[key].title}\n     {states[key]}\n     {WEB}{path}")
+        _say(f"  {key}) {LOTS[key].title}\n     {states[key]}\n     {_link(key, ids[key])}")
+    _say(
+        f"\nCredentials written to {CREDENTIALS}, on the host DEMO_PRIVATE_DIR "
+        "(../auction-private by default), outside the repository."
+    )
     return 0
