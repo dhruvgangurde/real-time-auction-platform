@@ -128,6 +128,9 @@ docker compose exec api pytest tests/admin     # admin endpoints and settlement 
 docker compose exec api pytest tests/payments  # payments: order, callback, webhook, reconcile, races (no network)
 docker compose exec api pytest tests/notifications   # notification API, producers, email dispatch
 docker compose exec api pytest tests/lifecycle tests/scheduler tests/discovery   # Phase 7 tests
+docker compose exec api pytest tests/demo tests/realtime/test_demo_bots.py   # demo mode (B2)
+DEMO_MODE=true docker compose --profile demo up -d   # demo mode: endpoints on and the demo runner (B2)
+docker compose logs demo                       # the demo runner
 docker compose exec api pytest tests/discovery/test_nfr6.py -s   # NFR-6 p50/p95 with 2,000 auctions, query plans
 docker compose exec api python -m app.cli grant-role <email> seller   # roles only via CLI (D6); revoke-role too
 docker compose exec api python -m app.cli seed-categories   # default category tree (idempotent)

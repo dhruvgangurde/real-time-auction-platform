@@ -13,6 +13,7 @@ Design reference. The SRS governs if anything here conflicts with it.
 | Redis | Live auction state, Lua arbitration, pub/sub, rate limits, task queue |
 | Payment gateway | Razorpay in test mode only (AS-5): orders, payments, signed checkout callback and webhook (section 13) |
 | Mailpit (dev only) | SMTP sink with a web UI, in `docker-compose.override.yml`; production uses any SMTP provider (TBD-1) |
+| Demo runner (profile `demo`) | `python -m app.workers.demo_runner`, only with `DEMO_MODE` on: the bots of "Try to break it" (section 16) |
 
 ## 2. Bid flow (accepted manual bid)
 
@@ -283,21 +284,22 @@ A Redis status already `closing` at step 1 counts as flipped, so the call can be
 
 ## 8. Data model (tables)
 
-Migrations `0001` to `0010` in `backend/alembic/versions/`. Money is BIGINT paise, every timestamp is `timestamptz`, every FK is `ON DELETE RESTRICT`. Constraint names follow the naming convention in `app/models/base.py` (`pk_`, `uq_`, `ck_`, `fk_`, `ix_`).
+Migrations `0001` to `0011` in `backend/alembic/versions/`. Money is BIGINT paise, every timestamp is `timestamptz`, every FK is `ON DELETE RESTRICT`. Constraint names follow the naming convention in `app/models/base.py` (`pk_`, `uq_`, `ck_`, `fk_`, `ix_`).
 
 | Table | PK | Key constraints and indexes |
 |---|---|---|
-| users | uuid | unique index on `lower(email)`; status CHECK (pending_verification, active, suspended) |
+| users | uuid | unique index on `lower(email)`; status CHECK (pending_verification, active, suspended); `is_demo` (0011, section 16) |
 | user_roles | (user_id, role) | role CHECK (bidder, seller, admin) |
 | sessions | uuid | `refresh_token_hash` UNIQUE; `revoked_at` for immediate revocation |
 | email_verification_tokens, password_reset_tokens | bigint | `token_hash` UNIQUE |
 | categories | bigint | `slug` UNIQUE; self-FK `parent_id`, indexed |
-| auctions | uuid | CHECKs: end > start, starting_price > 0 (migration 0006, FR-37), min_increment > 0, reserve NULL or >= starting_price, extension_count 0..10, status in the 7 states, current_price NULL or > 0, bid_count >= 0. `current_price`/`bid_count` kept by the persister (D7). Trigger blocks any change to `original_end_time` once the auction has left draft and scheduled (FR-14, D1). Indexes: (status, start_time), (status, end_time), seller_id, category_id, created_at, GIN on generated `search_vector` ('simple' config, title weight A, description weight B) |
+| auctions | uuid | CHECKs: end > start, starting_price > 0 (migration 0006, FR-37), min_increment > 0, reserve NULL or >= starting_price, extension_count 0..10, status in the 7 states, current_price NULL or > 0, bid_count >= 0. `current_price`/`bid_count` kept by the persister (D7). Trigger blocks any change to `original_end_time` once the auction has left draft and scheduled (FR-14, D1). Indexes: (status, start_time), (status, end_time), seller_id, category_id, created_at, GIN on generated `search_vector` ('simple' config, title weight A, description weight B). `is_demo` (0011): never listed, never notified, never payable (section 16) |
 | auction_images | bigint | index on auction_id; `object_key` is the server-chosen storage key (D10) |
 | bids (append-only) | bigint | UNIQUE (auction_id, sequence_no); amount > 0; bid_type manual or automatic; `end_time_after` (FR-55). Indexes: (auction_id, sequence_no DESC), (bidder_id, created_at DESC) |
 | proxy_bids | bigint | partial UNIQUE (auction_id, bidder_id) WHERE is_active; max_amount > 0 |
 | watchlist | (user_id, auction_id) | index on auction_id (watchers of an auction, FR-25) |
-| settlements | uuid | UNIQUE auction_id; UNIQUE idempotency_key; CHECK no_sale iff winner_id and final_price are NULL |
+| settlements | uuid | UNIQUE auction_id; UNIQUE idempotency_key; status CHECK (pending_payment, paid, no_sale, demo); CHECK no_sale iff winner_id and final_price are NULL |
+| demo_runs | uuid | One per demo run (0011): kind CHECK (stress, hero), state CHECK (requested, starting, running, settling, verified, failed, aborted); UNIQUE auction_id; partial UNIQUE (kind) WHERE state is requested, starting, running or settling (one active run per kind); counters, checks and acks as JSONB. The app role inserts and updates, never deletes |
 | payments | uuid | One row per settlement and gateway order: UNIQUE idempotency_key (`order:{settlement_id}`), UNIQUE gateway_order_id, UNIQUE gateway_payment_id (the captured payment), partial UNIQUE settlement_id WHERE status = 'succeeded'; status created, failed, succeeded; amount > 0; `reconciled_at` (migration 0010) |
 | payment_events (append-only) | bigint | Every applied terminal confirmation once: UNIQUE dedupe_key (`webhook:{event id}`, `callback:{payment id}:{outcome}`, `reconcile:{payment id}:{outcome}`); source, event, gateway payment id, outcome succeeded or failed; no payload, no contact data |
 | notifications | bigint | UNIQUE dedupe_key; type CHECK (outbid, ending_soon, auction_won, auction_lost, payment_due, payment_received, from migration 0009 auction_sold and auction_no_sale, from 0010 payment_failed); email delivery state `email_status` (pending, sent, skipped, failed), `email_attempts`, `email_next_at` (lease or backoff), `emailed_at`; partial index (user_id, created_at DESC) WHERE read_at IS NULL; partial index for the email queue WHERE email_status = 'pending' |
@@ -421,3 +423,13 @@ Emails are built from the payload only (no reserve, no maximum ever appears in o
 - **Headers.** On every response: the CSP of brief 13 item 24 (`connect-src 'self' ${WEB_WS_ORIGIN}`, default `ws://localhost:8011`; `wss://<host>` once TLS is in front), `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`; `frame-ancestors 'none'` is in the CSP. Swagger is not offered through this origin (its CDN assets are outside the CSP); use 8010 in development. `client_max_body_size` is 6 MB for the 5 MB image limit. The web origin is in `ALLOWED_ORIGINS` (compose default when `.env` does not set it).
 - **Trusted proxy.** The api instances run uvicorn with `--proxy-headers --forwarded-allow-ips=${WEB_PROXY_IP}` (default `10.201.0.10`). The web proxy sits on the `edge` network (`EDGE_SUBNET`, default `10.201.0.0/24`) at that fixed address and overwrites `X-Forwarded-For` with the address it sees. A request from any other peer keeps its own peer address, so a client that reaches an api instance directly, or another container, cannot choose the address its per-IP limits key on. This assumes the web proxy is the outermost hop; behind a hosting load balancer (TBD-2) the real client address needs `real_ip` handling in the proxy first.
 - **Host ports.** Only `docker-compose.override.yml` (development) publishes the api, on `API_HOST_PORT` (8010), mapped to the first instance only, for Swagger (`/api/v1/docs`) and curl. Its peer is the Docker gateway, which is not trusted, so an `X-Forwarded-For` sent there is ignored. A run with `docker-compose.yml` alone publishes no api port.
+
+## 16. Demo mode (brief 12.3, 12.4; B2)
+
+- **Switch.** `DEMO_MODE`, off by default, passed by compose to both api instances and the runner. Every route under `/api/v1/demo` depends on it and answers 404 with the body of an unknown path while it is off. `GET /api/v1/demo` (anonymous, 1 s cache per instance, counted as an anonymous read): `{enabled, auction_id, next_start_ms, last_closed_auction_id}`. The hero loop is deferred, so `auction_id` and `next_start_ms` are null; `last_closed_auction_id` is the lot of the most recent verified stress run, for the hero's replay.
+- **Data.** `users.is_demo` and `auctions.is_demo`, set only by the runner. A demo lot is never listed (`AuctionRepository.search`) but answers by id (detail, `/live`, `/bids`, each with `is_demo`); demo accounts are left out of `GET /admin/users` unless `include_demo=true`.
+- **Nothing reaches anyone.** No notification rows for a demo lot (close set, `outbid`, `ending_soon`), for bots and people alike; the outbid task is not enqueued (`BidService` facts carry `is_demo`); the email dispatcher skips demo accounts. Live room events still flow.
+- **Never payable.** A demo lot's sale settles as `demo` (section 6); payment start and the checkout callback answer `DEMO_NOT_PAYABLE` before any gateway call.
+- **Accounts.** The demo seller, the watcher and 50 stress bots (`stress-bot-NN@demo.invalid`): `is_demo`, active, password hash `!demo` (never verifies), no password reset. The runner signs them in as login does after its password check (a session row and an access token) and signs them out by revocation (`revoked_at`, then the denylist); expired demo sessions are deleted.
+- **Runner.** One process (`app.workers.demo_runner`, compose service `demo`, profile `demo`, 256 MB, one CPU): a session-level advisory lock on its own connection (one runner at a time), a heartbeat `demo:runner:alive` renewed every 2 s for 10 s, every unfinished run aborted at start. Each stress run gets a fresh lot from `AuctionService` (INR 5,000, increments of INR 50, no reserve, opening 5 s after creation, live 75 s, 10 s soft close and extension).
+- **Bots.** WebSocket clients straight to `api:8000` and `api-2:8000` (alternately, no Origin header): `authenticate` with the minted token, `subscribe`, `place_bid` at the minimum last seen, holding back while leading; at most 20 bids each, at least 2 s apart, stopping 15 s before the end (no extension). Every limit on their path is per user or per connection, as for anyone.
