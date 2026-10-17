@@ -44,6 +44,9 @@ async def test_the_ledger_reads_for_the_report(
         repo = LoadTestRepository(session)
         assert [s for s, _ in await repo.bids_after(lot, 2)] == [3, 4, 5]
         assert [s for s, _ in await repo.bids_after(lot, 0, limit=2)] == [1, 2]
+        assert [(s, a) for s, a, _ in await repo.acceptances(lot)] == [
+            (seq, 10_000 + seq * 500) for seq in range(1, 6)
+        ]
         assert await repo.accepted_per_second(lot) == [
             (second, 3),
             (second + timedelta(seconds=1), 1),

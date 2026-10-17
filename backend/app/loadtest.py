@@ -297,6 +297,10 @@ async def watch(
 
 # ---------------------------------------------------------------- after the run: the report
 
+NFR4_WORDING = (
+    "The system shall sustain at least 20 accepted bids per second against a single auction "
+    "without violating NFR-1 or NFR-2 and without any lost or duplicated bid."
+)
 STEADY_FROM_S = 10  # NFR-4's steady phase: from this long after the opening ...
 FINAL_MINUTE_S = 60  # ... to the final minute, where room.js doubles the bidders' pace
 WINDOW_S = 5
@@ -311,6 +315,10 @@ CITED = {
         "tests/test_tasks_unit.py::test_persist_bids_alerts_after_final_retry",
     ],
     "NFR-28": [
+        "tests/closing/test_closing.py::test_ten_concurrent_closes_settle_once",
+        "tests/closing/test_closing.py::test_constraint_alone_keeps_one_settlement",
+    ],
+    "OR-14": [  # the same tests: NFR-28's last clause is what OR-14 verifies
         "tests/closing/test_closing.py::test_ten_concurrent_closes_settle_once",
         "tests/closing/test_closing.py::test_constraint_alone_keeps_one_settlement",
     ],
@@ -344,9 +352,15 @@ def stats(values: list[float]) -> dict[str, Any]:
 
 
 def k6_records(lines: Iterable[str]) -> dict[str, list[dict[str, Any]]]:
-    """room.js's records from k6's JSON log: acks, sampled receipts and socket summaries; the
-    other warnings and errors k6 logged go under "other"."""
-    found: dict[str, list[dict[str, Any]]] = {"ack": [], "rx": [], "rx_summary": [], "other": []}
+    """room.js's records from k6's JSON log: acks, rejections, sampled receipts and socket
+    summaries; the other warnings and errors k6 logged go under "other"."""
+    found: dict[str, list[dict[str, Any]]] = {
+        "ack": [],
+        "rej": [],
+        "rx": [],
+        "rx_summary": [],
+        "other": [],
+    }
     for line in lines:
         try:
             entry = json.loads(line)
@@ -356,7 +370,7 @@ def k6_records(lines: Iterable[str]) -> dict[str, list[dict[str, Any]]]:
             record = json.loads(entry.get("msg", ""))
         except (ValueError, TypeError):
             record = None
-        if isinstance(record, dict) and record.get("e") in ("ack", "rx", "rx_summary"):
+        if isinstance(record, dict) and record.get("e") in ("ack", "rej", "rx", "rx_summary"):
             found[record["e"]].append(record)
         elif entry.get("level") in ("warning", "error"):
             found["other"].append(entry)
@@ -431,6 +445,7 @@ class Evidence:
     summary: dict[str, Any]  # k6's end-of-test data (handleSummary)
     instances: dict[str, dict[str, Any]]
     counts: list[tuple[datetime, int]]  # accepted bids per second of acceptance
+    acceptances: list[tuple[int, int, int]]  # (sequence_no, amount, acceptance ms) in order
     auction: dict[str, Any]
     checks: list[dict[str, Any]]
     outcomes: dict[str, str]
@@ -472,6 +487,53 @@ def _slowlog_settings(watched: dict[str, Any]) -> str:
     return f"at the start {one(read['start'])}; at the end {one(read['end'])}"
 
 
+def offered_bids(
+    acks: list[dict[str, Any]],
+    rejections: list[dict[str, Any]],
+    acceptances: list[tuple[int, int, int]],
+    start_ms: int,
+    end_ms: int,
+) -> dict[str, int]:
+    """NFR-4's offered load: the bids k6 sent in [start, end), and how many of them could still
+    win when sent, that is the accepted ones and those that lost a race in flight (their price
+    was taken by a bid accepted at or after their send). k6's clock against Redis's: one kernel
+    clock in the Docker VM."""
+    taken_at = {amount: at for _, amount, at in acceptances}
+    sent = winnable = 0
+    for a in acks:
+        if start_ms <= a["sent"] < end_ms:
+            sent += 1
+            winnable += 1
+    for j in rejections:
+        if start_ms <= j["sent"] < end_ms:
+            sent += 1
+            winnable += j["code"] == "BID_TOO_LOW" and taken_at.get(j["amount"], -1) >= j["sent"]
+    return {"sent": sent, "winnable": winnable}
+
+
+def gap_distribution(acceptances: list[tuple[int, int, int]], start_ms: int, end_ms: int) -> str:
+    """The gaps between consecutive acceptances in [start, end): percentiles, and the share in
+    each 10 ms band."""
+    times = [at for _, _, at in acceptances if start_ms <= at < end_ms]
+    gaps = [float(b - a) for a, b in zip(times, times[1:], strict=False)]
+    if not gaps:
+        return "n/a"
+    bands = Counter(min(int(g) // 10, 6) for g in gaps)
+    shares = ", ".join(
+        f"{'60+' if b == 6 else f'{b * 10}-{b * 10 + 9}'} {bands[b] / len(gaps):.0%}"
+        for b in range(7)
+    )
+    p = {q: percentile(gaps, q) for q in (10, 50, 90, 99)}
+    return (
+        f"p10 {p[10]:.0f} ms, p50 {p[50]:.0f} ms, p90 {p[90]:.0f} ms, p99 {p[99]:.0f} ms "
+        f"({len(gaps):,} gaps); by 10 ms band: {shares}"
+    )
+
+
+def _word(passed: bool | None) -> str:
+    return {True: "pass", False: "not met", None: "not assessed"}[passed]
+
+
 def _cited(ev: Evidence, requirement: str) -> tuple[bool, str]:
     nodes = CITED[requirement]
     passed = sum(ev.outcomes.get(n) == "PASSED" for n in nodes)
@@ -489,13 +551,20 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
     rows: dict[str, dict[str, Any]] = {}
 
     def row(
-        rid: str, target: str, measured: str, passed: bool | None, method: str, details: list[str]
+        rid: str,
+        target: str,
+        measured: str,
+        passed: bool | None,
+        method: str,
+        details: list[str],
+        note: str | None = None,  # where an unmet or unassessed requirement is taken up
     ) -> None:
         rows[rid] = {
             "id": rid,
             "target": target,
             "measured": measured,
             "pass": passed,
+            "note": note,
             "method": method,
             "details": details,
         }
@@ -577,7 +646,7 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         "Zero lost and zero duplicated bids under load; zero duplicate settlements under "
         "concurrent close",
         f"{len(ev.checks) - len(failing)}/{len(ev.checks)} ledger checks passed on "
-        f"{ledger_n} bids; concurrent-close tests {closes}",
+        f"{ledger_n} bids; concurrent-close tests {closes} (OR-14)",
         bool(ev.checks) and not failing and closes_ok,
         "Server side, after the close: the six ledger checks of Try to break it on the lot, fed "
         "every acknowledgement k6 received; and the concurrent-close tests",
@@ -597,6 +666,10 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
     seconds = per_second(ev.counts, start, end)
     rates = window_rates(seconds)
     slowest = min(rates) if rates else None
+    offered = offered_bids(r["ack"], r["rej"], ev.acceptances, start, end)
+    window_s = max(1, len(seconds))
+    in_window = sum(seconds)
+    ratio = f"{in_window / offered['sent']:.0%}" if offered["sent"] else "n/a"
     row(
         "NFR-4",
         "At least 20 accepted bids/s on one auction, within NFR-1 and NFR-2, none lost or "
@@ -608,13 +681,21 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         f"Server side, the ledger: accepted bids per {WINDOW_S} s window of acceptance time, "
         f"from {STEADY_FROM_S} s after the opening to the final minute",
         [
-            f"{len(rates)} windows; median {percentile(rates, 50) or 0:.1f} bids/s; "
-            f"slowest single second {min(seconds) if seconds else 'n/a'}",
-            f"{ledger_n} bids accepted in the run",
+            f'SRS: "{NFR4_WORDING}" Window: the steady phase, from {STEADY_FROM_S} s after the '
+            f"opening to the final minute ({len(seconds)} s), in {WINDOW_S} s windows of "
+            "acceptance time; to sustain is read as every window at 20 or more.",
+            f"offered: {offered['sent']:,} bids sent in the window, "
+            f"{offered['sent'] / window_s:.1f}/s; {offered['winnable']:,} of them winnable when "
+            f"sent, {offered['winnable'] / window_s:.1f}/s (nobody had yet taken their price)",
+            f"accepted: slowest {WINDOW_S} s window "
+            + (f"{slowest:.1f}/s" if slowest is not None else "n/a")
+            + f", median window {percentile(rates, 50) or 0:.1f}/s, slowest single second "
+            f"{min(seconds) if seconds else 'n/a'}; acceptance ratio {ratio} "
+            f"({in_window:,} of {offered['sent']:,})",
+            f"gaps between acceptances: {gap_distribution(ev.acceptances, start, end)}",
+            f"{ledger_n:,} bids accepted in the whole run",
             "NFR-1, NFR-2 and NFR-28 in the same run: "
-            + ", ".join(
-                f"{k} {'pass' if rows[k]['pass'] else 'FAIL'}" for k in ("NFR-1", "NFR-2", "NFR-28")
-            ),
+            + ", ".join(f"{k} {_word(rows[k]['pass'])}" for k in ("NFR-1", "NFR-2", "NFR-28")),
         ],
     )
 
@@ -705,6 +786,7 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         False,
         "Inspection",
         ["this run measured those quantities itself (k6, the ledger, the logs, Redis)"],
+        note="Phase 11 part 2",
     )
     row(
         "OR-6",
@@ -713,6 +795,7 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         False,
         "Inspection (operational, not a load-test measurement)",
         [],
+        note="Phase 11 part 2",
     )
     row(
         "OR-12",
@@ -721,6 +804,17 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         None,
         "Inspection of docs/testing.md and docs/requirements-map.md",
         [],
+        note="verification matrix in Phase 11 part 2",
+    )
+    row(
+        "OR-14",
+        "Settlement uniqueness verified with concurrent close invocations, and separately with "
+        "the settlement lock disabled, the database constraint alone preventing duplication",
+        f"concurrent-close tests {closes}",
+        closes_ok,
+        "Tests on the test database: ten closers at once settle once; with the lock disabled, "
+        "the UNIQUE (auction_id) constraint alone keeps one settlement",
+        _outcomes(ev, "OR-14"),
     )
     soft_ok, soft = _cited(ev, "OR-15")
     row(
@@ -737,7 +831,7 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         ],
     )
     order = ["NFR-1", "NFR-2", "NFR-3", "NFR-4", "NFR-5", "NFR-6", "NFR-7", "NFR-8", "NFR-28"]
-    return [rows[k] for k in [*order, "OR-6", "OR-12", "OR-15"]]
+    return [rows[k] for k in [*order, "OR-6", "OR-12", "OR-14", "OR-15"]]
 
 
 async def evidence(sessions: async_sessionmaker[AsyncSession], run: Path) -> Evidence:
@@ -750,6 +844,7 @@ async def evidence(sessions: async_sessionmaker[AsyncSession], run: Path) -> Evi
     outcomes, printed = pytest_results((run / "pytest.txt").read_text(encoding="utf-8"))
     async with sessions() as session:
         counts = await LoadTestRepository(session).accepted_per_second(lot)
+        accepted = await LoadTestRepository(session).acceptances(lot)
         auction = await AuctionRepository(session).get(lot)
     assert auction is not None, "the plan's lot"
     acks = sorted((a["seq"], a["bidder"], a["amount"]) for a in records["ack"])
@@ -764,6 +859,7 @@ async def evidence(sessions: async_sessionmaker[AsyncSession], run: Path) -> Evi
             for name in ("api", "api-2")
         },
         counts=counts,
+        acceptances=[(seq, amount, to_ms(at)) for seq, amount, at in accepted],
         auction={
             "status": auction.status,
             "end_time": auction.end_time.isoformat(),
@@ -805,7 +901,15 @@ REPRODUCE = [
     "docker compose up -d --build",
     "bash loadtest/run.sh    # about 10 minutes; writes this page and results/<date>.json",
 ]
-VERDICT = {True: "Pass", False: "**Not met**", None: "Not assessed"}
+VERDICT = {True: "Pass", False: "Not met", None: "Not assessed"}
+
+
+def verdict(row: dict[str, Any]) -> str:
+    """The Result cell: a measured miss in bold; a requirement taken up later, with where."""
+    word = VERDICT[row["pass"]]
+    if row.get("note"):
+        return f"{word} - {row['note']}"
+    return f"**{word}**" if row["pass"] is False else word
 
 
 def document(ev: Evidence, host: dict[str, Any]) -> dict[str, Any]:
@@ -875,7 +979,7 @@ def markdown(doc: dict[str, Any]) -> str:
         "|---|---|---|---|---|",
         *[
             f"| {r['id']} | {cell(r['target'])} | {cell(r['measured'])} | "
-            f"{VERDICT[r['pass']]} | {cell(r['method'])} |"
+            f"{verdict(r)} | {cell(r['method'])} |"
             for r in doc["requirements"]
         ],
         "",
@@ -885,9 +989,9 @@ def markdown(doc: dict[str, Any]) -> str:
         f"{run['scheduled_end_at']}; {run['extensions']} soft-close extensions, ended "
         f"{run['ended_at']}, {run['status']}.",
         f"- {run['bidder_sockets']} bidders, one socket each, through the web service. They bid "
-        "the minimum they had last seen and held back while leading: every 2 s (jittered) in "
-        "the steady phase, every 1 s in the final minute (AS-4: bidding concentrated in the "
-        "final minute).",
+        "the minimum they had last seen and held back while leading, each on its own jittered "
+        "timer: every 2 s in the steady phase, every 1 s in the final minute (AS-4: bidding "
+        "concentrated in the final minute).",
         f"- Bids: {run['bids_sent']} sent, {run['bids_acknowledged']} acknowledged as accepted, "
         f"{run['ledger_bids']} in the ledger; rejected by code {run['bids_rejected'] or 'none'}; "
         f"{run['replies_timed_out']} replies over 5 s; error frames "

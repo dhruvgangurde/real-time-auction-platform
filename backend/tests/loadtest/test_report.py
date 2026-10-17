@@ -17,15 +17,18 @@ from app.loadtest import (
     Evidence,
     document,
     end_to_end_ms,
+    gap_distribution,
     instance_log,
     k6_records,
     markdown,
     nfr1_verdict,
+    offered_bids,
     per_second,
     percentile,
     place_bid_durations,
     pytest_results,
     requirements,
+    verdict,
     window_rates,
 )
 
@@ -167,15 +170,50 @@ def trend(p95: float, n: int = 1000) -> dict[str, Any]:
 BIDS = {"accepted": 1800, "BID_TOO_LOW": 1200}  # each instance's FR-44 lines
 
 
+def accepted_ms(seq: int) -> int:
+    """The synthetic run's acceptances: 30 a second from the opening, 33 ms apart."""
+    second, i = divmod(seq - 1, 30)
+    return START_MS + second * 1000 + i * 33
+
+
+def amount(seq: int) -> int:
+    return 1_000_000 + seq * 1_000
+
+
 def passing() -> Evidence:
     """A run that meets every target the load test measures: 110 sockets, 55 on each instance,
-    30 accepted bids every second, every delivery made once."""
+    30 accepted bids every second, every delivery made once. Two in three price steps are also
+    bid for by a second bidder a millisecond after the winner, so 50 bids a second are offered,
+    all of them winnable when sent."""
     users = [f"u{i}" for i in range(110)]
     at = datetime.fromtimestamp(START_MS / 1000, UTC)
     counts = [(at + timedelta(seconds=s), 30) for s in range(120)]
     n = 30 * 120
-    acks = [{"vu": s % 110, "seq": s, "sent": s * 10, "acked": s * 10 + 2} for s in range(1, n + 1)]
-    rx = [{"vu": vu, "seq": s, "t": s * 10 + 40, "st": s * 10 + 5} for vu in (4, 9) for s in (1, 2)]
+    acks = [
+        {
+            "vu": s % 110,
+            "seq": s,
+            "amount": amount(s),
+            "sent": accepted_ms(s) - 2,
+            "acked": accepted_ms(s) + 2,
+        }
+        for s in range(1, n + 1)
+    ]
+    rejections = [
+        {
+            "vu": (s + 1) % 110,
+            "amount": amount(s),
+            "sent": accepted_ms(s) - 1,
+            "code": "BID_TOO_LOW",
+        }
+        for s in range(1, n + 1)
+        if s % 3
+    ]
+    rx = [
+        {"vu": vu, "seq": s, "t": accepted_ms(s) + 38, "st": accepted_ms(s) + 3}
+        for vu in (4, 9)
+        for s in (1, 2)
+    ]
     summaries = [
         {
             "vu": i,
@@ -206,7 +244,7 @@ def passing() -> Evidence:
             "celery_waiting_peak": 3,
             "celery_in_flight_peak": 4,
         },
-        records={"ack": acks, "rx": rx, "rx_summary": summaries, "other": []},
+        records={"ack": acks, "rej": rejections, "rx": rx, "rx_summary": summaries, "other": []},
         summary={
             "metrics": {
                 "nfr3_delivery_ms": trend(20.0),
@@ -223,6 +261,7 @@ def passing() -> Evidence:
             "api-2": {"subscribed_users": users[1::2], "closes": {"1000": 55}, "bids": BIDS},
         },
         counts=counts,
+        acceptances=[(s, amount(s), accepted_ms(s)) for s in range(1, n + 1)],
         auction={"status": "closed_sold", "end_time": "t", "extension_count": 10},
         checks=checks,
         outcomes={node: "PASSED" for nodes in CITED.values() for node in nodes},
@@ -248,6 +287,7 @@ def test_a_run_meeting_every_measured_target() -> None:
         "NFR-28": True,
         "OR-6": False,  # no scheduled backup, no restore demonstrated
         "OR-12": None,  # not a load-test measurement
+        "OR-14": True,
         "OR-15": True,
     }
     rows = {r["id"]: r for r in requirements(passing())}
@@ -262,6 +302,50 @@ def test_a_run_meeting_every_measured_target() -> None:
     assert rows["NFR-4"]["measured"] == "slowest 5 s window 30.0 bids/s"
     assert rows["NFR-5"]["measured"] == (
         "110 sockets (api 55, api-2 55); 0 missing, 0 repeated deliveries"
+    )
+
+
+def test_nfr4_reports_what_was_offered_accepted_and_the_gaps_beside_the_srs_wording() -> None:
+    details = {r["id"]: r for r in requirements(passing())}["NFR-4"]["details"]
+    assert details[0].startswith(
+        'SRS: "The system shall sustain at least 20 accepted bids per second against a single '
+        'auction without violating NFR-1 or NFR-2 and without any lost or duplicated bid." '
+        "Window: the steady phase, from 10 s after the opening to the final minute (50 s)"
+    )
+    assert details[1] == (
+        "offered: 2,500 bids sent in the window, 50.0/s; 2,500 of them winnable when sent, "
+        "50.0/s (nobody had yet taken their price)"
+    )
+    assert details[2] == (
+        "accepted: slowest 5 s window 30.0/s, median window 30.0/s, slowest single second 30; "
+        "acceptance ratio 60% (1,500 of 2,500)"
+    )
+    assert details[3] == (
+        "gaps between acceptances: p10 33 ms, p50 33 ms, p90 33 ms, p99 43 ms (1,499 gaps); "
+        "by 10 ms band: 0-9 0%, 10-19 0%, 20-29 0%, 30-39 97%, 40-49 3%, 50-59 0%, 60+ 0%"
+    )
+
+
+def test_a_bid_sent_after_its_price_was_taken_was_not_winnable() -> None:
+    acceptances = [(1, 5_000, 1_000), (2, 5_100, 1_050)]
+    acks = [{"sent": 990}, {"sent": 1_040}]
+    rejections = [
+        {"amount": 5_000, "sent": 998, "code": "BID_TOO_LOW"},  # in flight: taken at 1,000
+        {"amount": 5_000, "sent": 1_002, "code": "BID_TOO_LOW"},  # sent after it was taken
+        {"amount": 5_100, "sent": 1_050, "code": "BID_TOO_LOW"},  # the same millisecond
+        {"amount": 5_200, "sent": 1_060, "code": "AUCTION_CLOSED"},
+    ]
+    assert offered_bids(acks, rejections, acceptances, 0, 2_000) == {"sent": 6, "winnable": 4}
+    assert offered_bids(acks, rejections, acceptances, 1_000, 2_000) == {"sent": 4, "winnable": 2}
+    assert gap_distribution(acceptances, 0, 1_050) == "n/a"  # one acceptance, no gap
+
+
+def test_the_result_cell_says_where_an_open_requirement_is_taken_up() -> None:
+    assert verdict({"pass": True, "note": None}) == "Pass"
+    assert verdict({"pass": False, "note": None}) == "**Not met**"  # a measured miss
+    assert verdict({"pass": False, "note": "Phase 11 part 2"}) == "Not met - Phase 11 part 2"
+    assert verdict({"pass": None, "note": "verification matrix in Phase 11 part 2"}) == (
+        "Not assessed - verification matrix in Phase 11 part 2"
     )
 
 
@@ -300,7 +384,8 @@ FAILURES = {
     ),
     "deliveries 301 ms after the send (also fails NFR-4)": (
         lambda ev: replace(
-            ev, records={**ev.records, "rx": [{"vu": 4, "seq": 1, "t": 10 + 301, "st": 0}]}
+            ev,
+            records={**ev.records, "rx": [{"vu": 4, "seq": 1, "t": accepted_ms(1) - 2 + 301}]},
         ),
         {"NFR-2", "NFR-4"},
     ),
@@ -361,8 +446,8 @@ FAILURES = {
         {"NFR-28", "NFR-4", "OR-15"},
     ),
     "a concurrent-close test failed (also NFR-4)": (
-        lambda ev: replace(ev, outcomes={**ev.outcomes, CITED["NFR-28"][1]: "FAILED"}),
-        {"NFR-28", "NFR-4"},
+        lambda ev: replace(ev, outcomes={**ev.outcomes, CITED["OR-14"][1]: "FAILED"}),
+        {"NFR-28", "NFR-4", "OR-14"},
     ),
     "a soft-close boundary test failed": (
         lambda ev: replace(ev, outcomes={**ev.outcomes, CITED["OR-15"][0]: "FAILED"}),
@@ -399,7 +484,12 @@ def test_results_page_has_a_row_per_requirement_and_says_no_limit_was_raised() -
     page = markdown(doc)
     rows = [line for line in page.splitlines() if line.startswith(("| NFR-", "| OR-"))]
     assert [row.split(" | ")[0][2:] for row in rows] == [r["id"] for r in doc["requirements"]]
-    assert "| NFR-8 | " in page and "**Not met**" in page
+    by_id = {row.split(" | ")[0][2:]: row for row in rows}
+    assert "| Not met - Phase 11 part 2 |" in by_id["NFR-8"]
+    assert "| Not met - Phase 11 part 2 |" in by_id["OR-6"]
+    assert "| Not assessed - verification matrix in Phase 11 part 2 |" in by_id["OR-12"]
+    assert "| Pass |" in by_id["OR-14"]
+    assert "**Not met**" not in page  # every measured target met
     assert "None. Every application limit kept its production value." in page
     assert doc["date"] == "2027-01-15"
     assert doc["run"]["bids_rejected"] == {"BID_TOO_LOW": 1100}

@@ -111,7 +111,8 @@ async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> in
         print(f"error: {refused}", file=sys.stderr)  # before any connection is made
         return 1
     if args.command == "loadtest-report" and args.cited:
-        print(" ".join(node for nodes in loadtest.CITED.values() for node in nodes))
+        cited = dict.fromkeys(node for nodes in loadtest.CITED.values() for node in nodes)
+        print(" ".join(cited))  # each test once
         return 0
     if args.command == "loadtest-watch":
         return await _loadtest_watch(sessions, Path(args.dir))
@@ -213,7 +214,7 @@ async def _loadtest_report(sessions: async_sessionmaker[AsyncSession], base: Pat
     (base / "RESULTS.md").write_text(loadtest.markdown(doc), encoding="utf-8")
     print(f"written: {out}, {base / 'RESULTS.md'}")
     for r in doc["requirements"]:
-        print(f"{r['id']:<7} {loadtest.VERDICT[r['pass']]:<14} {r['measured']}")
+        print(f"{r['id']:<7} {loadtest.verdict(r):<28} {r['measured']}")
     return 0
 
 

@@ -22,6 +22,15 @@ class LoadTestRepository(BaseRepository):
         )
         return [(int(s), at) for s, at in (await self.session.execute(stmt)).all()]
 
+    async def acceptances(self, auction_id: UUID) -> list[tuple[int, int, datetime]]:
+        """(sequence_no, amount, acceptance time) of every bid in the ledger, in order (NFR-4)."""
+        stmt = (
+            select(Bid.sequence_no, Bid.amount, Bid.created_at)
+            .where(Bid.auction_id == auction_id)
+            .order_by(Bid.sequence_no)
+        )
+        return [(int(s), int(a), at) for s, a, at in (await self.session.execute(stmt)).all()]
+
     async def accepted_per_second(self, auction_id: UUID) -> list[tuple[datetime, int]]:
         """Accepted bids per second of their acceptance time (NFR-4)."""
         second = func.date_trunc("second", Bid.created_at)

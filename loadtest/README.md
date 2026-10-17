@@ -66,6 +66,10 @@ Everything else the run leaves stays in `loadtest/.run`. Options after `run.sh` 
   - every window holds at least 100 (20 a second);
   - and, in the same run, NFR-1, NFR-2 and NFR-28 pass.
 - **Why there:** the ledger is the record of accepted bids, and per-window counts show the rate is sustained rather than averaged over a burst. 5 s is the window chosen for "sustain"; the minimum per second is reported too.
+- **Also reported,** so a shortfall can be told apart from a load generator that offered too little:
+  - the bids offered in the window, per second (k6's send times), and how many of them could still win when sent: the accepted ones and those that lost a race in flight, whose price was taken at or after their send (k6's clock against the ledger's Redis acceptance times, one kernel clock);
+  - the acceptance ratio, accepted over offered;
+  - the distribution of the gaps between consecutive acceptances, which shows any rhythm the generator imposes (the first full run's shared 50 ms tick put 73% of them at 49 to 51 ms).
 
 ### NFR-5
 > A single auction room shall support at least 100 concurrently connected bidders distributed across at least two application instances, without loss of event delivery.
@@ -136,6 +140,14 @@ Everything else the run leaves stays in `loadtest/.run`. Options after `run.sh` 
 
 - **Measured:** inspection of the test plan (`docs/testing.md`, with `docs/requirements-map.md`). This is not something a load test measures, and it is not assessed here.
 
+### OR-14
+> Settlement uniqueness shall be verified with concurrent close invocations, and separately with the settlement lock disabled, to confirm that the database constraint alone prevents duplication.
+
+- **Measured:** the existing tests, run and reported (they also carry NFR-28's last clause):
+  - `tests/closing/test_closing.py::test_ten_concurrent_closes_settle_once`: ten closers at once, one settlement;
+  - `::test_constraint_alone_keeps_one_settlement`: the settlement lock disabled, the UNIQUE (auction_id) constraint alone keeps one settlement.
+- **Why there:** a close is a server-side task; the tests invoke it concurrently against the real database, which is where a second settlement would show.
+
 ### OR-15
 > Soft-close threshold behaviour shall be verified at the boundary in both directions and across repeated extensions up to the cap of FR-54, and bid ordering correctness shall be verified under sustained concurrent load with zero lost and zero duplicated bids.
 
@@ -145,4 +157,4 @@ Everything else the run leaves stays in `loadtest/.run`. Options after `run.sh` 
   - three consecutive late bids each extend;
   - the cap of ten.
 - **The second half:** the load test's NFR-28 checks, ordering under sustained concurrent load, on the same run.
-- The concurrent-close tests are listed under NFR-28 (and OR-14).
+- The concurrent-close tests are listed under NFR-28 and OR-14.
