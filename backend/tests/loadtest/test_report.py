@@ -28,6 +28,7 @@ from app.loadtest import (
     place_bid_durations,
     pytest_results,
     requirements,
+    steady_window,
     verdict,
     window_rates,
 )
@@ -324,6 +325,18 @@ def test_nfr4_reports_what_was_offered_accepted_and_the_gaps_beside_the_srs_word
         "gaps between acceptances: p10 33 ms, p50 33 ms, p90 33 ms, p99 43 ms (1,499 gaps); "
         "by 10 ms band: 0-9 0%, 10-19 0%, 20-29 0%, 30-39 97%, 40-49 3%, 50-59 0%, 60+ 0%"
     )
+
+
+def test_nfr4_counts_offered_bids_and_gaps_over_the_same_whole_seconds_as_its_windows() -> None:
+    plan = {"start_ms": 1_800_000_000_224, "end_ms": 1_800_000_240_224}  # opened mid-second
+    assert steady_window(plan) == (1_800_000_011_000, 1_800_000_180_000)  # 169 whole seconds
+    ev = passing()
+    shifted = replace(ev, plan={**ev.plan, "start_ms": START_MS + 224, "end_ms": END_MS + 224})
+    details = {r["id"]: r for r in requirements(shifted)}["NFR-4"]["details"]
+    # 49 whole seconds (11 to 59): 1,470 accepted, 980 more bid for the same steps
+    assert "(49 s)" in details[0]
+    assert details[1].startswith("offered: 2,450 bids sent in the window, 50.0/s;")
+    assert details[2].endswith("acceptance ratio 60% (1,470 of 2,450)")
 
 
 def test_a_bid_sent_after_its_price_was_taken_was_not_winnable() -> None:

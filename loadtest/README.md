@@ -61,7 +61,7 @@ Everything else the run leaves stays in `loadtest/.run`. Options after `run.sh` 
 ### NFR-4
 > The system shall sustain at least 20 accepted bids per second against a single auction without violating NFR-1 or NFR-2 and without any lost or duplicated bid.
 
-- **Measured:** server side, from the ledger. Accepted bids on the one load-test auction are counted per 5-second window of their acceptance time (`bids.created_at`, which the persister sets from the Redis acceptance time) during the steady phase.
+- **Measured:** server side, from the ledger. Accepted bids on the one load-test auction are counted per 5-second window of their acceptance time (`bids.created_at`, which the persister sets from the Redis acceptance time) during the steady phase: the whole seconds from 10 s after the opening to the start of the final minute. The offered bids and the gaps below are counted over the same seconds.
 - **Pass criterion:**
   - every window holds at least 100 (20 a second);
   - and, in the same run, NFR-1, NFR-2 and NFR-28 pass.

@@ -384,6 +384,14 @@ def end_to_end_ms(acks: list[dict[str, Any]], rx: list[dict[str, Any]]) -> list[
     return [r["t"] - sent[r["seq"]] for r in rx if r["seq"] in sent]
 
 
+def steady_window(plan: dict[str, Any]) -> tuple[int, int]:
+    """NFR-4's steady phase in whole seconds, from STEADY_FROM_S after the opening to the final
+    minute, so the per-second windows, the offered bids and the gaps cover the same time."""
+    start = math.ceil((plan["start_ms"] + STEADY_FROM_S * 1000) / 1000) * 1000
+    end = (plan["end_ms"] - FINAL_MINUTE_S * 1000) // 1000 * 1000
+    return start, end
+
+
 def per_second(counts: list[tuple[datetime, int]], start_ms: int, end_ms: int) -> list[int]:
     """Accepted bids in each whole second of [start, end)."""
     by_second = {to_ms(at) // 1000: n for at, n in counts}
@@ -661,8 +669,7 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         ],
     )
 
-    start = ev.plan["start_ms"] + STEADY_FROM_S * 1000
-    end = ev.plan["end_ms"] - FINAL_MINUTE_S * 1000
+    start, end = steady_window(ev.plan)
     seconds = per_second(ev.counts, start, end)
     rates = window_rates(seconds)
     slowest = min(rates) if rates else None
