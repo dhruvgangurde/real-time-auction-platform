@@ -6,7 +6,10 @@
     python -m app.cli seed-categories
     python -m app.cli seed-demo [--fresh] [--live-minutes N] [--starts-in M]   (app/demo.py)
     python -m app.cli loadtest-setup [--bidders N] [--starts-in S] [--live S] [--out PATH]
-        (development only, from the loadtest-tools service: app/loadtest.py)
+    python -m app.cli loadtest-watch [--dir PATH]
+    python -m app.cli loadtest-report [--dir PATH] [--cited]
+        (development only, from the loadtest-tools service, as loadtest/run.sh runs them:
+        app/loadtest.py)
 
 Every change is written to audit_log in the same transaction (actor NULL, reason 'cli'). A
 revoke also revokes every session of the user, so the role is gone from the next request on.
@@ -20,6 +23,7 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID
 
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import demo, loadtest
@@ -59,6 +63,13 @@ def _parser() -> argparse.ArgumentParser:
     setup.add_argument("--starts-in", type=_bounded(10, 600), default=45, help="seconds")
     setup.add_argument("--live", type=_bounded(60, 900), default=240, help="seconds")
     setup.add_argument("--out", default="/loadtest/.run/plan.json", help="gitignored (tokens)")
+    watch = commands.add_parser("loadtest-watch")
+    watch.add_argument("--dir", default="/loadtest/.run", help="reads plan.json, writes watch.json")
+    report = commands.add_parser("loadtest-report")
+    report.add_argument(
+        "--dir", default="/loadtest", help="reads .run/, writes results/<date>.json, RESULTS.md"
+    )
+    report.add_argument("--cited", action="store_true", help="only print the cited tests' ids")
     reinstate = commands.add_parser("reinstate")
     reinstate.add_argument("email")
     reinstate.add_argument("--reason", required=True, type=_reason)
@@ -96,9 +107,16 @@ async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> in
     if args.command == "loadtest-setup":
         if loadtest.longest_run_s(args.starts_in, args.live) > settings.access_token_ttl_s:
             parser.error("the run would outlive its tokens (15 minutes): shorten it")
-        if (refused := loadtest.refusal()) is not None:
-            print(f"error: {refused}", file=sys.stderr)  # before any connection is made
-            return 1
+    if args.command.startswith("loadtest-") and (refused := loadtest.refusal()) is not None:
+        print(f"error: {refused}", file=sys.stderr)  # before any connection is made
+        return 1
+    if args.command == "loadtest-report" and args.cited:
+        print(" ".join(node for nodes in loadtest.CITED.values() for node in nodes))
+        return 0
+    if args.command == "loadtest-watch":
+        return await _loadtest_watch(sessions, Path(args.dir))
+    if args.command == "loadtest-report":
+        return await _loadtest_report(sessions, Path(args.dir))
     if args.command == "seed-demo" and (refused := demo.refusal()) is not None:
         print(f"error: {refused}", file=sys.stderr)  # before any connection is made
         return 1
@@ -164,6 +182,39 @@ async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> in
         return 1
     finally:
         await redis.aclose()
+
+
+async def _loadtest_watch(sessions: async_sessionmaker[AsyncSession], run: Path) -> int:
+    plan = json.loads((run / "plan.json").read_text(encoding="utf-8"))
+    # the last possible end (every extension, FR-54), then closing and settling
+    last = plan["end_ms"] / 1000 + 10 * plan["soft_close_s"] + loadtest.SETTLE_MARGIN_S
+    # own clients: a slow-log read is larger than anything on the bid path
+    redis = Redis.from_url(settings.redis_url, decode_responses=True, socket_timeout=5)
+    broker = Redis.from_url(settings.celery_broker_url, decode_responses=True, socket_timeout=5)
+    try:
+        watched = await loadtest.watch(sessions, redis, broker, UUID(plan["auction_id"]), last)
+    finally:
+        await redis.aclose()
+        await broker.aclose()
+    (run / "watch.json").write_text(json.dumps(watched), encoding="utf-8")
+    print(
+        f"watch written to {run / 'watch.json'}: settled {watched['settled']}, "
+        f"{len(watched['arbitration_us'])} arbitrations, {len(watched['persistence_ms'])} bid rows"
+    )
+    return 0 if watched["settled"] else 1
+
+
+async def _loadtest_report(sessions: async_sessionmaker[AsyncSession], base: Path) -> int:
+    evidence = await loadtest.evidence(sessions, base / ".run")
+    doc = loadtest.document(evidence, loadtest.machine(base / ".run"))
+    out = base / "results" / f"{doc['date']}.json"
+    out.parent.mkdir(exist_ok=True)
+    out.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    (base / "RESULTS.md").write_text(loadtest.markdown(doc), encoding="utf-8")
+    print(f"written: {out}, {base / 'RESULTS.md'}")
+    for r in doc["requirements"]:
+        print(f"{r['id']:<7} {loadtest.VERDICT[r['pass']]:<14} {r['measured']}")
+    return 0
 
 
 def main() -> None:

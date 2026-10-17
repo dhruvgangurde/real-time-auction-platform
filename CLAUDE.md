@@ -134,6 +134,8 @@ curl -s -X POST -H 'X-Requested-With: x' localhost:8011/api/v1/demo/stress   # s
 export MSYS_NO_PATHCONV=1; LT="docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.loadtest.yml --profile loadtest"   # load test (Git Bash)
 $LT run --rm loadtest-tools python -m app.cli loadtest-setup --bidders 110   # minted users, the lot, loadtest/.run/plan.json (gitignored)
 $LT run --rm k6 run /loadtest/smoke.js         # one minted socket through the web service
+bash loadtest/run.sh                           # the load test end to end (~10 min): results/<date>.json, RESULTS.md
+bash loadtest/run.sh --bidders 6 --live 60     # a quick check of the tooling (options go to loadtest-setup)
 DEMO_MODE=true docker compose --profile demo up -d   # demo mode: endpoints on and the demo runner (B2)
 docker compose logs demo                       # the demo runner
 docker compose exec api pytest tests/discovery/test_nfr6.py -s   # NFR-6 p50/p95 with 2,000 auctions, query plans

@@ -10,12 +10,30 @@ Below, each requirement the load-test phase covers (`docs/requirements-map.md`, 
 
 **Clocks.** k6, the api instances, the tools container, Postgres and Redis all run as containers in one Docker VM and read the same kernel clock, so a time taken in one container can be compared with a time taken in another. Each cross-container measurement below says which clocks it uses.
 
+## Running it
+
+With the dev stack up (`docker compose up -d --build`), from the repository root:
+
+```
+bash loadtest/run.sh
+```
+
+It takes about ten minutes and writes `loadtest/results/<date>.json` and, from it, `loadtest/RESULTS.md`. In order:
+
+1. `loadtest-setup` creates the lot and 110 bidders and signs them in. The plan, tokens included, goes to `loadtest/.run/plan.json` (gitignored) and nowhere else.
+2. `loadtest-watch` runs beside k6: the slow log (NFR-1), the ledger's first sight of each bid (NFR-7), the room's presence (NFR-5) and the Celery queue.
+3. k6 runs `room.js` through the web service (NFR-2 to NFR-6).
+4. Both api instances' logs are kept, and the tests the report cites are run.
+5. `loadtest-report` runs the ledger checks (NFR-28) and writes the results.
+
+Everything else the run leaves stays in `loadtest/.run`. Options after `run.sh` go to `loadtest-setup` (for instance `--bidders 6 --live 60` for a quick check of the tooling).
+
 ## Where each requirement is measured
 
 ### NFR-1
 > The bid accept-or-reject decision, measured as the execution time of arbitration within the real-time layer, shall complete within 10 ms at the 95th percentile.
 
-- **Measured:** server side, by Redis itself. For the run's duration the Redis slow log records every command (threshold 0), and the tools container keeps every `EVALSHA` of the `place_bid` script (matched by its SHA-1). Each entry's duration is the script's execution time inside Redis.
+- **Measured:** server side, by Redis itself. For the run's duration the Redis slow log records every command (threshold 0). Each second the tools container reads and clears it in one transaction, so no entry is lost between the two, and keeps every `EVALSHA` of the `place_bid` script (matched by its SHA-1). Each entry's duration is the script's execution time inside Redis.
 - **Why there:** arbitration is that one Lua script (DC-2, FR-35); its execution inside Redis is "the execution time of arbitration within the real-time layer", with no client or network time added.
 - **Also:** `tests/bidding/test_latency.py` measures the same script 1,000 times in isolation.
 
@@ -24,7 +42,7 @@ Below, each requirement the load-test phase covers (`docs/requirements-map.md`, 
 
 - **Measured:** client side, in k6.
   - Every bidder records the time it sends each bid and, once accepted, the bid's sequence number.
-  - A sample of subscribed bidders, every tenth socket, which the load balancer spreads over both instances, records when each `bid_placed` arrives.
+  - A sample of subscribed bidders, every fifth socket, which the load balancer spreads over both instances, records when each `bid_placed` arrives. Each sampled socket's instance is read from that instance's log, so the figure is also given per instance.
   - After the run the two records are joined on the sequence number: one latency per (accepted bid, sampled subscriber).
 - **Clocks:** both times come from the one k6 process, so a single clock.
 - **Why there:**

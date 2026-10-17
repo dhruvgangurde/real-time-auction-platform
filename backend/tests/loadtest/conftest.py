@@ -1,3 +1,4 @@
+from tests.closing.conftest import ended  # noqa: F401  shared fixture
 from tests.lifecycle.conftest import (  # noqa: F401  shared fixtures
     auth_service,
     clock,

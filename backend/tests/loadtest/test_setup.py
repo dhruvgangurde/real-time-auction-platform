@@ -19,6 +19,7 @@ from app.services.auth import AuthService
 from tests.conftest import TEST_REDIS_URL
 
 
+@pytest.mark.parametrize("command", ["loadtest-setup", "loadtest-watch", "loadtest-report"])
 @pytest.mark.parametrize(
     ("env", "e2e", "said"),
     [("production", False, "only in development"), ("local", True, "e2e overlay is active")],
@@ -26,14 +27,16 @@ from tests.conftest import TEST_REDIS_URL
 async def test_refused_outside_the_dev_stack_before_any_connection(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    command: str,
     env: str,
     e2e: bool,
     said: str,
 ) -> None:
+    """The watcher turns Redis's slow log on for every command: never outside development."""
     monkeypatch.setattr(settings, "app_env", env)
     monkeypatch.setattr(settings, "e2e_stack", e2e)
     monkeypatch.setattr(cli, "create_redis", lambda *_: pytest.fail("Redis was reached"))
-    assert await cli.run(["loadtest-setup"], lambda: pytest.fail("the database was reached")) == 1
+    assert await cli.run([command], lambda: pytest.fail("the database was reached")) == 1
     assert said in capsys.readouterr().err
 
 
