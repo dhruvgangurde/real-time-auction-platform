@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_env: str = "local"
+    e2e_stack: bool = False  # set only by docker-compose.e2e.yml; the demo seed refuses it
     log_level: str = "INFO"
     # restricted role used by api, worker and beat (DC-4)
     database_url: str = "postgresql+asyncpg://auction_app:auction_app@postgres:5432/auction"

@@ -6,6 +6,7 @@
 services:
   api:
     environment: &e2e-limits
+      E2E_STACK: "1"   # marks this stack: `python -m app.cli seed-demo` refuses to run on it
       RATE_LIMIT_REGISTER_IP: "5000/3600"
       RATE_LIMIT_VERIFY_IP: "5000/3600"
       RATE_LIMIT_LOGIN_IP: "1000/60"

@@ -4,6 +4,7 @@
     python -m app.cli revoke-role <email> <role>
     python -m app.cli reinstate <email> --reason "<why>"   (recovery, e.g. no active admin)
     python -m app.cli seed-categories
+    python -m app.cli seed-demo [--fresh]   (development only: app/demo.py)
 
 Every change is written to audit_log in the same transaction (actor NULL, reason 'cli'). A
 revoke also revokes every session of the user, so the role is gone from the next request on.
@@ -16,6 +17,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app import demo
 from app.core.clock import SystemClock
 from app.core.config import settings
 from app.core.errors import AppError
@@ -37,6 +39,10 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("email")
         command.add_argument("role", choices=ROLES)
     commands.add_parser("seed-categories")
+    seed_demo = commands.add_parser("seed-demo")
+    seed_demo.add_argument(
+        "--fresh", action="store_true", help="another demo set beside the old one (none deleted)"
+    )
     reinstate = commands.add_parser("reinstate")
     reinstate.add_argument("email")
     reinstate.add_argument("--reason", required=True, type=_reason)
@@ -52,6 +58,9 @@ def _reason(value: str) -> str:
 
 async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "seed-demo" and (refused := demo.refusal()) is not None:
+        print(f"error: {refused}", file=sys.stderr)  # before any connection is made
+        return 1
     redis = create_redis(settings.redis_url)  # denylist and session_revoked on a role revoke
     try:
         if args.command == "seed-categories":
@@ -64,6 +73,8 @@ async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> in
 
         # the same revocation path as the admin API: denylist with its fallbacks, sockets closed
         users = UserService(sessions, SystemClock(), Denylist(redis, enqueue), notify_revoked)
+        if args.command == "seed-demo":
+            return await demo.seed(sessions, redis, users, fresh=args.fresh)
         if args.command == "reinstate":
             await users.reinstate_user(None, args.email, f"cli: {args.reason}")
             print(f"reinstated {args.email}; they can log in again")
