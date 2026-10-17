@@ -216,7 +216,8 @@ class DemoRunner:
             ]
             sockets += bots
             opened = await asyncio.gather(*(b.open() for b in bots), return_exceptions=True)
-            for problem in {type(r).__name__ for r in opened if r is not None}:
+            # what refused the bot (an error code or a close code), never anything secret
+            for problem in sorted({f"{type(r).__name__}: {r}" for r in opened if r is not None}):
                 log.warning("demo bot did not connect", extra={"fields": {"error": problem}})
             bidders = [b for b, r in zip(bots, opened, strict=True) if r is None]
             await self._tally(key, {"connected": len(bidders)})
