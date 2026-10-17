@@ -23,6 +23,7 @@ from app.services.auth import AuthService, CurrentUser
 from app.services.bidding import BidService
 from app.services.catalog import CatalogService
 from app.services.closing import Closer
+from app.services.demo import DemoService
 from app.services.denylist import Denylist
 from app.services.email import ConsoleEmailSender, EmailSender, QueuedEmailSender
 from app.services.notifications import NotificationService
@@ -137,6 +138,11 @@ def get_payment_service() -> PaymentService:
         key_secret=settings.razorpay_key_secret,
         webhook_secret=settings.razorpay_webhook_secret,
     )
+
+
+@cache
+def get_demo_service() -> DemoService:
+    return DemoService(get_sessions(), get_redis())
 
 
 @cache

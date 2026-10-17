@@ -8,6 +8,7 @@ from app.api import discovery
 from app.api.admin import router as admin_router
 from app.api.auctions import router as auctions_router
 from app.api.auth import router as auth_router
+from app.api.demo import router as demo_router
 from app.api.health import router as health_router
 from app.api.lifecycle import router as lifecycle_router
 from app.api.notifications import router as notifications_router
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     check_startup_config()
     app = FastAPI(title="Real-Time Auction Platform", docs_url="/api/v1/docs", lifespan=lifespan)
     app.state.snapshot_cache = SnapshotCache()  # anonymous /live, per instance (brief 12.2)
+    app.state.demo_cache = SnapshotCache()  # GET /demo and run status, per instance (B2)
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
     app.include_router(health_router)
@@ -57,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(payments_router)
     app.include_router(notifications_router)
     app.include_router(ws_router)
+    app.include_router(demo_router)
     # re-encoded auction images, read-only (GET/HEAD only), never user-chosen names (NFR-24)
     app.mount(
         MEDIA_URL_PREFIX,

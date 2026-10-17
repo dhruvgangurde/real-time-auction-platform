@@ -111,6 +111,8 @@ class Settings(BaseSettings):
     email_batch: int = 200
     ending_soon_lead_s: int = 300  # FR-73 default lead interval
     ending_soon_interval_s: float = 30.0
+    # demo mode (brief 12.3, 12.4): off by default; while off every demo route answers 404
+    demo_mode: bool = False
 
     @property
     def origin_allowlist(self) -> frozenset[str]:

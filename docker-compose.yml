@@ -46,6 +46,8 @@ services:
       WATCHFILES_FORCE_POLLING: "true"
       # the web origin joins the WebSocket Origin allowlist unless .env sets its own
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8011}
+      # demo mode (brief 12.3): .env or the shell turns it on; off, every demo route is a 404
+      DEMO_MODE: ${DEMO_MODE:-false}
     volumes:
       - ./backend:/app
       - media:/media  # one volume for both instances: an upload is served by either (D10)

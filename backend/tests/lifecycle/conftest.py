@@ -165,6 +165,7 @@ async def api(
     for provider, name in {
         deps.get_payment_service: "payment_service",
         deps.get_notification_service: "notification_service",
+        deps.get_demo_service: "demo_service",
     }.items():
         if name in request.fixturenames:
             app.dependency_overrides[provider] = _provide(request.getfixturevalue(name))
