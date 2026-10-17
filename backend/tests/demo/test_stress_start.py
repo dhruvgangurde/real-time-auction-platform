@@ -149,3 +149,26 @@ async def test_the_address_limit_counts_runs_created_never_joins(
     third = await api.post(START, headers=XRW)
     assert third.status_code == 429
     assert third.json()["error"]["code"] == "RATE_LIMITED"
+
+
+@pytest.mark.parametrize("reason", ["disabled", "daily_cap"])
+async def test_the_kill_switch_and_the_daily_cap_hold_mid_cooldown(
+    api: AsyncClient,
+    demo_service: DemoService,
+    demo_on: None,
+    runner_alive: None,
+    db: asyncpg.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+) -> None:
+    run = await db.fetchval(
+        "INSERT INTO demo_runs (kind, state) VALUES ('stress', 'requested') RETURNING id"
+    )
+    await _finish(db, str(run), 10)  # cooling down: these still come first, and say so
+    if reason == "disabled":
+        monkeypatch.setattr(settings, "demo_stress_enabled", False)
+    else:
+        monkeypatch.setattr(settings, "demo_stress_daily_cap", 1)
+    refused = await api.post(START, headers=XRW)
+    assert refused.status_code == 503
+    assert refused.json()["error"]["fields"] == {"reason": reason}

@@ -130,3 +130,19 @@ def test_stress_bounds_refuse_bigger_values(name: str, value: int) -> None:
 
     with pytest.raises(ValidationError):
         Settings(**{name: value})
+
+
+def test_a_full_size_run_stays_inside_the_caps() -> None:
+    """50 bots, 20 bids each, a 60 s window: at most 1,000 submissions, none closer than 2 s for
+    one bot (10 a second is the limit), all inside the window; a late opening only shortens it."""
+    import random
+
+    from app.workers.demo_bots import bid_times
+
+    rng = random.Random(7)
+    for window in (60.0, 45.0, 12.5):
+        plans = [bid_times(rng, window, 20, 2.0) for _ in range(50)]
+        assert sum(len(p) for p in plans) <= 1_000
+        assert all(len(p) <= 20 for p in plans)
+        assert all(0 <= t < window for p in plans for t in p)
+        assert all(b - a >= 2.0 for p in plans for a, b in zip(p, p[1:], strict=False))
