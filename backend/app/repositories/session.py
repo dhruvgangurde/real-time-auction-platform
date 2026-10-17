@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 from app.models import Session as SessionRow
+from app.models import User
 from app.repositories.base import BaseRepository
 
 
@@ -48,6 +49,12 @@ class SessionRepository(BaseRepository):
             .returning(SessionRow.id)
         )
         return list(result.scalars())
+
+    async def delete_for_demo_users(self) -> int:
+        """Demo accounts' sessions (brief 12.3): nobody else's."""
+        demo = select(User.id).where(User.is_demo.is_(True))
+        result = await self.session.execute(delete(SessionRow).where(SessionRow.user_id.in_(demo)))
+        return result.rowcount or 0
 
     async def revoked_since(self, since: datetime) -> list[UUID]:
         """Sessions revoked recently, for the denylist resync safety net."""

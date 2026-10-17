@@ -21,13 +21,21 @@ class UserRepository(BaseRepository):
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def create(
-        self, email: str, password_hash: str, full_name: str, roles: Iterable[str]
+        self,
+        email: str,
+        password_hash: str,
+        full_name: str,
+        roles: Iterable[str],
+        *,
+        status: str = "pending_verification",
+        is_demo: bool = False,
     ) -> User:
         user = User(
             email=email,
             password_hash=password_hash,
             full_name=full_name,
-            status="pending_verification",
+            status=status,
+            is_demo=is_demo,
         )
         self.session.add(user)
         await self.session.flush()
