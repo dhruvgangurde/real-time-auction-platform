@@ -19,6 +19,40 @@ from app.repositories.demo import DemoRunRepository
 from app.services.live_state import to_ms
 
 RUNNER_ALIVE_KEY = "demo:runner:alive"  # set by the runner every 2 s, for 10 s
+COUNTERS_TTL_S = 3600  # the live tally; the runner copies it into demo_runs when a run ends
+
+
+def stress_key(run_id: object) -> str:
+    """A run's live tally, as the runner counts it: a Redis hash of planned and connected bots,
+    submissions sent and accepted, rejections by code, the watcher's auction_closed frames, and
+    a version raised on every write."""
+    return f"demo:stress:{run_id}"
+
+
+def counters_view(fields: dict[str, str]) -> dict[str, Any]:
+    """The public shape of a tally (brief 8.3: bidders connected, bids sent, accepted, rejected
+    by reason, the watcher's count)."""
+
+    def count(name: str) -> int:
+        return int(fields.get(name, 0))
+
+    closed = fields.get("watcher_closed")
+    return {
+        "bots": {"planned": count("planned"), "connected": count("connected")},
+        "submissions": {
+            "sent": count("sent"),
+            "accepted": count("accepted"),
+            "rejected": {
+                name.split(":", 1)[1]: int(value)
+                for name, value in sorted(fields.items())
+                if name.startswith("rejected:")
+            },
+        },
+        "watcher": {
+            "auction_closed_received": int(closed) if closed is not None else None,
+            "expected": 1,
+        },
+    }
 
 
 class DemoService:

@@ -49,6 +49,53 @@ class DemoRunRepository(BaseRepository):
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
+    async def get(self, run_id: UUID) -> DemoRun | None:
+        return await self.session.get(DemoRun, run_id)
+
+    async def abort_stale_requests(self, kind: str, older_than_s: int) -> list[UUID]:
+        """Requested runs nobody picked up in time (the runner was busy or stopping)."""
+        result = await self.session.execute(
+            update(DemoRun)
+            .where(
+                DemoRun.kind == kind,
+                DemoRun.state == "requested",
+                DemoRun.requested_at < func.now() - timedelta(seconds=older_than_s),
+            )
+            .values(
+                state="aborted",
+                reason="not picked up in time",
+                finished_at=func.now(),
+                version=DemoRun.version + 1,
+            )
+            .returning(DemoRun.id)
+        )
+        return list(result.scalars())
+
+    async def claim(self, kind: str) -> UUID | None:
+        """The requested run, now starting (there is at most one: one active run per kind)."""
+        result = await self.session.execute(
+            update(DemoRun)
+            .where(DemoRun.kind == kind, DemoRun.state == "requested")
+            .values(state="starting", started_at=func.now(), version=DemoRun.version + 1)
+            .returning(DemoRun.id)
+        )
+        return result.scalars().first()
+
+    async def set_state(self, run_id: UUID, state: str, version: int | None, **values: Any) -> None:
+        """A run's next state; the version is the live tally's, or the row's own plus one."""
+        await self.session.execute(
+            update(DemoRun)
+            .where(DemoRun.id == run_id)
+            .values(
+                state=state,
+                version=DemoRun.version + 1 if version is None else version,
+                **values,
+            )
+        )
+
+    async def finish(self, run_id: UUID, state: str, version: int | None, **values: Any) -> None:
+        await self.set_state(run_id, state, version, finished_at=func.now(), **values)
+
     async def try_runner_lock(self) -> bool:
         """A session-level advisory lock: held while this connection stays open."""
         return bool(await self.session.scalar(select(func.pg_try_advisory_lock(RUNNER_LOCK_KEY))))

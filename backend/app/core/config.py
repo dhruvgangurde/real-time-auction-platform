@@ -126,6 +126,8 @@ class Settings(BaseSettings):
     demo_stress_cooldown_s: int = Field(default=60, ge=60, le=3600)  # after a run finishes
     demo_stress_daily_cap: int = Field(default=100, ge=1, le=100)  # runs started per 24 hours
     rate_limit_demo_stress_ip: str = "3/3600"  # runs started per client address
+    # the bots connect to each api instance directly, alternately (brief 12.3)
+    demo_ws_urls: str = "ws://api:8000/api/v1/ws,ws://api-2:8000/api/v1/ws"
 
     @property
     def origin_allowlist(self) -> frozenset[str]:
