@@ -188,6 +188,7 @@ async def setup(
 
 PLACE_BID_SHA = hashlib.sha1(lua.source("place_bid").encode()).hexdigest()
 SLOWLOG_LEN = 100_000  # kept between two reads: far more than a second of the stack's commands
+SETTLED_GRACE_S = 5.0  # the slow log is read this long past the settlement
 CLOSED = ("closed_sold", "closed_no_sale")
 
 
@@ -209,13 +210,16 @@ async def watch(
     auction_id: UUID,
     deadline: float,
     poll_s: float = 0.1,
+    grace_s: float = SETTLED_GRACE_S,
 ) -> dict[str, Any]:
-    """Beside k6, until the lot is closed and settled and every bid row has been seen, or until
-    `deadline` (epoch seconds). Returns what it measured:
+    """Beside k6, until the lot is closed and settled and every bid row has been seen, then
+    `grace_s` longer, or until `deadline` (epoch seconds). Returns what it measured:
 
     - NFR-1: the slow log records every command for the run (threshold 0). Each second it is
       read and cleared in one transaction, so no entry falls between the two, and the
-      executions of the place_bid script are kept.
+      executions of the place_bid script are kept. The settings in force are read back from
+      Redis at the start and at the end, and the reading goes on `grace_s` past the settlement,
+      for bids decided while the lot closed.
     - NFR-7: each bid row's first sight in Postgres, polled every `poll_s`, minus its acceptance
       time (bids.created_at, Redis TIME). The time is taken after the read, so never too early.
     - NFR-5: the room's presence count, each second; and the Celery queue, waiting and in
@@ -227,12 +231,13 @@ async def watch(
     await redis.config_set("slowlog-max-len", SLOWLOG_LEN)
     await redis.config_set("slowlog-log-slower-than", 0)
     await redis.slowlog_reset()
+    in_force = {"start": await redis.config_get("slowlog-*"), "end": None}
     seen: dict[int, float] = {}  # sequence_no -> ms from acceptance to first sight
     floor = 0  # every sequence number up to here has been seen
     durations: list[int] = []
     entries = presence_peak = waiting_peak = in_flight_peak = 0
     sampled = 0.0
-    settled = False
+    settled_at: float | None = None
 
     async def read_slowlog() -> None:
         nonlocal entries
@@ -245,7 +250,7 @@ async def watch(
         durations.extend(place_bid_durations(logged))
 
     try:
-        while not settled and time.time() < deadline:
+        while time.time() < deadline:
             async with sessions() as session:
                 rows = await LoadTestRepository(session).bids_after(auction_id, floor)
                 auction = await AuctionRepository(session).get(auction_id)
@@ -262,23 +267,27 @@ async def watch(
                 await read_slowlog()
                 present = await redis.zcount(presence_key(auction_id), int(now * 1000), "+inf")
                 presence_peak = max(presence_peak, present)
-            settled = (
+            if settled_at is None and (
                 auction is not None
                 and auction.status in CLOSED
                 and settlement is not None
                 and len(seen) >= auction.bid_count
-            )
-            if not settled:
-                await asyncio.sleep(poll_s)
+            ):
+                settled_at = now
+            if settled_at is not None and now - settled_at >= grace_s:
+                break
+            await asyncio.sleep(poll_s)
         await read_slowlog()  # the last second's executions
+        in_force["end"] = await redis.config_get("slowlog-*")
     finally:
         for name, value in saved.items():
             await redis.config_set(name, value)
         await redis.slowlog_reset()
     return {
-        "settled": settled,
+        "settled": settled_at is not None,
         "arbitration_us": durations,
         "slowlog_entries": entries,
+        "slowlog_settings": in_force,
         "persistence_ms": [seen[s] for s in sorted(seen)],
         "presence_peak": presence_peak,
         "celery_waiting_peak": waiting_peak,
@@ -440,6 +449,29 @@ def _trend(ev: Evidence, name: str) -> dict[str, float] | None:
     return metric["values"] if metric else None
 
 
+def nfr1_verdict(p95_ms: float | None, executions: int, decided: int) -> bool | None:
+    """NFR-1 from the slow log: assessed only when it holds one place_bid execution for every
+    bid decided (accepted plus rejected); a partial sample is not assessed (None)."""
+    if decided == 0 or executions != decided or p95_ms is None:
+        return None
+    return p95_ms <= 10
+
+
+def _slowlog_settings(watched: dict[str, Any]) -> str:
+    def one(found: dict[str, str] | None) -> str:
+        if not found:
+            return "not read"
+        return (
+            f"slowlog-log-slower-than {found['slowlog-log-slower-than']}, "
+            f"slowlog-max-len {found['slowlog-max-len']}"
+        )
+
+    read = watched.get("slowlog_settings")
+    if not read:
+        return "not recorded by this run's watcher"
+    return f"at the start {one(read['start'])}; at the end {one(read['end'])}"
+
+
 def _cited(ev: Evidence, requirement: str) -> tuple[bool, str]:
     nodes = CITED[requirement]
     passed = sum(ev.outcomes.get(n) == "PASSED" for n in nodes)
@@ -468,17 +500,21 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
             "details": details,
         }
 
-    decided = sum(sum(i["bids"].values()) for i in ev.instances.values())
+    accepted = sum(i["bids"].get("accepted", 0) for i in ev.instances.values())
+    rejected = sum(sum(i["bids"].values()) for i in ev.instances.values()) - accepted
     arb = stats([us / 1000 for us in w["arbitration_us"]])
+    verdict = nfr1_verdict(arb["p95"], arb["n"], accepted + rejected)
+    counts = f"{arb['n']:,} EVALSHA entries for {accepted:,} accepted + {rejected:,} rejected bids"
     row(
         "NFR-1",
         "Arbitration execution within 10 ms at p95",
-        f"p95 {_ms(arb['p95'])}",
-        arb["p95"] is not None and arb["p95"] <= 10,
+        f"p95 {_ms(arb['p95'])}; {counts}" if verdict is not None else f"not every bid: {counts}",
+        verdict,
         "Server side: Redis's slow log at threshold 0 for the run, every execution of the "
-        "place_bid script (by its SHA-1)",
+        "place_bid script (by its SHA-1); assessed only when it holds one for every bid decided "
+        "(both instances' FR-44 lines)",
         [
-            f"{arb['n']} executions recorded, of {decided} bid submissions the instances logged",
+            f"settings in force, read back from Redis: {_slowlog_settings(w)}",
             f"p50 {_ms(arb['p50'])}, p99 {_ms(arb['p99'])}, max {_ms(arb['max'])}",
             *[p for p in ev.printed if p.startswith("[NFR-1]")],
             *_outcomes(ev, "NFR-1"),

@@ -34,6 +34,7 @@ Everything else the run leaves stays in `loadtest/.run`. Options after `run.sh` 
 > The bid accept-or-reject decision, measured as the execution time of arbitration within the real-time layer, shall complete within 10 ms at the 95th percentile.
 
 - **Measured:** server side, by Redis itself. For the run's duration the Redis slow log records every command (threshold 0). Each second the tools container reads and clears it in one transaction, so no entry is lost between the two, and keeps every `EVALSHA` of the `place_bid` script (matched by its SHA-1). Each entry's duration is the script's execution time inside Redis.
+- **Assessed only from every bid:** the figure counts only when the slow log holds one execution for every bid decided, that is its `EVALSHA` entries equal the accepted plus rejected bids in both instances' FR-44 log lines. Otherwise NFR-1 is not assessed from the run. The settings in force (`slowlog-log-slower-than`, `slowlog-max-len`) are read back from Redis at the start and at the end and reported, and the reading goes on 5 s past the settlement, for bids decided while the lot closes.
 - **Why there:** arbitration is that one Lua script (DC-2, FR-35); its execution inside Redis is "the execution time of arbitration within the real-time layer", with no client or network time added.
 - **Also:** `tests/bidding/test_latency.py` measures the same script 1,000 times in isolation.
 

@@ -20,6 +20,7 @@ from app.loadtest import (
     instance_log,
     k6_records,
     markdown,
+    nfr1_verdict,
     per_second,
     percentile,
     place_bid_durations,
@@ -29,6 +30,7 @@ from app.loadtest import (
 )
 
 LOT = "6f1b2c3d-0000-4000-8000-000000000001"
+IN_FORCE = {"slowlog-log-slower-than": "0", "slowlog-max-len": "100000"}
 START_MS = 1_800_000_000_000
 END_MS = START_MS + 120_000  # steady phase: 10 s after the opening to 60 s before the end
 
@@ -53,6 +55,23 @@ def test_place_bid_executions_are_picked_out_by_the_script_sha() -> None:
         [4, 1, 1, ["PING"], "10.0.0.2:1", ""],
     ]
     assert place_bid_durations(entries) == [41, 7]
+
+
+@pytest.mark.parametrize(
+    ("p95_ms", "executions", "decided", "verdict"),
+    [
+        (0.08, 6000, 6000, True),  # one execution per bid decided, well within 10 ms
+        (10.0, 6000, 6000, True),
+        (10.5, 6000, 6000, False),  # every bid sampled, over the target
+        (0.08, 5999, 6000, None),  # one bid without its execution: not assessed from it
+        (0.08, 6001, 6000, None),  # more executions than bids (a retried call): not assessed
+        (None, 0, 0, None),  # no bids at all
+    ],
+)
+def test_nfr1_is_assessed_only_when_the_slow_log_holds_every_bid(
+    p95_ms: float | None, executions: int, decided: int, verdict: bool | None
+) -> None:
+    assert nfr1_verdict(p95_ms, executions, decided) is verdict
 
 
 def test_percentiles_are_nearest_rank() -> None:
@@ -145,6 +164,9 @@ def trend(p95: float, n: int = 1000) -> dict[str, Any]:
     return {"values": {"med": p95 / 2, "p(95)": p95, "p(99)": p95, "max": p95, "count": n}}
 
 
+BIDS = {"accepted": 1800, "BID_TOO_LOW": 1200}  # each instance's FR-44 lines
+
+
 def passing() -> Evidence:
     """A run that meets every target the load test measures: 110 sockets, 55 on each instance,
     30 accepted bids every second, every delivery made once."""
@@ -176,8 +198,9 @@ def passing() -> Evidence:
         bidder_ids=users,
         watched={
             "settled": True,
-            "arbitration_us": [80] * 960 + [400] * 40,
+            "arbitration_us": [80] * 5760 + [400] * 240,  # one per bid decided: 3,600 + 2,400
             "slowlog_entries": 20_000,
+            "slowlog_settings": {"start": IN_FORCE, "end": IN_FORCE},
             "persistence_ms": [120.0] * n,
             "presence_peak": 110,
             "celery_waiting_peak": 3,
@@ -196,8 +219,8 @@ def passing() -> Evidence:
             }
         },
         instances={
-            "api": {"subscribed_users": users[0::2], "closes": {"1000": 55}, "bids": {}},
-            "api-2": {"subscribed_users": users[1::2], "closes": {"1000": 55}, "bids": {}},
+            "api": {"subscribed_users": users[0::2], "closes": {"1000": 55}, "bids": BIDS},
+            "api-2": {"subscribed_users": users[1::2], "closes": {"1000": 55}, "bids": BIDS},
         },
         counts=counts,
         auction={"status": "closed_sold", "end_time": "t", "extension_count": 10},
@@ -228,7 +251,13 @@ def test_a_run_meeting_every_measured_target() -> None:
         "OR-15": True,
     }
     rows = {r["id"]: r for r in requirements(passing())}
-    assert rows["NFR-1"]["measured"] == "p95 0.080 ms"
+    assert rows["NFR-1"]["measured"] == (
+        "p95 0.080 ms; 6,000 EVALSHA entries for 3,600 accepted + 2,400 rejected bids"
+    )
+    assert rows["NFR-1"]["details"][0] == (
+        "settings in force, read back from Redis: at the start slowlog-log-slower-than 0, "
+        "slowlog-max-len 100000; at the end slowlog-log-slower-than 0, slowlog-max-len 100000"
+    )
     assert rows["NFR-2"]["measured"] == "p95 40.0 ms"
     assert rows["NFR-4"]["measured"] == "slowest 5 s window 30.0 bids/s"
     assert rows["NFR-5"]["measured"] == (
@@ -252,7 +281,21 @@ def with_metric(ev: Evidence, name: str, value: dict[str, Any]) -> Evidence:
 
 FAILURES = {
     "arbitration over 10 ms at p95 (also fails NFR-4)": (
-        lambda ev: with_watched(ev, arbitration_us=[11_000] * 100),
+        lambda ev: with_watched(ev, arbitration_us=[11_000] * 6000),
+        {"NFR-1", "NFR-4"},
+    ),
+    "the slow log one execution short of the bids decided (also NFR-4)": (
+        lambda ev: with_watched(ev, arbitration_us=[80] * 5999),
+        {"NFR-1", "NFR-4"},
+    ),
+    "a bid refused before arbitration, so without an execution (also NFR-4)": (
+        lambda ev: replace(
+            ev,
+            instances={
+                **ev.instances,
+                "api": {**ev.instances["api"], "bids": {**BIDS, "RATE_LIMITED": 1}},
+            },
+        ),
         {"NFR-1", "NFR-4"},
     ),
     "deliveries 301 ms after the send (also fails NFR-4)": (

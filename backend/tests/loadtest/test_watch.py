@@ -54,28 +54,38 @@ async def test_the_ledger_reads_for_the_report(
 async def test_the_watcher_measures_until_the_lot_is_settled_and_puts_the_slow_log_back(
     ended: Ended, db: asyncpg.Connection, redis: Redis, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
+    """NFR-1 and NFR-7 beside k6; the slow log is read back at both ends and read on for a
+    while past the settlement, so a bid decided while the lot closes is still counted."""
     first, second = await make_user(db), await make_user(db)
     lot = await ended(bids=[(first, 10_000), (second, 10_500)])  # closing, not yet settled
     before = await redis.config_get("slowlog-*")
-    watcher = asyncio.create_task(watch(sessions, redis, redis, lot, time.time() + 30, 0.02))
+    watcher = asyncio.create_task(watch(sessions, redis, redis, lot, time.time() + 30, 0.02, 1.0))
     async with asyncio.timeout(5):  # the watcher has turned the slow log on for everything
         while (await redis.config_get("slowlog-log-slower-than"))["slowlog-log-slower-than"] != "0":
             await asyncio.sleep(0.01)
-    # one arbitration while it watches: a lot without live state, rejected, nothing written
+    # arbitrations while it watches: a lot without live state, rejected, nothing written
     nowhere = uuid4()
-    keys = [state_key(nowhere), outbox_key(nowhere), request_key(nowhere, first, "r1")]
     place_bid = redis.register_script(lua.source("place_bid"))
-    raw = await place_bid(
-        keys=[*keys, proxies_key(nowhere)], args=[str(nowhere), str(first), "10000", "60000"]
-    )
-    assert "NOT_INITIALISED" in raw
+
+    async def arbitrate(request_id: str) -> None:
+        keys = [state_key(nowhere), outbox_key(nowhere), request_key(nowhere, first, request_id)]
+        raw = await place_bid(
+            keys=[*keys, proxies_key(nowhere)], args=[str(nowhere), str(first), "10000", "60000"]
+        )
+        assert "NOT_INITIALISED" in raw
+
+    await arbitrate("before")
     assert await Closer(redis, sessions).close(lot) is Outcome.SETTLED
+    await asyncio.sleep(0.3)  # the watcher, polling every 20 ms, has seen the settlement
+    await arbitrate("after")  # inside its last second
 
     watched = await asyncio.wait_for(watcher, 10)
     assert watched["settled"] is True
     assert len(watched["persistence_ms"]) == 2
     assert all(ms >= 0 for ms in watched["persistence_ms"])
-    assert len(watched["arbitration_us"]) >= 1  # the place_bid execution above, by its SHA
+    assert len(watched["arbitration_us"]) >= 2  # both executions, by place_bid's SHA
+    in_force = {"slowlog-log-slower-than": "0", "slowlog-max-len": "100000"}
+    assert watched["slowlog_settings"] == {"start": in_force, "end": in_force}
     assert await redis.config_get("slowlog-*") == before
 
 
