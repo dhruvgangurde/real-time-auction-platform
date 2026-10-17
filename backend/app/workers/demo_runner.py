@@ -20,6 +20,7 @@ import asyncio
 import contextlib
 import logging
 import random
+import signal
 import sys
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
@@ -252,6 +253,10 @@ class DemoRunner:
         except RunAborted as exc:
             await self._finish(run_id, "aborted", reason=str(exc))
             return "aborted"
+        except asyncio.CancelledError:  # stopped (SIGTERM): say so now, not at the next start
+            with contextlib.suppress(Exception):
+                await self._finish(run_id, "aborted", reason="the runner was stopped")
+            raise
         except Exception:
             log.exception("demo stress run stopped", extra={"fields": {"run_id": str(run_id)}})
             await self._finish(run_id, "aborted", reason="the runner hit an error")
@@ -392,8 +397,18 @@ async def main() -> int:
         broker = create_redis(settings.celery_broker_url)
         runner = DemoRunner(SessionLocal, redis, clock, auctions, accounts, broker=broker)
         cast = await runner.start(settings.demo_stress_bots)
+        # PID 1 in its container ignores SIGTERM without a handler: stop cleanly instead of
+        # being killed 10 s later, so a run in progress ends with its reason
+        serving = asyncio.current_task()
+        assert serving is not None
+        loop = asyncio.get_running_loop()
+        for stop in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(stop, serving.cancel)
         log.info("demo runner ready")
-        await runner.serve(cast)
+        try:
+            await runner.serve(cast)
+        except asyncio.CancelledError:
+            log.info("demo runner stopped")
     return 0
 
 

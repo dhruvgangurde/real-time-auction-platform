@@ -138,3 +138,33 @@ async def test_the_backlog_sampler_reads_waiting_and_in_flight_messages(
     await asyncio.sleep(0.3)
     sampler.cancel()
     assert peak == {"waiting": 3, "unacked": 2}  # the peaks, not the last reading
+
+
+async def test_a_stopped_runner_ends_its_run_honestly(
+    runner: DemoRunner, db: asyncpg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SIGTERM (compose stop) cancels the runner: the run in progress is recorded as aborted
+    with the reason, and the demo sessions are signed out, rather than left to the next start."""
+    cast = await runner.start(bots=1)
+    run_id = await db.fetchval("INSERT INTO demo_runs (kind) VALUES ('stress') RETURNING id")
+    assert await runner.next_run() == run_id
+    entered = asyncio.Event()
+
+    async def stuck(_seller: object) -> None:  # the run is under way when the stop arrives
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(runner, "new_lot", stuck)
+    signed = await runner._accounts.sign_in(cast.bots)  # a session the run would hold
+    task = asyncio.create_task(runner.run_stress(run_id, cast))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    row = await db.fetchrow(
+        "SELECT state, reason, finished_at FROM demo_runs WHERE id = $1", run_id
+    )
+    assert (row["state"], row["reason"]) == ("aborted", "the runner was stopped")
+    assert row["finished_at"] is not None
+    sid = signed[cast.bots[0].id][0]
+    assert await db.fetchval("SELECT revoked_at FROM sessions WHERE id = $1", sid) is not None
