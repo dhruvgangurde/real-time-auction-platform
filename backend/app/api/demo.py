@@ -5,12 +5,13 @@ is on from GET /api/v1/demo alone. Routing only; the rules live in DemoService."
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Header, Request, Response
 
 from app.api.deps import client_ip, get_demo_service, get_limiter
 from app.core.config import settings
 from app.core.errors import AppError
 from app.core.ratelimit import RateLimit, RateLimiter
+from app.schemas.demo import StressStart
 from app.services.demo import DemoService
 from app.services.snapshot import SnapshotCache
 
@@ -40,3 +41,22 @@ async def overview(
     cache: SnapshotCache = request.app.state.demo_cache
     response.headers["Cache-Control"] = "public, max-age=1"
     return await cache.get(OVERVIEW, demo.overview)
+
+
+@router.post("/stress")
+async def start_stress(
+    response: Response,
+    _: StressStart | None = None,  # no body, or {}; any field is VALIDATION_ERROR (DC-11)
+    x_requested_with: str | None = Header(default=None),
+    ip: str = Depends(client_ip),
+    demo: DemoService = Depends(get_demo_service),
+) -> dict[str, Any]:
+    """Anonymous by the 2026-10-13 decision (a recorded deviation from NFR-21): there is no
+    cookie, session or user to forge, and X-Requested-With keeps a plain cross-site form from
+    starting a run (a cross-origin script fails its preflight: no CORS here). 202 for a new run,
+    200 for the run already in progress, which the caller then watches."""
+    if not x_requested_with:
+        raise AppError("FORBIDDEN", "X-Requested-With header required", 403)
+    started = await demo.start_stress(ip)
+    response.status_code = 200 if started["joined"] else 202
+    return started

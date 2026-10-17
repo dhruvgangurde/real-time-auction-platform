@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     demo_stress_seconds: int = Field(default=60, ge=5, le=60)
     demo_stress_stop_before_end_s: int = Field(default=15, ge=11, le=60)
     demo_stress_start_delay_s: int = Field(default=5, ge=1, le=60)
+    demo_stress_enabled: bool = True  # the kill switch: off, no new run starts
+    demo_stress_cooldown_s: int = Field(default=60, ge=60, le=3600)  # after a run finishes
+    demo_stress_daily_cap: int = Field(default=100, ge=1, le=100)  # runs started per 24 hours
+    rate_limit_demo_stress_ip: str = "3/3600"  # runs started per client address
 
     @property
     def origin_allowlist(self) -> frozenset[str]:

@@ -142,7 +142,7 @@ def get_payment_service() -> PaymentService:
 
 @cache
 def get_demo_service() -> DemoService:
-    return DemoService(get_sessions(), get_redis())
+    return DemoService(get_sessions(), get_redis(), get_limiter())
 
 
 @cache

@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
+from app.core.ratelimit import RateLimiter
 from app.services.demo import DemoService
 from tests.bidding.conftest import auction  # noqa: F401  shared fixture
 from tests.closing.conftest import ended  # noqa: F401  shared fixture
@@ -41,5 +42,9 @@ def demo_on(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def demo_service(sessions: async_sessionmaker[AsyncSession], redis: Redis) -> DemoService:
-    return DemoService(sessions, redis)
+def demo_service(
+    sessions: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    limiter: RateLimiter,  # noqa: F811  the shared fixture, imported above
+) -> DemoService:
+    return DemoService(sessions, redis, limiter)

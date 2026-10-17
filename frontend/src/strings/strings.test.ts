@@ -19,7 +19,7 @@ test('every documented error code has a message, and no undocumented one', () =>
     [...text.matchAll(/\b[A-Z][A-Z_]{3,}\b/g)].map((m) => m[0]).filter((c) => !NOT_CODES.has(c)),
   );
   expect([...documented].sort()).toEqual(Object.keys(enIN.errors).sort());
-  expect(documented.size).toBe(46); // 45 + DEMO_NOT_PAYABLE (B2)
+  expect(documented.size).toBe(48); // 45 + DEMO_NOT_PAYABLE, DEMO_UNAVAILABLE, DEMO_COOLING_DOWN (B2)
 });
 
 test('every documented close code has a message, and no undocumented one', () => {
