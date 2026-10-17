@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.repositories.demo import DemoRunRepository
 
+RUNNER_ALIVE_KEY = "demo:runner:alive"  # set by the runner every 2 s, for 10 s
+
 
 class DemoService:
     def __init__(self, sessions: async_sessionmaker[AsyncSession], redis: Redis) -> None:

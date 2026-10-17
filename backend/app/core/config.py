@@ -1,5 +1,6 @@
 """Settings come only from environment variables (NFR-26, OR-8)."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -113,6 +114,14 @@ class Settings(BaseSettings):
     ending_soon_interval_s: float = 30.0
     # demo mode (brief 12.3, 12.4): off by default; while off every demo route answers 404
     demo_mode: bool = False
+    # "Try to break it" (brief 12.4): bounded here, so the environment can lower them, never
+    # raise them; the bots stop longer before the end than the lot's 10 s soft close, so a stress
+    # run has no extensions
+    demo_stress_bots: int = Field(default=50, ge=1, le=50)
+    demo_stress_bids_per_bot: int = Field(default=20, ge=1, le=20)
+    demo_stress_seconds: int = Field(default=60, ge=5, le=60)
+    demo_stress_stop_before_end_s: int = Field(default=15, ge=11, le=60)
+    demo_stress_start_delay_s: int = Field(default=5, ge=1, le=60)
 
     @property
     def origin_allowlist(self) -> frozenset[str]:

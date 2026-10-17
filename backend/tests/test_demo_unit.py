@@ -109,3 +109,24 @@ def test_bid_times_never_exceed_what_the_gap_allows() -> None:
 
     times = bid_times(random.Random(1), window_s=10.0, bids=20, min_gap_s=2.0)
     assert len(times) == 5  # a 10 s window holds five bids 2 s apart, not twenty
+
+
+# the stress run's bounds cannot be raised from the environment (brief 12.4)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("demo_stress_bots", 51),
+        ("demo_stress_seconds", 61),
+        ("demo_stress_stop_before_end_s", 10),  # must exceed the 10 s soft close: no extension
+        ("demo_stress_start_delay_s", 0),
+    ],
+)
+def test_stress_bounds_refuse_bigger_values(name: str, value: int) -> None:
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(**{name: value})

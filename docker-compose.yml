@@ -104,6 +104,33 @@ services:
       redis:
         condition: service_healthy
 
+  # demo mode's runner (brief 12.3, 12.4): the bots of "Try to break it". Started only with the
+  # profile (docker compose --profile demo up -d) and refuses to run unless DEMO_MODE is on.
+  demo:
+    build: ./backend
+    profiles: [demo]
+    command: python -m app.workers.demo_runner
+    env_file: .env
+    environment:
+      DEMO_MODE: ${DEMO_MODE:-false}
+      # one lot per run, by the demo seller; a person's limit stays 10 per hour (NFR-22)
+      RATE_LIMIT_AUCTION_CREATE: "60/3600"
+    volumes:
+      - ./backend:/app
+      - media:/media  # the lot's photo, served by the api like any upload (D10)
+    mem_limit: 256m
+    cpus: 1.0
+    restart: on-failure
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+      api-2:
+        condition: service_started
+
 networks:
   # the web proxy's network; its fixed address is the only one the api trusts for X-Forwarded-For
   edge:

@@ -196,7 +196,10 @@ class AuctionService:
 
     # ---------------------------------------------------------------- create and edit
 
-    async def create(self, user: CurrentUser, data: dict[str, Any]) -> dict[str, Any]:
+    async def create(
+        self, user: CurrentUser, data: dict[str, Any], *, is_demo: bool = False
+    ) -> dict[str, Any]:
+        """is_demo only from the demo runner (brief 12.3); the request schema never has it."""
         await self._limiter.hit(
             "auction_create", str(user.id), RateLimit.parse(settings.rate_limit_auction_create)
         )
@@ -204,14 +207,20 @@ class AuctionService:
         async with self._sessions() as session, session.begin():
             await self._require_category(session, data["category_id"])
             auction = await AuctionRepository(session).create(
-                **data, seller_id=user.id, status="draft", original_end_time=data["end_time"]
+                **data,
+                seller_id=user.id,
+                status="draft",
+                original_end_time=data["end_time"],
+                is_demo=is_demo,
             )
             await AuditLogRepository(session).add(
                 entity_type="auction",
                 entity_id=str(auction.id),
                 action="auction_created",
                 actor_id=user.id,
-                after=_audit_values(auction, (*EDITABLE, "status")),
+                after=_audit_values(
+                    auction, (*EDITABLE, "status", "is_demo") if is_demo else (*EDITABLE, "status")
+                ),
             )
         return auction_view(auction, owner=True)
 
