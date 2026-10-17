@@ -41,6 +41,20 @@ New migrations are hand-written in `backend/alembic/versions/` and must grant pr
 
 Change them with `API_HOST_PORT`, `POSTGRES_HOST_PORT` and `REDIS_HOST_PORT` in `.env`.
 
+## Demo accounts
+
+For a local demo on the dev stack:
+
+1. Set `DEMO_ACCOUNTS_PASSWORD` in `.env` (10 to 128 characters; `.env` is never committed). Every seeded account signs in with it. Left empty, each run makes new passwords and prints them once.
+2. Run the seed. It creates four accounts (a seller, two bidders and an administrator) and six lots.
+
+   ```
+   docker compose up -d
+   docker compose exec api python -m app.cli seed-demo
+   ```
+
+3. Read the credentials file the seed writes outside the repository, `../auction-private/demo-credentials.md` (set `DEMO_PRIVATE_DIR` in `.env` to put it elsewhere). It lists every account with its email and password, the six lots with their state and end time, and the app and Mailpit links.
+
 ## Payment test details (Razorpay test mode)
 
 Verified on this platform, in Razorpay's test window:
