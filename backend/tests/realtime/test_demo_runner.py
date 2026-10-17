@@ -108,7 +108,8 @@ async def test_a_stress_run_from_request_to_verified(
     assert accepted + sum(rejected.values()) == sent
     assert counters["watcher"] == {"auction_closed_received": 1, "expected": 1}
     assert counters["runner_rss_peak_kb"] > 0
-    assert counters["celery_queue_peak"] is None  # no broker here; the stack measures it
+    # no broker here; the stack measures it
+    assert (counters["celery_queue_peak"], counters["celery_unacked_peak"]) == (None, None)
     lot = row["auction_id"]
     auction = await db.fetchrow(
         "SELECT status, is_demo, extension_count, bid_count FROM auctions WHERE id = $1", lot

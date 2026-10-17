@@ -62,7 +62,10 @@ LIVE_DEADLINE_S = 30  # after the scheduled start
 SETTLE_DEADLINE_S = 120  # after the end; past it the checks run anyway and say what is missing
 WATCHER_GRACE_S = 5.0  # the auction_closed frame follows the settlement's commit
 MIN_GAP_S = 2.0  # between two bids of one bot: far below the per-user limit of 10 a second
-SAMPLE_EVERY_S = 0.2  # the Celery queue length
+SAMPLE_EVERY_S = 0.2  # the Celery backlog
+# the worker prefetches eagerly, so a backlog sits less in the queue than in the messages it has
+# taken and not yet acknowledged (persist_bids acks late): both are measured
+CELERY_QUEUE, CELERY_UNACKED = "celery", "unacked"
 
 STRESS_LOT = {
     "title": "Bidri betel box (Try to break it)",
@@ -195,7 +198,7 @@ class DemoRunner:
         """Runs one claimed run to its end; returns its final state."""
         key = stress_key(run_id)
         sockets: list[BotSocket] = []
-        peak: list[int] = []
+        peak: dict[str, int] = {}
         sampler: asyncio.Task[None] | None = None
         try:
             await self._tally(key, {"planned": len(cast.bots)})
@@ -234,7 +237,8 @@ class DemoRunner:
             state = "verified" if all(c["passed"] for c in checks) else "failed"
             reason = None if settled else f"not settled within {SETTLE_DEADLINE_S} s of the end"
             counters = counters_view(await self._redis.hgetall(key)) | {
-                "celery_queue_peak": max(peak) if peak else None,
+                "celery_queue_peak": peak.get("waiting"),
+                "celery_unacked_peak": peak.get("unacked"),
                 "runner_rss_peak_kb": rss_peak_kb(),
             }
             await self._finish(
@@ -320,13 +324,18 @@ class DemoRunner:
         while watcher.closed_events == 0 and loop.time() < deadline:
             await asyncio.sleep(0.1)
 
-    async def _sample(self, peak: list[int]) -> None:
-        """The longest the Celery queue gets while the bots bid and the lot settles."""
+    async def _sample(self, peak: dict[str, int]) -> None:
+        """The Celery backlog's peaks while the bots bid and the lot settles: messages waiting
+        in the queue, and messages the worker has taken but not yet acknowledged."""
         assert self._broker is not None
         while True:
             with contextlib.suppress(RedisError):
-                length = int(await self._broker.llen("celery"))
-                peak[:] = [max(peak[0], length) if peak else length]
+                async with self._broker.pipeline(transaction=False) as pipe:
+                    pipe.llen(CELERY_QUEUE)
+                    pipe.hlen(CELERY_UNACKED)
+                    waiting, unacked = await pipe.execute()
+                for name, value in (("waiting", waiting), ("unacked", unacked)):
+                    peak[name] = max(peak.get(name, 0), int(value))
             await asyncio.sleep(SAMPLE_EVERY_S)
 
     async def _tally(self, key: str, counts: dict[str, int]) -> None:

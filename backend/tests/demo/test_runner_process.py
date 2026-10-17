@@ -2,6 +2,7 @@
 Redis for the API to see, aborting what a previous runner left unfinished, and creating each
 stress run's fresh lot through the real lifecycle service, flagged as a demo."""
 
+import asyncio
 from datetime import timedelta
 
 import asyncpg
@@ -115,3 +116,25 @@ def test_the_runner_refuses_to_start_while_demo_mode_is_off(
     assert refusal() == "DEMO_MODE is off: the demo runner does not start"
     monkeypatch.setattr(settings, "demo_mode", True)
     assert refusal() is None
+
+
+async def test_the_backlog_sampler_reads_waiting_and_in_flight_messages(
+    sessions: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    clock: FakeClock,
+    storage: LocalStorage,
+) -> None:
+    """Celery's Redis broker keeps waiting messages in the list `celery` and taken-but-not-yet-
+    acknowledged ones in the hash `unacked`; the eager worker drains the list, so both count."""
+    auctions = AuctionService(sessions, redis, clock, RateLimiter(redis, clock), storage)
+    accounts = DemoAccounts(sessions, clock, Denylist(redis, None))
+    runner = DemoRunner(sessions, redis, clock, auctions, accounts, broker=redis)  # db 15 here
+    await redis.rpush("celery", "a", "b", "c")
+    await redis.hset("unacked", mapping={"t1": "x", "t2": "y"})
+    peak: dict[str, int] = {}
+    sampler = asyncio.create_task(runner._sample(peak))
+    await asyncio.sleep(0.3)
+    await redis.lpop("celery", 3)
+    await asyncio.sleep(0.3)
+    sampler.cancel()
+    assert peak == {"waiting": 3, "unacked": 2}  # the peaks, not the last reading
