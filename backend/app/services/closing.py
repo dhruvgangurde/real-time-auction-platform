@@ -236,7 +236,10 @@ class Closer:
     async def _notifications(
         session: AsyncSession, auction: Auction, decision: Decision
     ) -> list[dict[str, Any]]:
-        """FR-62: one set per auction; dedupe_key makes a repeat a no-op (DC-5)."""
+        """FR-62: one set per auction; dedupe_key makes a repeat a no-op (DC-5). A demo lot
+        notifies nobody, bot or person (B2 Q2, a deviation from FR-62 for demo lots only)."""
+        if auction.is_demo:
+            return []
         payload = {
             "auction_id": str(auction.id),
             "title": auction.title,

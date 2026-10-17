@@ -44,6 +44,7 @@ class WatchlistRepository(BaseRepository):
             .join(Auction, Auction.id == Watchlist.auction_id)
             .where(
                 Auction.status == "live",
+                Auction.is_demo.is_(False),  # a demo lot notifies nobody (B2 Q2)
                 Auction.end_time > func.now(),
                 Auction.end_time <= func.now() + timedelta(seconds=lead_s),
             )

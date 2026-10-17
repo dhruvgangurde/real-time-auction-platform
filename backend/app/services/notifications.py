@@ -144,7 +144,7 @@ class NotificationService:
         """The displaced bidders of one accepted bid; a retried bid or task writes nothing new."""
         async with self._sessions() as session, session.begin():
             auction = await AuctionRepository(session).get(auction_id)
-            if auction is None:
+            if auction is None or auction.is_demo:  # nothing demo reaches anyone (B2 Q2)
                 return 0
             payload = {
                 "auction_id": str(auction_id),
@@ -211,7 +211,12 @@ class NotificationService:
         for (user_id, kind, _), rows in groups.items():
             rows.sort(key=lambda n: n.id)
             user = users.get(user_id)
-            if user is None or user.status != "active" or not choices.get((user_id, kind), True):
+            if (
+                user is None
+                or user.is_demo  # backstop: no demo account is ever emailed (B2 Q2)
+                or user.status != "active"
+                or not choices.get((user_id, kind), True)
+            ):
                 status = "skipped"  # in-app delivery is unaffected (FR-71)
                 async with self._sessions() as session, session.begin():
                     await NotificationRepository(session).finish_email([n.id for n in rows], status)

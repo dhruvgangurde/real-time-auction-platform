@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.services.demo import DemoService
+from tests.bidding.conftest import auction  # noqa: F401  shared fixture
+from tests.closing.conftest import ended  # noqa: F401  shared fixture
 from tests.lifecycle.conftest import (  # noqa: F401  shared fixtures
     admin_service,
     api,
@@ -24,6 +26,7 @@ from tests.lifecycle.conftest import (  # noqa: F401  shared fixtures
     storage,
     user_service,
 )
+from tests.notifications.support import notification_service, outbox  # noqa: F401  fixtures
 
 
 @pytest.fixture(autouse=True)

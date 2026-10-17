@@ -150,7 +150,8 @@ async def publish_bid_events(
     record_outbid: OutbidRecorder | None = None,
 ) -> None:
     room, notices = bid_events(auction_id, submitter, result)
-    if notices and record_outbid is not None:
+    # a demo lot records no outbid rows, so the task is not even enqueued (B2 Q13)
+    if notices and record_outbid is not None and not result.demo:
         # stored outbid notifications for the same recipients as the live notice (FR-70);
         # fire-and-forget: it can never delay or fail the bid, already acknowledged (FR-40)
         notice = next(iter(notices.values()))
