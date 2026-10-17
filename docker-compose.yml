@@ -81,7 +81,9 @@ services:
 
   worker:
     build: ./backend
-    command: celery -A app.workers.celery_app worker --loglevel=info
+    # pinned: Celery's default is one prefork process per CPU (32 on the dev laptop), each with
+    # its own SQLAlchemy pool, more than Postgres's 100 connections (docs/decisions.md)
+    command: celery -A app.workers.celery_app worker --loglevel=info -c ${CELERY_CONCURRENCY:-4}
     env_file: .env
     volumes:
       - ./backend:/app
