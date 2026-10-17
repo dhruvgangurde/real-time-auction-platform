@@ -15,8 +15,9 @@ from the real services, so what a video shows is what the platform did:
   would send for it. It is signed here with RAZORPAY_WEBHOOK_SECRET (held in memory, never
   printed) and applied by the real webhook handler; no checkout took place.
 
-No row is written by SQL. Passwords are generated per run and printed once; they are stored
-nowhere else.
+No row is written by SQL. Passwords: when DEMO_ACCOUNTS_PASSWORD is set (in .env, local demo
+only) every account gets it, and it is never printed; otherwise each run generates them and
+prints them once.
 """
 
 import asyncio
@@ -42,6 +43,7 @@ from app.core.storage import LocalStorage
 from app.repositories.auction import AuctionRepository
 from app.repositories.category import CategoryRepository
 from app.repositories.user import UserRepository
+from app.schemas.auth import PASSWORD_MAX, PASSWORD_MIN
 from app.services import live_events
 from app.services.auctions import AuctionService
 from app.services.auth import AuthService, CurrentUser
@@ -58,6 +60,7 @@ from app.workers.dispatch import enqueue, schedule_outbid, schedule_persist
 IMAGES = Path(__file__).resolve().parents[1] / "demo" / "images"
 WEB = "http://localhost:8011"  # the web service's default host port (CLAUDE.md section 4)
 SOURCE = "seed-demo"  # stands in for the client address in rate limits
+FROM_ENV = "password from DEMO_ACCOUNTS_PASSWORD"  # shown in its place: never the value
 
 
 @dataclass(frozen=True)
@@ -166,7 +169,8 @@ BIDS = {
 
 
 def refusal() -> str | None:
-    """Why the seed must not run here, or None: the plain dev stack only."""
+    """Why the seed must not run here, or None: the plain dev stack only, and a configured
+    password that registration would accept (FR-2), checked without ever showing it."""
     if settings.app_env != "local":
         return f"seed-demo runs only in development (APP_ENV=local), not APP_ENV={settings.app_env}"
     if settings.e2e_stack:
@@ -174,7 +178,20 @@ def refusal() -> str | None:
             "the e2e overlay is active (E2E_STACK=1); start the dev stack with "
             "`docker compose up -d` and run it again"
         )
+    configured = settings.demo_accounts_password.get_secret_value()
+    if configured and not PASSWORD_MIN <= len(configured) <= PASSWORD_MAX:
+        return f"DEMO_ACCOUNTS_PASSWORD must be {PASSWORD_MIN} to {PASSWORD_MAX} characters (FR-2)"
     return None
+
+
+def account_password() -> str:
+    """DEMO_ACCOUNTS_PASSWORD when set, otherwise a new one for each account."""
+    return settings.demo_accounts_password.get_secret_value() or secrets.token_urlsafe(12)
+
+
+def shown(password: str) -> str:
+    """What the terminal shows for an account's password: never the configured one."""
+    return FROM_ENV if settings.demo_accounts_password.get_secret_value() else password
 
 
 class _Inbox:
@@ -219,7 +236,7 @@ class _Seeder:
         )
 
     async def account(self, person: Person, tag: str) -> tuple[CurrentUser, str, str]:
-        email, password = f"{person.local}{tag}@example.com", secrets.token_urlsafe(12)
+        email, password = f"{person.local}{tag}@example.com", account_password()
         profile = await self.auth.register(email, password, person.name, SOURCE + tag)
         await self.auth.verify_email(self.inbox.tokens.pop(email), SOURCE + tag)
         roles: tuple[str, ...] = ("bidder",)
@@ -309,6 +326,15 @@ class _Seeder:
         return (await settlement_view(self.sessions, winner, auction_id))["status"]
 
 
+def _print_accounts(people: dict[Person, tuple[CurrentUser, str, str]]) -> None:
+    if settings.demo_accounts_password.get_secret_value():
+        _say(f"\nDemo set ready. Every account signs in with the {FROM_ENV}.\n")
+    else:
+        _say("\nDemo set ready. The passwords are shown once, here, and stored nowhere else.\n")
+    for person, (user, email, password) in people.items():
+        _say(f"  {person.name:<11} {email:<28} {shown(password)}  {', '.join(user.roles)}")
+
+
 async def seed(
     sessions: async_sessionmaker[AsyncSession],
     redis: Redis,
@@ -381,9 +407,7 @@ async def seed(
         "e": f"not sold, reserve not met (highest {rupees(BIDS['e'][-1][1])})",
         "f": f"draft, {MEERA.name}'s to publish",
     }
-    _say("\nDemo set ready. The passwords are shown once, here, and stored nowhere else.\n")
-    for person, (user, email, password) in people.items():
-        _say(f"  {person.name:<11} {email:<28} {password}  {', '.join(user.roles)}")
+    _print_accounts(people)
     _say("")
     for key in "abcdef":
         path = f"/sell/{ids[key]}" if key == "f" else f"/auctions/{ids[key]}"

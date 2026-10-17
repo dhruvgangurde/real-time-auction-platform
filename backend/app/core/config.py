@@ -1,6 +1,6 @@
 """Settings come only from environment variables (NFR-26, OR-8)."""
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -128,6 +128,9 @@ class Settings(BaseSettings):
     rate_limit_demo_stress_ip: str = "3/3600"  # runs started per client address
     # the bots connect to each api instance directly, alternately (brief 12.3)
     demo_ws_urls: str = "ws://api:8000/api/v1/ws,ws://api-2:8000/api/v1/ws"
+    # seed-demo (app/demo.py), local demo only: when set, every seeded account signs in with it;
+    # never printed or logged (a SecretStr shows as ********)
+    demo_accounts_password: SecretStr = SecretStr("")
 
     @property
     def origin_allowlist(self) -> frozenset[str]:

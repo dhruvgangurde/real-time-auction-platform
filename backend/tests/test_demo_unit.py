@@ -1,12 +1,16 @@
 """The demo seed runs only on the plain dev stack: never outside development, never on the e2e
 stack (docker-compose.e2e.yml sets E2E_STACK=1). It refuses before any connection is made."""
 
+from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 import pytest
+from pydantic import SecretStr
 
-from app import cli
-from app.core.config import settings
+from app import cli, demo
+from app.core.config import Settings, settings
+from app.schemas.auth import PASSWORD_MIN
 
 
 @pytest.fixture
@@ -44,6 +48,93 @@ async def test_refuses_outside_development(
     monkeypatch.setattr(settings, "e2e_stack", False)
     assert await cli.run(["seed-demo", "--fresh"], untouched) == 1
     assert "only in development (APP_ENV=local)" in capsys.readouterr().err
+
+
+# DEMO_ACCOUNTS_PASSWORD (.env, local demo only): when set every seeded account signs in with
+# it and it is never printed; unset, each account gets a new password, printed once
+
+
+class _Registrations:
+    """Stands in for AuthService and UserService; keeps the password each account was given."""
+
+    def __init__(self, inbox: Any) -> None:
+        self.inbox, self.passwords = inbox, {}
+
+    async def register(self, email: str, password: str, name: str, source: str) -> Any:
+        self.passwords[email] = password
+        self.inbox.tokens[email] = "verification-token"
+        return SimpleNamespace(id=uuid4())
+
+    async def verify_email(self, token: str, source: str) -> None:
+        return None
+
+    async def change_role(self, email: str, role: str, grant: bool) -> bool:
+        return True
+
+
+async def _seed_accounts() -> tuple[dict[str, str], dict[Any, Any]]:
+    """The seed's four accounts, through _Seeder.account with its services faked."""
+    seeder = object.__new__(demo._Seeder)  # only account() runs: no database, no Redis
+    seeder.inbox = demo._Inbox()
+    seeder.auth = seeder.users = fake = _Registrations(seeder.inbox)
+    people = {
+        p: await seeder.account(p, "") for p in (demo.MEERA, demo.ASHA, demo.RAVI, demo.ADMIN)
+    }
+    return fake.passwords, people
+
+
+def test_the_password_comes_from_the_environment_and_is_masked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_ACCOUNTS_PASSWORD", "FromTheEnvironment42")
+    configured = Settings()
+    assert configured.demo_accounts_password.get_secret_value() == "FromTheEnvironment42"
+    assert "FromTheEnvironment42" not in repr(configured)
+    assert "FromTheEnvironment42" not in str(configured.demo_accounts_password)
+
+
+async def test_a_configured_password_is_every_accounts_and_is_never_printed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    secret = "Configured4Demo2026"
+    monkeypatch.setattr(settings, "demo_accounts_password", SecretStr(secret))
+    passwords, people = await _seed_accounts()
+    assert len(passwords) == 4  # seller, both bidders, admin
+    assert set(passwords.values()) == {secret}
+    demo._print_accounts(people)
+    out = capsys.readouterr()
+    assert secret not in out.out + out.err
+    assert all(email in out.out for email in passwords)
+    assert out.out.count("password from DEMO_ACCOUNTS_PASSWORD") == 5  # the heading, 4 accounts
+
+
+async def test_unset_each_account_gets_its_own_new_password_printed_once(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(settings, "demo_accounts_password", SecretStr(""))
+    passwords, people = await _seed_accounts()
+    assert len(set(passwords.values())) == 4  # a different one for each account
+    assert all(len(password) >= PASSWORD_MIN for password in passwords.values())  # FR-2
+    demo._print_accounts(people)
+    out = capsys.readouterr().out
+    assert all(out.count(password) == 1 for password in passwords.values())
+    assert "DEMO_ACCOUNTS_PASSWORD" not in out
+
+
+@pytest.mark.parametrize("value", ["tooShort9", "x" * 129])
+async def test_a_configured_password_registration_would_refuse_stops_the_seed_unshown(
+    value: str,
+    untouched: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(settings, "app_env", "local")
+    monkeypatch.setattr(settings, "e2e_stack", False)
+    monkeypatch.setattr(settings, "demo_accounts_password", SecretStr(value))
+    assert await cli.run(["seed-demo"], untouched) == 1  # before any connection
+    err = capsys.readouterr().err
+    assert "DEMO_ACCOUNTS_PASSWORD must be 10 to 128 characters (FR-2)" in err
+    assert value not in err
 
 
 # lot (a)'s length and lot (b)'s start: whole minutes, bounded, refused by the parser (exit 2)
