@@ -27,10 +27,12 @@ type Props = {
   startTimeMs: number | null;
   /** the won lot's payment time, from the settlement; null shows Pay */
   paidAtMs: number | null;
+  /** a demo lot's sale (B2): no Pay */
+  demoSale: boolean;
   onResend: () => void;
 };
 
-export function BidControl({ state, session, profile, signedIn, startTimeMs, paidAtMs, onResend }: Props) {
+export function BidControl({ state, session, profile, signedIn, startTimeMs, paidAtMs, demoSale, onResend }: Props) {
   const s = useStrings();
   const b = s.roomUi.bid;
   const rupee = s.roomUi.rupee;
@@ -125,6 +127,7 @@ export function BidControl({ state, session, profile, signedIn, startTimeMs, pai
       </div>
     );
   }
+  if (state.own.result === 'won' && demoSale) return panel(b.ended, b.demoSale);
   if (state.own.result === 'won') {
     // the payment page is its own document with its own CSP: a full load, for Pay and the receipt
     const page = `/auctions/${state.auctionId}/pay`;

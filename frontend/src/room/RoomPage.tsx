@@ -12,7 +12,7 @@ import { NotFound } from '../app/NotFound';
 import { HelpDrawer } from '../help/HelpDrawer';
 import { errorMessage, useStrings, type HelpTopic } from '../strings/catalogue';
 import { Banner } from './Banner';
-import { blockedBy, paidAt } from './account';
+import { blockedBy, isDemoSale, paidAt } from './account';
 import { BidControl } from './BidControl';
 import { Countdown } from './Countdown';
 import { Ledger } from './Ledger';
@@ -109,7 +109,7 @@ export function RoomPage() {
             </Suspense>
           ) : (
             <>
-              <BidControl state={state} session={session} profile={me.data} signedIn={token !== null} startTimeMs={d.start_time_ms} paidAtMs={paidAt(settlement.data)} onResend={resend} />
+              <BidControl state={state} session={session} profile={me.data} signedIn={token !== null} startTimeMs={d.start_time_ms} paidAtMs={paidAt(settlement.data)} demoSale={isDemoSale(settlement.data)} onResend={resend} />
               {token === null || blockedBy(state, me.data) !== null ? null : <ProxyControl state={state} session={session} startTimeMs={d.start_time_ms} />}
             </>
           )}

@@ -129,7 +129,7 @@ export type PaymentView = {
 export type Settlement = {
   id: string;
   auction_id: string;
-  status: 'pending_payment' | 'paid' | 'no_sale';
+  status: 'pending_payment' | 'paid' | 'no_sale' | 'demo'; // demo: a demo lot's sale, never payable (B2)
   final_price: number | null;
   winner: { id: string; full_name: string } | null;
   created_at_ms: number;
@@ -588,7 +588,7 @@ export function parseEmailPreferences(v: unknown): EmailPreferences | null {
 
 // ---------------------------------------------------------------- payments (FR-65 to FR-69)
 
-const SETTLEMENT_STATUSES = new Set(['pending_payment', 'paid', 'no_sale']);
+const SETTLEMENT_STATUSES = new Set(['pending_payment', 'paid', 'no_sale', 'demo']);
 
 function paymentView(v: unknown): PaymentView | null | undefined {
   // undefined: malformed; null: no payment yet

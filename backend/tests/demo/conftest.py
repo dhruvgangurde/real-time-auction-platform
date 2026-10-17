@@ -27,6 +27,7 @@ from tests.lifecycle.conftest import (  # noqa: F401  shared fixtures
     user_service,
 )
 from tests.notifications.support import notification_service, outbox  # noqa: F401  fixtures
+from tests.payments.support import gateway, payment_service  # noqa: F401  fixtures
 
 
 @pytest.fixture(autouse=True)

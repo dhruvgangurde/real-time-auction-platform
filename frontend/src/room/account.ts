@@ -13,6 +13,11 @@ export function blockedBy(state: RoomState, profile: UserProfile | undefined): B
   return null;
 }
 
+/** A demo lot's sale is never payable (B2): the room offers no Pay for it. */
+export function isDemoSale(settlement: Settlement | undefined): boolean {
+  return settlement?.status === 'demo';
+}
+
 /** When the won lot was paid, or null: Pay stays until the settlement itself says paid (FR-68). */
 export function paidAt(settlement: Settlement | undefined): number | null {
   return settlement?.status === 'paid' ? settlement.paid_at_ms : null;

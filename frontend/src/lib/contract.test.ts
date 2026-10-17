@@ -286,6 +286,7 @@ describe('payment guards', () => {
     expect(parseSettlement(settlement)).toEqual(settlement);
     expect(parseSettlement({ ...settlement, status: 'no_sale', final_price: null, winner: null, payment: null })?.status).toBe('no_sale');
     expect(parseSettlement({ ...settlement, payment: { ...payment, status: 'succeeded', payment_id: 'pay_X1' } })?.payment?.payment_id).toBe('pay_X1');
+    expect(parseSettlement({ ...settlement, status: 'demo' })?.status).toBe('demo'); // a demo lot (B2)
     expect(parseSettlement({ ...settlement, status: 'refunded' })).toBeNull();
     expect(parseSettlement({ ...settlement, final_price: 9.5 })).toBeNull();
   });

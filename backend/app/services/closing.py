@@ -165,11 +165,12 @@ class Closer:
             if (refused := await self._recheck(session, auction)) is not None:
                 return refused
             decision = await self._decide(session, auction)
+            sold = "demo" if auction.is_demo else "pending_payment"  # demo: never payable (B2)
             settlement = await settlements.create(  # first: the UNIQUE backstop fires here
                 auction_id=auction_id,
                 winner_id=decision.winner_id,
                 final_price=decision.final_price,
-                status="pending_payment" if decision.winner_id else "no_sale",
+                status=sold if decision.winner_id else "no_sale",
                 idempotency_key=f"settle:{auction_id}",
             )
             if not await auctions.transition(auction_id, "closing", decision.status):

@@ -23,6 +23,7 @@ export type ErrorCode =
   | 'CATEGORY_CYCLE'
   | 'CATEGORY_IN_USE'
   | 'CATEGORY_NOT_FOUND'
+  | 'DEMO_NOT_PAYABLE'
   | 'EMAIL_NOT_VERIFIED'
   | 'EMAIL_TAKEN'
   | 'FORBIDDEN'
@@ -240,6 +241,7 @@ export type Catalogue = {
       pay: (amount: string) => string;
       paidOn: (time: string) => string;
       receipt: string;
+      demoSale: string;
       pendingNote: string;
       retryingHead: string;
       retryingNote: string;

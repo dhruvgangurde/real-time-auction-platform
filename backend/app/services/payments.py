@@ -199,10 +199,13 @@ class PaymentService:
     async def _winners_settlement(
         self, session: AsyncSession, user: CurrentUser, auction_id: UUID
     ) -> Settlement:
-        """FR-65: only the recorded winner; a no-sale settlement has no winner."""
+        """FR-65: only the recorded winner; a no-sale settlement has no winner. A demo lot is
+        refused here, before any gateway call, so it never gets an order (B2 Q1)."""
         auction = await AuctionRepository(session).get(auction_id)
         if auction is None or not visible(auction, user):
             raise AppError("NOT_FOUND", "auction not found", 404)
+        if auction.is_demo:
+            raise AppError("DEMO_NOT_PAYABLE", "a demo listing is never paid for", 409)
         settlement = await SettlementRepository(session).for_auction(auction_id)
         if settlement is None:
             raise AppError("NOT_FOUND", "the auction has no settlement", 404)
