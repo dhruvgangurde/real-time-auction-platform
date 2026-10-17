@@ -50,10 +50,25 @@ class SessionRepository(BaseRepository):
         )
         return list(result.scalars())
 
-    async def delete_for_demo_users(self) -> int:
-        """Demo accounts' sessions (brief 12.3): nobody else's."""
+    async def revoke_for_demo_users(self, now: datetime) -> list[UUID]:
+        """Every live session of a demo account (brief 12.3), nobody else's; their ids for the
+        denylist."""
         demo = select(User.id).where(User.is_demo.is_(True))
-        result = await self.session.execute(delete(SessionRow).where(SessionRow.user_id.in_(demo)))
+        result = await self.session.execute(
+            update(SessionRow)
+            .where(SessionRow.user_id.in_(demo), SessionRow.revoked_at.is_(None))
+            .values(revoked_at=now)
+            .returning(SessionRow.id)
+        )
+        return list(result.scalars())
+
+    async def delete_expired_for_demo_users(self, now: datetime) -> int:
+        """Demo sessions past their expiry: a demo session expires with its access token, so
+        nothing is left to deny."""
+        demo = select(User.id).where(User.is_demo.is_(True))
+        result = await self.session.execute(
+            delete(SessionRow).where(SessionRow.user_id.in_(demo), SessionRow.expires_at < now)
+        )
         return result.rowcount or 0
 
     async def revoked_since(self, since: datetime) -> list[UUID]:

@@ -5,7 +5,8 @@ and reused, with an unusable password hash and a reserved .invalid address, so n
 as them or be emailed as them. The runner signs them in the way AuthService.login does after its
 password check: a session row and an access token. That skips 50 argon2 hashes (64 MiB each) and
 the per-address login limit, while every socket still authenticates with a real token and meets
-the same per-user limits as a person.
+the same per-user limits as a person. Signing out is an ordinary revocation (revoked_at, then the
+Redis denylist), so a token stops working at once.
 """
 
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from app.core.config import settings
 from app.core.security import issue_access_token, new_token
 from app.repositories.session import SessionRepository
 from app.repositories.user import UserRepository
+from app.services.denylist import Denylist, sid_key
 
 UNUSABLE_HASH = "!demo"  # not an argon2 hash, so verify_password is always False for it
 DOMAIN = "demo.invalid"  # reserved: no mail can be delivered there
@@ -38,8 +40,10 @@ class DemoCast:
 
 
 class DemoAccounts:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], clock: Clock) -> None:
-        self._sessions, self._clock = sessions, clock
+    def __init__(
+        self, sessions: async_sessionmaker[AsyncSession], clock: Clock, denylist: Denylist
+    ) -> None:
+        self._sessions, self._clock, self._denylist = sessions, clock, denylist
 
     async def ensure(self, bots: int) -> DemoCast:
         """Creates whichever demo accounts are missing; never adopts a real account."""
@@ -82,7 +86,15 @@ class DemoAccounts:
         return signed
 
     async def sign_out_all(self) -> int:
-        """Removes every demo account's session: a previous runner's at startup and each run's
-        at its end, so they never pile up."""
+        """Revokes every live demo session (a previous runner's at startup, each run's at its
+        end) as any revocation is done: revoked_at in Postgres, then the denylist, so its token
+        is refused at once. Sessions whose token has expired are deleted, so they never pile up.
+        Returns how many were revoked."""
+        now = self._clock.now()
         async with self._sessions() as session, session.begin():
-            return await SessionRepository(session).delete_for_demo_users()
+            sessions = SessionRepository(session)
+            revoked = await sessions.revoke_for_demo_users(now)
+            await sessions.delete_expired_for_demo_users(now)
+        if revoked:
+            await self._denylist.revoke([sid_key(s) for s in revoked])
+        return len(revoked)
