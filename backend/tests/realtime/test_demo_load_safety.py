@@ -84,9 +84,7 @@ def _production_limits(monkeypatch: pytest.MonkeyPatch) -> None:
     """Undo the realtime harness's raised limits: the bots meet exactly what production sets."""
     defaults = Settings.model_fields
     for name in (
-        # production's 5 s, not the harness's 0.5 s: once, under the full suite, 32 of 50 bots
-        # failed their handshake here (cause not proven; this was the likeliest)
-        "ws_auth_timeout_s",
+        "ws_auth_timeout_s",  # production's 5 s for the first frame (the harness shortens it)
         "ws_max_messages_per_s",
         "ws_max_strikes",
         "ws_send_queue_size",

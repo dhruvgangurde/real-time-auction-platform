@@ -18,6 +18,9 @@ from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 REPLY_TIMEOUT_S = 5.0
+# a subscribe that lands while the lot goes live is answered SERVICE_UNAVAILABLE (the live state
+# is being installed); the client contract says retry (architecture section 2)
+SUBSCRIBE_RETRIES, SUBSCRIBE_RETRY_S = 20, 0.25
 REPLIES = ("bid_accepted", "bid_rejected", "error")
 
 
@@ -64,8 +67,15 @@ class BotSocket:
         self._ws = await connect(self.url, open_timeout=REPLY_TIMEOUT_S, max_size=2**20)
         await self._send({"type": "authenticate", "token": self._token})
         await self._until("authenticated")
-        await self._send({"type": "subscribe", "auction_id": str(self.auction_id)})
-        snapshot = (await self._until("subscribed"))["snapshot"]
+        for attempt in range(SUBSCRIBE_RETRIES + 1):
+            await self._send({"type": "subscribe", "auction_id": str(self.auction_id)})
+            try:
+                snapshot = (await self._until("subscribed"))["snapshot"]
+                break
+            except BotError as exc:
+                if str(exc) != "SERVICE_UNAVAILABLE" or attempt == SUBSCRIBE_RETRIES:
+                    raise
+                await asyncio.sleep(SUBSCRIBE_RETRY_S)
         self._increment = int(snapshot["min_increment"])
         self.min_next = int(snapshot["min_next"])
         self._last_seq = int(snapshot["sequence_no"])
