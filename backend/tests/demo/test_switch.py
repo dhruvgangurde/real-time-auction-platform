@@ -11,7 +11,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.api.demo import router
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.services.demo import DemoService
 from tests.db.conftest import make_auction
 
@@ -26,11 +26,19 @@ def _routes() -> list[tuple[str, str]]:
     ]
 
 
+def test_demo_mode_is_off_by_default() -> None:
+    assert Settings.model_fields["demo_mode"].default is False
+
+
 @pytest.mark.parametrize(("method", "path"), _routes())
 async def test_every_demo_route_is_404_while_off(
-    api: AsyncClient, demo_service: DemoService, method: str, path: str
+    api: AsyncClient,
+    demo_service: DemoService,
+    method: str,
+    path: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert settings.demo_mode is False  # the default
+    monkeypatch.setattr(settings, "demo_mode", False)  # whatever the environment says
     response = await api.request(method, path, headers={"X-Requested-With": "test"})
     assert response.status_code == 404
     assert response.json() == NOT_FOUND
