@@ -1,4 +1,5 @@
-"""The demo seed for recording a walkthrough: `python -m app.cli seed-demo [--fresh]`.
+"""The demo seed for recording a walkthrough: `python -m app.cli seed-demo [--fresh]`, with
+`--live-minutes N` (lot a, default 10) and `--starts-in M` (lot b, default 3).
 
 Development only (APP_ENV=local), and never on the e2e stack (E2E_STACK=1). Every row comes
 from the real services, so what a video shows is what the platform did:
@@ -309,7 +310,13 @@ class _Seeder:
 
 
 async def seed(
-    sessions: async_sessionmaker[AsyncSession], redis: Redis, users: UserService, *, fresh: bool
+    sessions: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    users: UserService,
+    *,
+    fresh: bool,
+    live_minutes: int = 10,
+    starts_in: int = 3,
 ) -> int:
     s = _Seeder(sessions, redis, users)
     tag = f".{secrets.token_hex(2)}" if fresh else ""
@@ -356,18 +363,18 @@ async def seed(
 
     # a and b last, so their clocks run from the end of the seed
     start = s.clock.now() + timedelta(seconds=10)
-    end = start + timedelta(minutes=6)
+    end = start + timedelta(minutes=live_minutes)
     ids["a"] = await s.listing(meera, LOTS["a"], start, end, soft_close_s=(20, 20))
     await s.wait_for([ids["a"]], ("live",), by=start + timedelta(seconds=30))
     _say(f"a) live, ending {end:%H:%M:%S} UTC, no bids")
-    b_start = s.clock.now() + timedelta(minutes=2)
+    b_start = s.clock.now() + timedelta(minutes=starts_in)
     ids["b"] = await s.listing(meera, LOTS["b"], b_start, b_start + timedelta(hours=1))
     _say(f"b) scheduled, going live at {b_start:%H:%M:%S} UTC")
 
     c_view = await settlement_view(sessions, people[ASHA][0], ids["c"])
     states = {
-        "a": "live, ends in about 6 min (soft close 20 s, extension 20 s), no bids",
-        "b": "scheduled, goes live in about 2 min",
+        "a": f"live, ends in about {live_minutes} min (soft close 20 s, extension 20 s), no bids",
+        "b": f"scheduled, goes live in about {starts_in} min",
         "c": f"sold to {c_view['winner']['full_name']} at {rupees(c_view['final_price'])}, "
         f"{c_view['status'].replace('_', ' ')}",
         "d": f"sold to {RAVI.name} at {rupees(BIDS['d'][-1][1])}, {paid.replace('_', ' ')}",

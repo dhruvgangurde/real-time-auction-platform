@@ -44,3 +44,43 @@ async def test_refuses_outside_development(
     monkeypatch.setattr(settings, "e2e_stack", False)
     assert await cli.run(["seed-demo", "--fresh"], untouched) == 1
     assert "only in development (APP_ENV=local)" in capsys.readouterr().err
+
+
+# lot (a)'s length and lot (b)'s start: whole minutes, bounded, refused by the parser (exit 2)
+
+
+def test_timing_defaults() -> None:
+    args = cli._parser().parse_args(["seed-demo"])
+    assert (args.live_minutes, args.starts_in) == (10, 3)
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [
+        ("--live-minutes", "3"),
+        ("--live-minutes", "60"),
+        ("--starts-in", "1"),
+        ("--starts-in", "30"),
+    ],
+)
+def test_timing_bounds_accepted(flag: str, value: str) -> None:
+    args = cli._parser().parse_args(["seed-demo", "--fresh", flag, value])
+    assert getattr(args, flag[2:].replace("-", "_")) == int(value)
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [
+        ("--live-minutes", "2"),
+        ("--live-minutes", "61"),
+        ("--live-minutes", "10.5"),
+        ("--starts-in", "0"),
+        ("--starts-in", "31"),
+        ("--starts-in", "x"),
+    ],
+)
+def test_timing_bounds_refused(flag: str, value: str, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as refused:
+        cli._parser().parse_args(["seed-demo", flag, value])
+    assert refused.value.code == 2
+    assert "whole minutes between" in capsys.readouterr().err

@@ -4,7 +4,7 @@
     python -m app.cli revoke-role <email> <role>
     python -m app.cli reinstate <email> --reason "<why>"   (recovery, e.g. no active admin)
     python -m app.cli seed-categories
-    python -m app.cli seed-demo [--fresh]   (development only: app/demo.py)
+    python -m app.cli seed-demo [--fresh] [--live-minutes N] [--starts-in M]   (app/demo.py)
 
 Every change is written to audit_log in the same transaction (actor NULL, reason 'cli'). A
 revoke also revokes every session of the user, so the role is gone from the next request on.
@@ -13,6 +13,7 @@ revoke also revokes every session of the user, so the role is gone from the next
 import argparse
 import asyncio
 import sys
+from collections.abc import Callable
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -43,6 +44,12 @@ def _parser() -> argparse.ArgumentParser:
     seed_demo.add_argument(
         "--fresh", action="store_true", help="another demo set beside the old one (none deleted)"
     )
+    seed_demo.add_argument(
+        "--live-minutes", type=_minutes(3, 60), default=10, help="how long lot (a) is live"
+    )
+    seed_demo.add_argument(
+        "--starts-in", type=_minutes(1, 30), default=3, help="minutes until lot (b) goes live"
+    )
     reinstate = commands.add_parser("reinstate")
     reinstate.add_argument("email")
     reinstate.add_argument("--reason", required=True, type=_reason)
@@ -54,6 +61,15 @@ def _reason(value: str) -> str:
     if not value.strip():
         raise argparse.ArgumentTypeError("a reason is required")
     return value.strip()
+
+
+def _minutes(low: int, high: int) -> Callable[[str], int]:
+    def parse(value: str) -> int:
+        if not (value.isdigit() and low <= int(value) <= high):
+            raise argparse.ArgumentTypeError(f"whole minutes between {low} and {high}")
+        return int(value)
+
+    return parse
 
 
 async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> int:
@@ -74,7 +90,14 @@ async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> in
         # the same revocation path as the admin API: denylist with its fallbacks, sockets closed
         users = UserService(sessions, SystemClock(), Denylist(redis, enqueue), notify_revoked)
         if args.command == "seed-demo":
-            return await demo.seed(sessions, redis, users, fresh=args.fresh)
+            return await demo.seed(
+                sessions,
+                redis,
+                users,
+                fresh=args.fresh,
+                live_minutes=args.live_minutes,
+                starts_in=args.starts_in,
+            )
         if args.command == "reinstate":
             await users.reinstate_user(None, args.email, f"cli: {args.reason}")
             print(f"reinstated {args.email}; they can log in again")
