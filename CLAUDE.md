@@ -128,7 +128,9 @@ docker compose exec api pytest tests/admin     # admin endpoints and settlement 
 docker compose exec api pytest tests/payments  # payments: order, callback, webhook, reconcile, races (no network)
 docker compose exec api pytest tests/notifications   # notification API, producers, email dispatch
 docker compose exec api pytest tests/lifecycle tests/scheduler tests/discovery   # Phase 7 tests
-docker compose exec api pytest tests/demo tests/realtime/test_demo_bots.py   # demo mode (B2)
+docker compose exec api pytest tests/demo tests/realtime/test_demo_bots.py tests/realtime/test_demo_stress_ip.py   # demo mode (B2)
+docker compose exec api pytest tests/realtime/test_demo_runner.py tests/realtime/test_demo_load_safety.py   # a whole stress run, the caps (about a minute)
+curl -s -X POST -H 'X-Requested-With: x' localhost:8011/api/v1/demo/stress   # start "Try to break it" (demo mode on)
 DEMO_MODE=true docker compose --profile demo up -d   # demo mode: endpoints on and the demo runner (B2)
 docker compose logs demo                       # the demo runner
 docker compose exec api pytest tests/discovery/test_nfr6.py -s   # NFR-6 p50/p95 with 2,000 auctions, query plans
