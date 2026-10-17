@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.errors import AppError
 from app.core.ratelimit import RateLimit, RateLimiter
 from app.schemas.demo import StressStart
+from app.services import live_events
 from app.services.demo import DemoService
 from app.services.snapshot import SnapshotCache
 
@@ -40,7 +41,8 @@ async def overview(
     await limiter.hit("anon_demo", ip, anon, fail_open=True)
     cache: SnapshotCache = request.app.state.demo_cache
     response.headers["Cache-Control"] = "public, max-age=1"
-    return await cache.get(OVERVIEW, demo.overview)
+    body = await cache.get(OVERVIEW, demo.overview)
+    return body | {"server_time_ms": live_events.server_time_ms()}  # for the cooldown's clock
 
 
 @router.post("/stress")
@@ -60,3 +62,23 @@ async def start_stress(
     started = await demo.start_stress(ip)
     response.status_code = 200 if started["joined"] else 202
     return started
+
+
+@router.get("/stress/{run_id}")
+async def stress_status(
+    run_id: UUID,
+    request: Request,
+    response: Response,
+    ip: str = Depends(client_ip),
+    limiter: RateLimiter = Depends(get_limiter),
+    demo: DemoService = Depends(get_demo_service),
+) -> dict[str, Any]:
+    """Polled every second while the page watches a run (brief 8.3): anonymous, counted per
+    address like /live, cached 1 s per instance. Either instance may answer a poll, so a client
+    keeps the highest version it has seen and ignores an older body."""
+    anon = RateLimit.parse(settings.rate_limit_anon_read_ip)
+    await limiter.hit("anon_demo", ip, anon, fail_open=True)
+    cache: SnapshotCache = request.app.state.demo_cache
+    response.headers["Cache-Control"] = "public, max-age=1"
+    body = await cache.get(run_id, lambda: demo.stress_status(run_id))
+    return body | {"server_time_ms": live_events.server_time_ms()}

@@ -56,12 +56,17 @@ async def test_overview_when_on(
 ) -> None:
     response = await api.get("/api/v1/demo")
     assert response.status_code == 200
-    assert response.json() == {
-        "enabled": True,
-        "auction_id": None,  # no hero loop (deferred, B2 Q9)
-        "next_start_ms": None,
-        "last_closed_auction_id": None,  # nothing recorded yet
+    body = response.json()
+    assert set(body) == {
+        "enabled",
+        "auction_id",
+        "next_start_ms",
+        "last_closed_auction_id",
+        "stress",
+        "server_time_ms",
     }
+    assert (body["enabled"], body["auction_id"], body["next_start_ms"]) == (True, None, None)
+    assert body["last_closed_auction_id"] is None  # nothing recorded yet; no hero loop (Q9)
 
 
 async def test_replay_points_at_the_latest_verified_stress_run(

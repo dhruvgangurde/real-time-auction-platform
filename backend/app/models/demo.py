@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 ACTIVE_STATES = ("requested", "starting", "running", "settling")
+FINAL_STATES = ("verified", "failed", "aborted")
 ACTIVE_STATES_SQL = "state IN ('requested', 'starting', 'running', 'settling')"
 
 
