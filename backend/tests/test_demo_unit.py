@@ -84,3 +84,28 @@ def test_timing_bounds_refused(flag: str, value: str, capsys: pytest.CaptureFixt
         cli._parser().parse_args(["seed-demo", flag, value])
     assert refused.value.code == 2
     assert "whole minutes between" in capsys.readouterr().err
+
+
+# demo bots' pacing (brief 12.4, B2 Q4): at most N bids, never two within the minimum gap,
+# all inside the bidding window, so a bot never comes near the per-user limit (10 per second)
+
+
+@pytest.mark.parametrize("seed", range(25))
+def test_bid_times_stay_inside_the_caps(seed: int) -> None:
+    import random
+
+    from app.workers.demo_bots import bid_times
+
+    times = bid_times(random.Random(seed), window_s=60.0, bids=20, min_gap_s=2.0)
+    assert len(times) == 20
+    assert all(0 <= t < 60.0 for t in times)
+    assert all(b - a >= 2.0 for a, b in zip(times, times[1:], strict=False))
+
+
+def test_bid_times_never_exceed_what_the_gap_allows() -> None:
+    import random
+
+    from app.workers.demo_bots import bid_times
+
+    times = bid_times(random.Random(1), window_s=10.0, bids=20, min_gap_s=2.0)
+    assert len(times) == 5  # a 10 s window holds five bids 2 s apart, not twenty
