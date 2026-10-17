@@ -193,7 +193,8 @@ class AuctionRepository(BaseRepository):
         weighted vector, so a title match outranks a description-only one (FR-22); without:
         newest first. Ties break on created_at then id, so pages are stable."""
         price = func.coalesce(Auction.current_price, Auction.starting_price)
-        stmt = select(Auction).where(Auction.status.in_(statuses))
+        # demo lots are never listed (brief 12.3): the demo reaches them by id only
+        stmt = select(Auction).where(Auction.status.in_(statuses), Auction.is_demo.is_(False))
         if category_ids is not None:
             stmt = stmt.where(Auction.category_id.in_(category_ids))
         if min_price is not None:

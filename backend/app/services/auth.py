@@ -293,7 +293,7 @@ class AuthService:
         now = self._clock.now()
         async with self._sessions() as session, session.begin():
             user = await UserRepository(session).get_by_email(email)
-            if user is None:
+            if user is None or user.is_demo:  # a demo account never gets a password (B2)
                 return  # identical response either way
             await TokenRepository(session, PasswordResetToken).create(
                 user.id, digest, now + timedelta(seconds=settings.reset_token_ttl_s)

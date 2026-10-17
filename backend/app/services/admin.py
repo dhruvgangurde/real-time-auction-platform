@@ -210,7 +210,13 @@ class AdminService:
     # ---------------------------------------------------------------- users (FR-76)
 
     async def list_users(
-        self, query: str | None, role: str | None, status: str | None, page: int, page_size: int
+        self,
+        query: str | None,
+        role: str | None,
+        status: str | None,
+        page: int,
+        page_size: int,
+        include_demo: bool = False,
     ) -> dict[str, Any]:
         async with self._sessions() as session:
             users = UserRepository(session)
@@ -218,6 +224,7 @@ class AdminService:
                 query=query,
                 role=role,
                 status=status,
+                include_demo=include_demo,
                 limit=page_size + 1,
                 offset=(page - 1) * page_size,
             )
@@ -231,6 +238,7 @@ class AdminService:
                     "status": u.status,
                     "roles": roles[u.id],
                     "created_at_ms": to_ms(u.created_at),
+                    "is_demo": u.is_demo,
                 }
                 for u in rows[:page_size]
             ],

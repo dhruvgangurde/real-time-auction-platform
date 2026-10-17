@@ -84,11 +84,20 @@ class UserRepository(BaseRepository):
     # ---------------------------------------------------------------- administration (FR-76)
 
     async def search(
-        self, *, query: str | None, role: str | None, status: str | None, limit: int, offset: int
+        self,
+        *,
+        query: str | None,
+        role: str | None,
+        status: str | None,
+        include_demo: bool,
+        limit: int,
+        offset: int,
     ) -> list[User]:
         """Free text over email and name (LIKE wildcards in the text match literally), role and
-        status filters; newest first."""
+        status filters; newest first. Demo accounts only when asked (brief 12.3)."""
         stmt = select(User)
+        if not include_demo:
+            stmt = stmt.where(User.is_demo.is_(False))
         if query:
             escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             pattern = f"%{escaped}%"

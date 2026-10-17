@@ -47,10 +47,11 @@ async def list_users(
     status: UserStatus | None = Query(default=None),
     page: int = Query(default=1, ge=1, le=10_000),
     page_size: int = Query(default=20, ge=1, le=100),
+    include_demo: bool = Query(default=False),  # demo mode's bots and seller (brief 12.3)
     _: CurrentUser = Depends(admin_only),
     service: AdminService = Depends(get_admin_service),
 ) -> dict[str, Any]:
-    return await service.list_users(q, role, status, page, page_size)
+    return await service.list_users(q, role, status, page, page_size, include_demo)
 
 
 @router.post("/users/{user_id}/suspend", response_model=UserProfile)

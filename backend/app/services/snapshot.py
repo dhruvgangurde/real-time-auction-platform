@@ -183,6 +183,7 @@ async def live_snapshot(
         "reserve_met": None if reserve is None else bool(sequence) and highest >= reserve,
         # FR-38 as this auction enforces it: copied into its live state at init
         "self_outbid_blocked": state.get("self_outbid") == "1",
+        "is_demo": auction.is_demo,  # labelled "Demo listing" wherever it is shown
         "server_time_ms": server_time_ms(),
     }
 
@@ -293,6 +294,7 @@ async def _postgres_snapshot(
         "degraded": degraded,
         "reserve_met": reserve_met(auction),  # the same value auction_closed carries
         "self_outbid_blocked": settings.self_outbid_policy_enabled,  # FR-38, copied at go-live
+        "is_demo": auction.is_demo,
         "server_time_ms": server_time_ms(),
     }
 

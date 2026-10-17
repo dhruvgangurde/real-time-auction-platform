@@ -202,6 +202,7 @@ class CatalogService:
             "start_time_ms": to_ms(a.start_time),
             "end_time_ms": end_ms,
             "thumbnail_url": self._storage.url(key) if key else None,
+            "is_demo": a.is_demo,
         }
 
     async def _cards(self, auctions: list[Auction]) -> list[dict[str, Any]]:
