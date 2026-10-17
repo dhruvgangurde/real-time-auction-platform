@@ -171,6 +171,16 @@ def test_the_credentials_file_lists_every_account_lot_and_url() -> None:
     assert "- Mailpit, every email the platform sends: http://localhost:8025" in text
 
 
+def test_the_credentials_file_carries_the_razorpay_test_details() -> None:
+    text = demo.credentials([], [], datetime(2026, 10, 18, tzinfo=UTC))
+    assert "## Payments (Razorpay test mode)" in text
+    assert "Netbanking" in text and "`success@razorpay`" in text  # verified on this platform
+    assert (
+        "https://razorpay.com/docs/payments/payments/test-card-details/ (read 2026-10-18)" in text
+    )
+    assert "| Visa | 4100 2800 0000 1007 | Debit, consumer |" in text
+
+
 def test_the_credentials_file_replaces_the_last_one_and_is_owner_only(tmp_path: Path) -> None:
     older = tmp_path / "demo-credentials.md"
     older.write_text("the set before", encoding="utf-8")

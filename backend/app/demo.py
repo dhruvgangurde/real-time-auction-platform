@@ -66,6 +66,33 @@ MAILPIT = "http://localhost:8025"  # Mailpit's web UI, dev only (CLAUDE.md secti
 # the dev override mounts the host's DEMO_PRIVATE_DIR (../auction-private by default) here
 CREDENTIALS = Path("/private/demo-credentials.md")
 IST = timezone(timedelta(hours=5, minutes=30), "IST")
+# Razorpay test mode (AS-5): the methods tried on this platform, and the test cards copied from
+# Razorpay's own page on the date given; the same section is in the README
+PAYMENTS = [
+    "Verified on this platform, in Razorpay's test window:",
+    "",
+    "- Netbanking: enter any mobile number, choose Netbanking and a bank (Bank of Baroda - "
+    "Retail Banking was used), then Success on the bank's test page.",
+    "- UPI: the VPA `success@razorpay`.",
+    "",
+    "Test cards, copied from Razorpay's test card documentation, "
+    "https://razorpay.com/docs/payments/payments/test-card-details/ (read 2026-10-18). Use any "
+    "future expiry date and any CVV; an OTP of 4 to 10 digits succeeds, fewer than 4 digits "
+    "fails. Test mode only. Cards have not been tried on this platform.",
+    "",
+    "| Network | Card number | Type |",
+    "|---|---|---|",
+    "| Visa | 4100 2800 0000 1007 | Debit, consumer |",
+    "| Mastercard | 5555 5100 0008 1006 | Credit, business |",
+    "| Mastercard | 5180 2872 0009 1001 | Prepaid, consumer |",
+    "| RuPay | 6527 6589 0000 1005 | Credit, consumer |",
+    "| Diners | 3608 280009 1007 | Credit, consumer |",
+    "| Amex | 3402 560004 01007 | Credit, consumer |",
+    "",
+    "International cards on the same page: Mastercard 5555 5555 5555 4444, 5105 1051 0510 "
+    "5100 and 5104 0600 0000 0008; Visa 4012 8888 8888 1881. The failure scenarios (declined, "
+    "insufficient funds, timed out and others) have their own numbers there.",
+]
 SOURCE = "seed-demo"  # stands in for the client address in rate limits
 FROM_ENV = "password from DEMO_ACCOUNTS_PASSWORD"  # shown in its place: never the value
 
@@ -376,6 +403,10 @@ def credentials(
             "",
             f"- The app: {WEB}",
             f"- Mailpit, every email the platform sends: {MAILPIT}",
+            "",
+            "## Payments (Razorpay test mode)",
+            "",
+            *PAYMENTS,
             "",
         ]
     )
