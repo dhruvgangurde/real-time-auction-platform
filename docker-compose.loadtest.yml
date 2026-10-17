@@ -1,0 +1,26 @@
+# The load test (Phase 11, loadtest/README.md): k6 from the official image, and the backend
+# image as the tools that set the test up and check it afterwards, on the dev stack's networks.
+# Used only with this file and the profile, on the dev stack (never with the e2e overlay):
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.loadtest.yml --profile loadtest run --rm k6 run /loadtest/room.js
+# The application's limits stay at their production values. Any limit the test had to raise
+# would be set here, with its reason, and listed in loadtest/RESULTS.md: none so far.
+services:
+  k6:
+    image: grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
+    profiles: [loadtest]
+    volumes:
+      - ./loadtest:/loadtest
+    working_dir: /loadtest
+    # the web service's network: the sockets and requests come in through the front door, as a
+    # browser's do, and nginx spreads them over both api instances
+    networks: [edge]
+
+  loadtest-tools:
+    build: ./backend
+    profiles: [loadtest]
+    env_file: .env
+    volumes:
+      - ./backend:/app
+      - ./loadtest:/loadtest  # the plan (tokens included) and the run's records, in loadtest/.run/
+      - media:/media  # the lot's photo, served by the api like any upload
+    networks: [default]

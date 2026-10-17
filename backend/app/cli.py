@@ -5,6 +5,8 @@
     python -m app.cli reinstate <email> --reason "<why>"   (recovery, e.g. no active admin)
     python -m app.cli seed-categories
     python -m app.cli seed-demo [--fresh] [--live-minutes N] [--starts-in M]   (app/demo.py)
+    python -m app.cli loadtest-setup [--bidders N] [--starts-in S] [--live S] [--out PATH]
+        (development only, from the loadtest-tools service: app/loadtest.py)
 
 Every change is written to audit_log in the same transaction (actor NULL, reason 'cli'). A
 revoke also revokes every session of the user, so the role is gone from the next request on.
@@ -12,13 +14,15 @@ revoke also revokes every session of the user, so the role is gone from the next
 
 import argparse
 import asyncio
+import json
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app import demo
+from app import demo, loadtest
 from app.core.clock import SystemClock
 from app.core.config import settings
 from app.core.errors import AppError
@@ -50,6 +54,11 @@ def _parser() -> argparse.ArgumentParser:
     seed_demo.add_argument(
         "--starts-in", type=_minutes(1, 30), default=3, help="minutes until lot (b) goes live"
     )
+    setup = commands.add_parser("loadtest-setup")
+    setup.add_argument("--bidders", type=_bounded(1, 500), default=110)
+    setup.add_argument("--starts-in", type=_bounded(10, 600), default=45, help="seconds")
+    setup.add_argument("--live", type=_bounded(60, 900), default=240, help="seconds")
+    setup.add_argument("--out", default="/loadtest/.run/plan.json", help="gitignored (tokens)")
     reinstate = commands.add_parser("reinstate")
     reinstate.add_argument("email")
     reinstate.add_argument("--reason", required=True, type=_reason)
@@ -63,6 +72,15 @@ def _reason(value: str) -> str:
     return value.strip()
 
 
+def _bounded(low: int, high: int) -> Callable[[str], int]:
+    def parse(value: str) -> int:
+        if not (value.isdigit() and low <= int(value) <= high):
+            raise argparse.ArgumentTypeError(f"a whole number between {low} and {high}")
+        return int(value)
+
+    return parse
+
+
 def _minutes(low: int, high: int) -> Callable[[str], int]:
     def parse(value: str) -> int:
         if not (value.isdigit() and low <= int(value) <= high):
@@ -73,12 +91,32 @@ def _minutes(low: int, high: int) -> Callable[[str], int]:
 
 
 async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.command == "loadtest-setup":
+        if loadtest.longest_run_s(args.starts_in, args.live) > settings.access_token_ttl_s:
+            parser.error("the run would outlive its tokens (15 minutes): shorten it")
+        if (refused := loadtest.refusal()) is not None:
+            print(f"error: {refused}", file=sys.stderr)  # before any connection is made
+            return 1
     if args.command == "seed-demo" and (refused := demo.refusal()) is not None:
         print(f"error: {refused}", file=sys.stderr)  # before any connection is made
         return 1
     redis = create_redis(settings.redis_url)  # denylist and session_revoked on a role revoke
     try:
+        if args.command == "loadtest-setup":
+            plan = await loadtest.setup(
+                sessions, redis, bidders=args.bidders, starts_in_s=args.starts_in, live_s=args.live
+            )
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(plan), encoding="utf-8")
+            print(
+                f"plan written to {out}: auction {plan['auction_id']}, {args.bidders} bidders, "
+                f"opening in {args.starts_in} s for {args.live} s; tokens until "
+                f"{plan['expires_at_ms']} ms (they are in the file only)"
+            )
+            return 0
         if args.command == "seed-categories":
             catalog = CatalogService(sessions, redis, LocalStorage(settings.media_root))
             print(f"categories created: {await catalog.seed_defaults()}")
