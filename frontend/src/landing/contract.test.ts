@@ -17,18 +17,26 @@ const overview = {
 
 test('the overview keeps what the landing reads and nothing else', () => {
   expect(parseDemoOverview(overview)).toEqual({
+    enabled: true,
     last_closed_auction_id: '4f6c2a1e-0000-4000-8000-000000000001',
     stress: { enabled: true, active_run_id: null, cooldown_until_ms: 1_792_300_000_000, unavailable_reason: null },
     server_time_ms: 1_792_299_970_000,
   });
-  expect(parseDemoOverview({ ...overview, last_closed_auction_id: null })?.last_closed_auction_id).toBeNull();
-  expect(parseDemoOverview({ ...overview, stress: { ...overview.stress, unavailable_reason: 'runner_offline' } })?.stress.unavailable_reason).toBe(
-    'runner_offline',
-  );
+  expect(parseDemoOverview({ ...overview, last_closed_auction_id: null })).toMatchObject({ last_closed_auction_id: null });
+  expect(parseDemoOverview({ ...overview, stress: { ...overview.stress, unavailable_reason: 'runner_offline' } })).toMatchObject({
+    stress: { unavailable_reason: 'runner_offline' },
+  });
+});
+
+test('demo off: GET /demo answers enabled false and nothing else', () => {
+  expect(parseDemoOverview({ enabled: false })).toEqual({ enabled: false });
+  expect(parseDemoOverview({ enabled: false, stress: null })).toEqual({ enabled: false });
 });
 
 test('a malformed overview is null', () => {
   expect(parseDemoOverview(null)).toBeNull();
+  expect(parseDemoOverview({ ...overview, enabled: 'yes' })).toBeNull();
+  expect(parseDemoOverview({})).toBeNull();
   expect(parseDemoOverview({ ...overview, stress: null })).toBeNull();
   expect(parseDemoOverview({ ...overview, server_time_ms: '1' })).toBeNull();
   expect(parseDemoOverview({ ...overview, stress: { ...overview.stress, cooldown_until_ms: 1.5 } })).toBeNull();

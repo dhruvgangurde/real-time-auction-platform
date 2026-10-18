@@ -26,15 +26,17 @@ function harness(answer: (method: string, path: string) => unknown) {
   return { calls, demo: landingApi(api, scheduler) };
 }
 
-test('demo off: the overview is null, not an error (every demo route answers 404)', async () => {
-  const { demo, calls } = harness(() => new ApiError('NOT_FOUND', 'Not Found', 404));
+test('demo off: GET /demo says enabled false, and the overview is null', async () => {
+  const { demo, calls } = harness(() => ({ enabled: false }));
   expect(await demo.overview()).toBeNull();
   expect(calls).toEqual([{ method: 'GET', path: '/demo', auth: 'none', headers: undefined, priority: 'high' }]);
 });
 
-test('any other overview failure reaches the caller', async () => {
-  const { demo } = harness(() => new ApiError('SERVICE_UNAVAILABLE', 'down', 503));
-  await expect(demo.overview()).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+test('any overview failure reaches the caller, a 404 included (GET /demo answers 200 when off)', async () => {
+  for (const error of [new ApiError('SERVICE_UNAVAILABLE', 'down', 503), new ApiError('NOT_FOUND', 'Not Found', 404)]) {
+    const { demo } = harness(() => error);
+    await expect(demo.overview()).rejects.toMatchObject({ code: error.code });
+  }
 });
 
 test('a start carries X-Requested-With and no token', async () => {

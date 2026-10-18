@@ -13,11 +13,15 @@ export type StressBlock = {
 };
 
 export type DemoOverview = {
+  enabled: true;
   /** the lot of the most recent verified stress run: what the hero replays */
   last_closed_auction_id: string | null;
   stress: StressBlock;
   server_time_ms: number;
 };
+
+/** GET /demo while demo mode is off: nothing else (B2 Q3, amended in slice 5) */
+export type DemoOff = { enabled: false };
 
 export const RUN_STATES = ['requested', 'starting', 'running', 'settling', 'verified', 'failed', 'aborted'] as const;
 export type RunState = (typeof RUN_STATES)[number];
@@ -76,11 +80,13 @@ function stressBlock(v: unknown): StressBlock | null {
   return { enabled, active_run_id, cooldown_until_ms, unavailable_reason };
 }
 
-export function parseDemoOverview(v: unknown): DemoOverview | null {
-  if (!isObj(v) || !nullOr(isStr)(v.last_closed_auction_id) || !isInt(v.server_time_ms)) return null;
+export function parseDemoOverview(v: unknown): DemoOverview | DemoOff | null {
+  if (!isObj(v)) return null;
+  if (v.enabled === false) return { enabled: false };
+  if (v.enabled !== true || !nullOr(isStr)(v.last_closed_auction_id) || !isInt(v.server_time_ms)) return null;
   const stress = stressBlock(v.stress);
   if (stress === null) return null;
-  return { last_closed_auction_id: v.last_closed_auction_id, stress, server_time_ms: v.server_time_ms };
+  return { enabled: true, last_closed_auction_id: v.last_closed_auction_id, stress, server_time_ms: v.server_time_ms };
 }
 
 export function parseStressStart(v: unknown): StressStart | null {

@@ -1,6 +1,7 @@
-"""Demo mode (brief 12.3, 12.4). Every route depends on the switch: while DEMO_MODE is off each
-answers 404 exactly as an unknown path does (B2 Q3), so the landing page learns whether the demo
-is on from GET /api/v1/demo alone. Routing only; the rules live in DemoService."""
+"""Demo mode (brief 12.3, 12.4). The landing learns whether the demo is on from GET
+/api/v1/demo alone: while DEMO_MODE is off it answers 200 {"enabled": false} (B2 Q3, amended in
+slice 5: a deliberate 404 showed as a console error on every visit to /), and every other demo
+route answers 404 exactly as an unknown path does. Routing only; the rules live in DemoService."""
 
 from typing import Any
 from uuid import UUID
@@ -24,7 +25,8 @@ async def require_demo_mode() -> None:
         raise AppError("NOT_FOUND", "Not Found", 404)
 
 
-router = APIRouter(prefix="/api/v1/demo", tags=["demo"], dependencies=[Depends(require_demo_mode)])
+router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
+OFF = Depends(require_demo_mode)
 
 
 @router.get("")
@@ -37,15 +39,17 @@ async def overview(
 ) -> dict[str, Any]:
     """Read once per landing view; anonymous, so counted per client address like /live and
     cached 1 s per instance (brief 12.2)."""
+    response.headers["Cache-Control"] = "public, max-age=1"
+    if not settings.demo_mode:
+        return {"enabled": False}
     anon = RateLimit.parse(settings.rate_limit_anon_read_ip)
     await limiter.hit("anon_demo", ip, anon, fail_open=True)
     cache: SnapshotCache = request.app.state.demo_cache
-    response.headers["Cache-Control"] = "public, max-age=1"
     body = await cache.get(OVERVIEW, demo.overview)
     return body | {"server_time_ms": live_events.server_time_ms()}  # for the cooldown's clock
 
 
-@router.post("/stress")
+@router.post("/stress", dependencies=[OFF])
 async def start_stress(
     response: Response,
     _: StressStart | None = None,  # no body, or {}; any field is VALIDATION_ERROR (DC-11)
@@ -64,7 +68,7 @@ async def start_stress(
     return started
 
 
-@router.get("/stress/{run_id}")
+@router.get("/stress/{run_id}", dependencies=[OFF])
 async def stress_status(
     run_id: UUID,
     request: Request,

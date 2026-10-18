@@ -8,6 +8,7 @@ import { breakReducer, checkLine, INITIAL, phase, rejectedLine, type BreakState 
 const NOW = 1_800_000_000_000;
 
 const overview = (stress: Partial<DemoOverview['stress']> = {}): DemoOverview => ({
+  enabled: true,
   last_closed_auction_id: null,
   stress: { enabled: true, active_run_id: null, cooldown_until_ms: null, unavailable_reason: null, ...stress },
   server_time_ms: NOW,

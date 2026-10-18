@@ -3,7 +3,7 @@
 // through the page's one scheduler (scheduler.ts), so their total rate stays under the anonymous
 // per-address limit.
 import { REQUESTED_WITH } from '../api/auth';
-import { ApiError, parsed, type Api } from '../api/client';
+import { parsed, type Api } from '../api/client';
 import { parseAuctionDetail, parseAuctionPage, parseBidHistoryPage, type AuctionCard, type AuctionDetail, type BidHistoryPage } from '../lib/contract';
 import { parseDemoOverview, parseStressStart, parseStressStatus, type DemoOverview, type StressStart, type StressStatus } from './contract';
 import type { Priority, Scheduler } from './scheduler';
@@ -18,14 +18,10 @@ export function landingApi(api: Pick<Api, 'request'>, scheduler: Scheduler, canc
     scheduler.run(() => api.request(method, path, { auth: 'none', ...(headers ? { headers } : {}) }), priority, cancelled);
 
   return {
-    /** null: demo mode is off (every demo route answers 404, brief 12.3) */
+    /** null: demo mode is off (GET /demo answers {"enabled": false}, brief 12.3) */
     async overview(): Promise<DemoOverview | null> {
-      try {
-        return parsed(await call('GET', '/demo', 'high'), parseDemoOverview);
-      } catch (error) {
-        if (error instanceof ApiError && error.code === 'NOT_FOUND') return null;
-        throw error;
-      }
+      const overview = parsed(await call('GET', '/demo', 'high'), parseDemoOverview);
+      return overview.enabled ? overview : null;
     },
     async startStress(): Promise<StressStart> {
       return parsed(await call('POST', '/demo/stress', 'high', { 'X-Requested-With': REQUESTED_WITH }), parseStressStart);

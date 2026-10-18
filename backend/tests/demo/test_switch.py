@@ -1,6 +1,7 @@
-"""The demo switch (B2 Q3): every demo route answers 404, exactly as an unknown path does, while
-DEMO_MODE is off; GET /api/v1/demo is how the landing learns the demo is on, and which recorded
-run its hero can replay (brief 8.1 L324)."""
+"""The demo switch (B2 Q3, amended in slice 5): while DEMO_MODE is off GET /api/v1/demo answers
+200 {"enabled": false} and every other demo route answers 404, exactly as an unknown path does.
+GET /api/v1/demo is how the landing learns the demo is on, and which recorded run its hero can
+replay (brief 8.1 L324)."""
 
 import asyncio
 from datetime import timedelta
@@ -18,11 +19,13 @@ from tests.db.conftest import make_auction
 NOT_FOUND = {"error": {"code": "NOT_FOUND", "message": "Not Found"}}
 
 
-def _routes() -> list[tuple[str, str]]:
+def _stress_routes() -> list[tuple[str, str]]:
+    """Every demo route but the overview."""
     return [
         (method, route.path.replace("{run_id}", str(uuid4())))
         for route in router.routes
         for method in sorted(route.methods)  # type: ignore[attr-defined]
+        if route.path != "/api/v1/demo"  # type: ignore[attr-defined]
     ]
 
 
@@ -30,8 +33,23 @@ def test_demo_mode_is_off_by_default() -> None:
     assert Settings.model_fields["demo_mode"].default is False
 
 
-@pytest.mark.parametrize(("method", "path"), _routes())
-async def test_every_demo_route_is_404_while_off(
+async def test_overview_says_off_while_off(
+    api: AsyncClient, demo_service: DemoService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deliberate 404 shows as a console error on every visit to / (slice 5 amendment)."""
+    monkeypatch.setattr(settings, "demo_mode", False)  # whatever the environment says
+    response = await api.get("/api/v1/demo")
+    assert response.status_code == 200
+    assert response.json() == {"enabled": False}  # nothing else: no run, no stress block
+
+
+def test_the_stress_routes_are_listed() -> None:
+    assert {path.split("/")[4] for _, path in _stress_routes()} == {"stress"}
+    assert len(_stress_routes()) == 2  # POST /stress, GET /stress/{run_id}
+
+
+@pytest.mark.parametrize(("method", "path"), _stress_routes())
+async def test_every_stress_route_is_404_while_off(
     api: AsyncClient,
     demo_service: DemoService,
     method: str,
