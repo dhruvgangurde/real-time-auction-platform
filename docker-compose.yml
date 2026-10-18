@@ -86,6 +86,7 @@ services:
 
   worker:
     build: ./backend
+    user: app  # not root (Phase 11 hardening): the worker needs no privilege
     # pinned: Celery's default is one prefork process per CPU (32 on the dev laptop), each with
     # its own SQLAlchemy pool, more than Postgres's 100 connections (docs/decisions.md)
     command: celery -A app.workers.celery_app worker --loglevel=info -c ${CELERY_CONCURRENCY:-4}
@@ -100,6 +101,7 @@ services:
 
   beat:
     build: ./backend
+    user: app  # not root: beat writes only its schedule, in /tmp
     # schedule file in /tmp so nothing lands in the mounted repo
     command: celery -A app.workers.celery_app beat --loglevel=info -s /tmp/celerybeat-schedule
     env_file: .env

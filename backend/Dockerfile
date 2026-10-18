@@ -10,6 +10,10 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_HTTP_TIMEOUT=1800 \
     UV_CONCURRENT_DOWNLOADS=2
 
+# an unprivileged account for the services that need no root (compose runs worker and beat as it;
+# api, api-2 and demo stay root for now: they write the root-owned media volume)
+RUN useradd --system --uid 10001 --home-dir /tmp --shell /usr/sbin/nologin app
+
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 # cache mount keeps downloaded wheels across rebuilds and retries
