@@ -2,12 +2,12 @@
 // updating behind it; Escape closes; focus returns to the control that opened it (brief 11.4).
 import { useEffect, useRef } from 'react';
 
-import { useStrings, type HelpTopic } from '../strings/catalogue';
+import { type HelpTopic } from '../strings/catalogue';
+import { helpEnIN } from '../strings/help-en-IN';
 import { Topic } from './topics';
 import styles from './topics.module.css';
 
 export function HelpDrawer({ topic, onClose }: { topic: HelpTopic | null; onClose: () => void }) {
-  const s = useStrings();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
@@ -28,12 +28,12 @@ export function HelpDrawer({ topic, onClose }: { topic: HelpTopic | null; onClos
       opener?.focus();
     };
   }, [topic, onClose]);
-  const title = topic === null ? '' : s.help.topics[topic].title;
+  const title = topic === null ? '' : helpEnIN.topics[topic].title;
   return (
-    <dialog ref={ref} className={styles.drawer} aria-label={s.help.openLabel(title)} onClose={onClose}>
+    <dialog ref={ref} className={styles.drawer} aria-label={helpEnIN.openLabel(title)} onClose={onClose}>
       <div className={styles.drawerHead}>
         <button type="button" className={styles.closeButton} onClick={onClose}>
-          {s.help.close}
+          {helpEnIN.close}
         </button>
       </div>
       {topic === null ? null : <Topic topic={topic} />}

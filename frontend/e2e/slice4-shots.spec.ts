@@ -12,6 +12,7 @@ import { accountEnIN } from '../src/strings/account-en-IN';
 import { adminEnIN } from '../src/strings/admin-en-IN';
 import { enIN } from '../src/strings/en-IN';
 import { sellerEnIN as t } from '../src/strings/seller-en-IN';
+import { helpEnIN } from '../src/strings/help-en-IN';
 import { apiReachesRazorpay, newPaymentId, sendWebhook } from './fixtures/pay';
 import { API, IMAGE, bearer, grantRole, newAccount, newAuction, restBid, restProxy, signInUi, waitForStatus, type Account } from './fixtures/stack';
 
@@ -91,8 +92,8 @@ test('Seller: dashboard, the form and its errors, photos, publish, every status,
   await page.getByRole('button', { name: f.create }).click();
   await expect(page.getByText(t.problems.reserveBelowStart)).toBeVisible();
   await shoot(page, '04-sell-new-errors', 'light', { note: 'refused here, before sending: each problem under its field, the first focused' });
-  await page.getByRole('button', { name: enIN.help.topics.reserve.question }).click();
-  await expect(page.getByRole('dialog').getByRole('heading', { name: enIN.help.topics.reserve.title })).toBeVisible();
+  await page.getByRole('button', { name: helpEnIN.topics.reserve.question }).click();
+  await expect(page.getByRole('dialog').getByRole('heading', { name: helpEnIN.topics.reserve.title })).toBeVisible();
   await shoot(page, '05-sell-form-help', 'light', { note: 'the reserve field’s help topic in the drawer', viewport: true });
   await page.keyboard.press('Escape');
   await page.getByLabel(f.description, { exact: true }).fill('A body, an 80 mm Planar and an A12 back.');

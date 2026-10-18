@@ -7,6 +7,7 @@ import { formatLocal } from '../lib/clock';
 import { formatINR } from '../lib/money';
 import { isStale, type RoomState } from '../live/room';
 import { useStrings, type HelpTopic } from '../strings/catalogue';
+import { helpEnIN } from '../strings/help-en-IN';
 import styles from './room.module.css';
 import { useBand } from './band';
 import { changedFrom } from './time';
@@ -104,7 +105,7 @@ export function PriceBlock({
   let reserve: ReactNode = null;
   const ask = (
     <button type="button" className={styles.link} onClick={() => onHelp('reserve')}>
-      {s.help.topics.reserve.question}
+      {helpEnIN.topics.reserve.question}
     </button>
   );
   if (state.reserveMet !== null && state.terminal === null) {

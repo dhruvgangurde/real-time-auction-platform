@@ -6,6 +6,7 @@ import { cardWatch } from '../discover/cards';
 import type { AuctionDetail, AuctionStatus } from '../lib/contract';
 import { formatINR } from '../lib/money';
 import { HELP_TOPICS, useStrings, type HelpTopic } from '../strings/catalogue';
+import { helpEnIN } from '../strings/help-en-IN';
 import { cardFromDetail } from '../watch/watch';
 import { WatchButton } from '../watch/WatchButton';
 import styles from './room.module.css';
@@ -79,7 +80,7 @@ export function Lot({ detail, status, onHelp }: { detail: AuctionDetail; status:
       <div className={styles.help}>
         {HELP_TOPICS.map((t) => (
           <button key={t} type="button" className={styles.link} onClick={() => onHelp(t)}>
-            {s.help.topics[t].question}
+            {helpEnIN.topics[t].question}
           </button>
         ))}
       </div>

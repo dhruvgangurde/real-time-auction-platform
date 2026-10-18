@@ -1,7 +1,8 @@
 // The four UD-4 topics (brief 9.11): each a diagram and a worked example in rupees, shared by the
 // /help page and the room's help drawer. Diagram text comes from the catalogue's labels, so the
 // JSX holds no literal.
-import { HELP_TOPICS, useStrings, type HelpTopic } from '../strings/catalogue';
+import { HELP_TOPICS, type HelpTopic } from '../strings/catalogue';
+import { helpEnIN } from '../strings/help-en-IN';
 import styles from './topics.module.css';
 
 export { HELP_TOPICS };
@@ -80,8 +81,7 @@ function Diagram({ topic, labels, description }: { topic: HelpTopic; labels: str
 }
 
 export function Topic({ topic, heading = 'h2' }: { topic: HelpTopic; heading?: 'h1' | 'h2' }) {
-  const s = useStrings();
-  const t = s.help.topics[topic];
+  const t = helpEnIN.topics[topic];
   const H = heading;
   return (
     <article className={styles.topic} id={`help-${topic}`}>

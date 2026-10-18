@@ -76,6 +76,26 @@ export type ConnectionState = 'offline' | 'reconnecting' | 'connected' | 'reconn
 export type HelpTopic = 'reserve' | 'increment' | 'maximum' | 'clock';
 export const HELP_TOPICS: readonly HelpTopic[] = ['reserve', 'increment', 'maximum', 'clock'];
 
+/** The four help topics' strings (UD-4): their own module, strings/help-en-IN.ts, imported only
+ * by the help, room and sell chunks, so the entry never carries them. */
+export type HelpCatalogue = {
+  title: string;
+  lede: string;
+  close: string;
+  openLabel: (title: string) => string;
+  topics: Record<
+    HelpTopic,
+    {
+      title: string;
+      question: string;
+      body: string[];
+      example: string;
+      diagram: string;
+      labels: string[];
+    }
+  >;
+};
+
 export type Catalogue = {
   locale: string;
   app: {
@@ -481,23 +501,6 @@ export type Catalogue = {
     denied: (role: 'seller' | 'admin') => string;
     unreachableTitle: string;
     unreachable: string;
-  };
-  help: {
-    title: string;
-    lede: string;
-    close: string;
-    openLabel: (title: string) => string;
-    topics: Record<
-      HelpTopic,
-      {
-        title: string;
-        question: string;
-        body: string[];
-        example: string;
-        diagram: string;
-        labels: string[];
-      }
-    >;
   };
   auth: {
     register: {

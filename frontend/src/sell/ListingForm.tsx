@@ -13,8 +13,9 @@ import styles from '../discover/discover.module.css';
 import { HelpDrawer } from '../help/HelpDrawer';
 import type { Category } from '../lib/contract';
 import { ConfirmDialog } from '../room/ConfirmDialog';
-import { useStrings, type HelpTopic } from '../strings/catalogue';
+import { type HelpTopic } from '../strings/catalogue';
 import { sellerEnIN as t } from '../strings/seller-en-IN';
+import { helpEnIN } from '../strings/help-en-IN';
 import { EMPTY, fromServer, validate, type Editable, type ListingValues, type Problems } from './listing';
 import own from './sell.module.css';
 
@@ -40,10 +41,9 @@ type Control = { id: string; 'aria-invalid'?: true; 'aria-describedby'?: string 
 
 /** The topic's question, opening its help (UD-4; brief 9.1: reachable from the control it explains). */
 function HelpLink({ topic, onHelp }: { topic: HelpTopic; onHelp: (t: HelpTopic) => void }) {
-  const s = useStrings();
   return (
     <button type="button" className={own.helpLink} onClick={() => onHelp(topic)}>
-      {s.help.topics[topic].question}
+      {helpEnIN.topics[topic].question}
     </button>
   );
 }

@@ -42,6 +42,16 @@ for (const [name, source] of Object.entries({ boot, payMain, payPage })) {
 
 // a non-admin never downloads admin code (slice 4 plan, Q4): the room loads its admin panel lazily,
 // only for an administrator, and the entry's catalogue carries no admin strings
+// the help topics' long strings are their own module (strings/help-en-IN.ts), for the help, room
+// and sell chunks; the shared catalogue, in the entry, has none of them
+test('the entry carries no help topic strings', () => {
+  for (const source of [main, routes, shell, home]) {
+    const targets = [...source.matchAll(STATIC_IMPORT)].map((m) => m[1]!);
+    expect(targets.filter((t) => /help-en-IN|(^|\/)help\//.test(t))).toEqual([]);
+  }
+  expect('help' in enIN).toBe(false);
+});
+
 test('the room imports no admin module statically, and the shared catalogue has no admin strings', () => {
   const targets = [...roomPage.matchAll(STATIC_IMPORT)].map((m) => m[1]!);
   expect(targets.filter((t) => /(^|\/)admin\/|AdminPanel/.test(t))).toEqual([]);
