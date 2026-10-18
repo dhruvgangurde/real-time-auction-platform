@@ -868,6 +868,12 @@ export type LandingCatalogue = {
     results: string;
     scripts: string;
   };
+  featured: {
+    title: string;
+    none: string;
+    failed: string;
+    browse: string;
+  };
 };
 
 /** The seller screens' strings (brief 9.8), imported only by the seller chunk (strings/

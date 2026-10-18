@@ -169,4 +169,10 @@ export const landingEnIN = guardSentences({
     results: 'The full results',
     scripts: 'The k6 script',
   },
+  featured: {
+    title: 'Live and upcoming lots',
+    none: 'No lots are live or coming up right now.',
+    failed: 'The lots could not be loaded.',
+    browse: 'Browse auctions',
+  },
 } satisfies LandingCatalogue);

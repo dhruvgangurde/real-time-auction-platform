@@ -351,6 +351,100 @@
   margin: 20px 0 0;
 }
 
+/* featured lots (brief 8.5): an editorial spread, one large plate and smaller ones on a shared
+   baseline; no hover lifts, no card shadows */
+.spread {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  column-gap: 24px;
+  row-gap: 48px;
+  margin-top: 48px;
+  align-items: end;
+}
+
+.spreadReserve {
+  min-height: 480px;
+}
+
+.lot {
+  grid-column: span 3;
+  margin: 0;
+}
+
+.lotBig {
+  grid-column: span 6;
+  grid-row: span 2;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.lotPlate {
+  background: var(--plate);
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+}
+
+.lotBig .lotPlate {
+  flex: 1;
+  aspect-ratio: auto;
+  min-height: 0;
+}
+
+.lotPlate img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.caption {
+  margin-top: 14px;
+}
+
+.lotTitle {
+  font: var(--title-3);
+  margin: 0;
+}
+
+.lotBig .lotTitle {
+  font: 400 28px/34px var(--font-serif);
+}
+
+.lotTitle a {
+  text-decoration: none;
+}
+
+.lotTitle a:hover {
+  text-decoration: underline;
+}
+
+.lotPrice {
+  margin: 8px 0 0;
+}
+
+.lotPrice b {
+  font-weight: 600;
+}
+
+.lotPrice span,
+.lotMeta {
+  color: var(--ink-2);
+}
+
+.lotMeta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 15px;
+  margin: 4px 0 0;
+}
+
+.noLots {
+  color: var(--ink-2);
+  margin: 24px 0 0;
+}
+
 @media (max-width: 700px) {
   .lede {
     font-size: 18px;
@@ -411,5 +505,23 @@
 
   .strip {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .spread {
+    display: block;
+    margin-top: 28px;
+  }
+
+  .lot,
+  .lotBig {
+    margin-bottom: 40px;
+  }
+
+  .lotBig .lotPlate {
+    aspect-ratio: 4 / 5;
+  }
+
+  .lotBig .lotTitle {
+    font: var(--title-2);
   }
 }
