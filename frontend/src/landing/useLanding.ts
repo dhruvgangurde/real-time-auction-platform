@@ -1,6 +1,6 @@
 // The landing's shared data (brief 8.1, 8.3): one API with one scheduler for the whole page, the
 // demo overview (GET /demo, read again after a run), and the newest live real lot.
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Api } from '../api/client';
 import type { AuctionCard } from '../lib/contract';
@@ -44,7 +44,8 @@ export function useOverview(demo: LandingApi): [OverviewState, () => void] {
       gone = true;
     };
   }, [demo, round]);
-  return [state, () => setRound((n) => n + 1)];
+  const refresh = useCallback(() => setRound((n) => n + 1), []);
+  return [state, refresh];
 }
 
 export type LiveLot = { kind: 'loading' } | { kind: 'done'; lot: AuctionCard | null };

@@ -11,6 +11,9 @@ export const RATE = 4;
 export const WINDOW_MS = 1000;
 const RETRIES = 3; // after the first refusal; then the 429 is the caller's
 const DEFAULT_PAUSE_MS = 1000; // a 429 without Retry-After
+// a read limit's window is a second; a longer Retry-After is another limit (a start refused for
+// the hour) and belongs to the caller, without pausing the page
+const MAX_PAUSE_MS = 5000;
 
 export type Priority = 'high' | 'low';
 
@@ -76,9 +79,10 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
     try {
       job.resolve(await job.task());
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'RATE_LIMITED' && job.refusals < RETRIES && !closed) {
+      const pause = error instanceof ApiError && error.code === 'RATE_LIMITED' ? (error.retryAfterMs ?? DEFAULT_PAUSE_MS) : null;
+      if (pause !== null && pause <= MAX_PAUSE_MS && job.refusals < RETRIES && !closed) {
         job.refusals += 1;
-        pausedUntil = Math.max(pausedUntil, deps.now() + (error.retryAfterMs ?? DEFAULT_PAUSE_MS));
+        pausedUntil = Math.max(pausedUntil, deps.now() + pause);
         queue.unshift(job);
         pump();
         return;

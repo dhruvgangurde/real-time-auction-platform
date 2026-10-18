@@ -804,6 +804,60 @@ export type LandingCatalogue = {
     emptyTitle: string;
     emptyBody: string;
   };
+  break: {
+    title: string;
+    intro: string;
+    send: string;
+    sending: string;
+    runningLeft: (left: string) => string;
+    settlingButton: string;
+    nextRun: (left: string) => string;
+    joined: string;
+    willCheck: string;
+    will: readonly string[];
+    unavailable: {
+      off: string;
+      disabled: string;
+      runner_offline: string;
+      daily_cap: string;
+      rate_limited: string;
+      rateLimitedUntil: (time: string) => string;
+      unreachable: string;
+    };
+    running: (ends: string) => string;
+    counters: { connected: string; of: (n: number, m: number) => string; sent: string; accepted: string; rejected: string; price: string; left: string };
+    watchingRow: string;
+    watchingState: string;
+    settling: string;
+    lastRun: (ended: string, sent: number, accepted: number, rejected: number) => string;
+    rejectedBy: (line: string) => string;
+    postgres: string;
+    watcherHead: string;
+    watcherLine: (received: number, expected: number) => string;
+    watcherPending: string;
+    watcherFail: string;
+    pass: string;
+    fail: string;
+    failMeaning: Record<string, string>;
+    ledger: string;
+    how: string;
+    expected: (what: string) => string;
+    stopped: string;
+    stoppedReason: (reason: string) => string;
+    announce: Record<'none' | 'running' | 'settling' | 'verified' | 'failed' | 'stopped', string>;
+    reasons: Record<string, string>;
+    values: {
+      gapless: (lowest: number, highest: number, n: number) => string;
+      missing: (list: string) => string;
+      distinct: (n: number, distinct: number) => string;
+      winner: (alias: string, amount: string, sequence: number) => string;
+      winnerFail: (alias: string, amount: string, expected: string, expectedAmount: string) => string;
+      settlements: (n: number) => string;
+      closes: (n: number) => string;
+      acked: (acknowledged: number, missing: number) => string;
+      none: string;
+    };
+  };
 };
 
 /** The seller screens' strings (brief 9.8), imported only by the seller chunk (strings/

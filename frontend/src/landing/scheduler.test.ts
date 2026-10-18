@@ -111,3 +111,14 @@ test('closed (the landing unmounted), queued requests are dropped and new ones r
   expect(await scheduler.run(job('reopened'))).toBe('reopened');
   expect(starts.map((s) => s.name)).not.toContain('queued');
 });
+
+test('a long Retry-After is not a read limit (a start refused for the hour): the caller gets it, nothing pauses', async () => {
+  const hourly = scheduler.run(job('start', () => Promise.reject(new ApiError('RATE_LIMITED', 'runs per hour', 429, undefined, 1_800_000)))).catch((e: unknown) => e);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(((await hourly) as ApiError).retryAfterMs).toBe(1_800_000);
+  expect(await scheduler.run(job('poll'))).toBe('poll');
+  expect(starts.map((s) => [s.name, s.at])).toEqual([
+    ['start', 0],
+    ['poll', 0],
+  ]);
+});
