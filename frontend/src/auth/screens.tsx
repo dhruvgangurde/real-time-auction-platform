@@ -15,11 +15,20 @@ const text = (data: FormData, name: string) => String(data.get(name) ?? '').trim
 
 function Page({ title, lede, children }: { title: string; lede?: string; children: React.ReactNode }) {
   return (
-    <section className={styles.card}>
-      <h1 className={styles.title}>{title}</h1>
-      {lede ? <p className={styles.lede}>{lede}</p> : null}
-      {children}
-    </section>
+    <div className={styles.stage}>
+      <section className={styles.card}>
+        {/* a padlock: decoration only (design/polish) */}
+        <div className={styles.badge} aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect x="4" y="11" width="16" height="10" rx="2" />
+            <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+          </svg>
+        </div>
+        <h1 className={styles.title}>{title}</h1>
+        {lede ? <p className={styles.lede}>{lede}</p> : null}
+        {children}
+      </section>
+    </div>
   );
 }
 

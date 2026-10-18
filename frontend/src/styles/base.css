@@ -33,6 +33,12 @@ html {
   --button: 600 16px/20px var(--font-ui);
   --mono: 400 15px/22px var(--font-mono);
   --price-width: 78; /* Anek width axis for prices; 75 above eight figures (brief 3.3) */
+
+  /* hover and press tones, mixed from the tokens so both themes follow (no new colours, brief 4.3) */
+  --ink-hover: color-mix(in srgb, var(--ink) 86%, var(--paper));
+  --ink-pressed: color-mix(in srgb, var(--ink) 76%, var(--paper));
+  --hover-wash: color-mix(in srgb, var(--ink) 6%, transparent);
+  --pressed-wash: color-mix(in srgb, var(--ink) 11%, transparent);
 }
 
 @media (min-width: 700px) {
@@ -67,6 +73,20 @@ img {
 
 a {
   color: inherit;
+  text-decoration-thickness: 1px;
+}
+
+/* an underlined link, or a button drawn as one, thickens its underline on hover */
+a:hover,
+button:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* a text field's border darkens on hover; an invalid one keeps its red */
+input:not([type='checkbox'], [type='radio'], [type='file'], [aria-invalid='true'], :disabled):hover,
+select:not([aria-invalid='true'], :disabled):hover,
+textarea:not([aria-invalid='true'], :disabled):hover {
+  border-color: var(--ink-2);
 }
 
 /* visually hidden, still read by assistive technology (live regions, labels) */

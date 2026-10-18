@@ -229,6 +229,15 @@
   cursor: pointer;
 }
 
+.again:hover {
+  background: var(--hover-wash);
+  border-color: var(--ink-2);
+}
+
+.again:active {
+  background: var(--pressed-wash);
+}
+
 .empty {
   border-style: dashed;
   border-color: var(--rule-strong);

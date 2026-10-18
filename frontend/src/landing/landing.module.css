@@ -164,6 +164,28 @@
   cursor: pointer;
 }
 
+/* hover and press: only colour and border change; nothing lifts (brief 6) */
+.primary:hover,
+.primaryButton:not(:disabled):hover {
+  background: var(--ink-hover);
+  border-color: var(--ink-hover);
+}
+
+.primary:active,
+.primaryButton:not(:disabled):active {
+  background: var(--ink-pressed);
+  border-color: var(--ink-pressed);
+}
+
+.quiet:hover {
+  background: var(--hover-wash);
+  border-color: var(--ink-2);
+}
+
+.quiet:active {
+  background: var(--pressed-wash);
+}
+
 .primaryButton:disabled {
   background: var(--paper-2);
   color: var(--ink-2);

@@ -1,5 +1,38 @@
+/* each identity screen is one card, centred on the page (design/polish) */
+.stage {
+  display: grid;
+  place-items: center;
+  padding: 24px 0 32px;
+}
+
 .card {
+  width: 100%;
   max-width: 440px;
+  padding: 32px 36px 30px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 7%);
+}
+
+.badge {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 18px;
+  border-radius: 50%;
+  background: var(--paper-2);
+}
+
+.badge svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .title {
@@ -35,6 +68,23 @@
   cursor: pointer;
 }
 
+.button:not([disabled]):hover {
+  background: var(--ink-hover);
+}
+
+.button:not([disabled]):active {
+  background: var(--ink-pressed);
+}
+
+.quiet:not([disabled]):hover {
+  background: var(--hover-wash);
+  border-color: var(--ink-2);
+}
+
+.quiet:not([disabled]):active {
+  background: var(--pressed-wash);
+}
+
 .button[disabled] {
   background: var(--paper-2);
   color: var(--ink-2);
@@ -56,8 +106,21 @@
 }
 
 .foot {
-  margin-top: 24px;
+  margin: 24px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
   color: var(--ink-2);
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .stage {
+    padding: 0;
+  }
+
+  .card {
+    padding: 24px 20px;
+  }
 }
 
 .ok {
