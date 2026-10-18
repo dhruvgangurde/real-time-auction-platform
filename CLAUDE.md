@@ -162,4 +162,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-co
 cd frontend && npm run e2e                     # Playwright against 8011 only (real CSP), after a build; one worker
 cd frontend && npm run e2e -- e2e/discover.spec.ts e2e/slice3-privacy.spec.ts   # one or more specs
 cd frontend && E2E_RAZORPAY_SANDBOX=1 npm run e2e -- e2e/checkout-sandbox.spec.ts   # the real Razorpay sandbox (internet, test keys)
+cd frontend && npm run e2e -- e2e/landing.spec.ts e2e/landing-keyboard.spec.ts e2e/landing-privacy.spec.ts   # the landing (demo endpoints routed, real replay lot)
+cd frontend && npm run e2e -- e2e/landing-shots.spec.ts   # design/shots/08-landing frames and index.md
+DEMO_MODE=true docker compose --profile demo up -d; cd frontend && E2E_DEMO=1 npm run e2e -- e2e/landing-demo.spec.ts   # a real run on the dev stack (production limits): zero 429s
 ```
