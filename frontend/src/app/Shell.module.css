@@ -21,15 +21,54 @@
 }
 
 .mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font: 400 22px/1 var(--font-serif);
   letter-spacing: -0.01em;
   margin-right: auto;
   text-decoration: none;
 }
 
+/* the marigold dot before the wordmark (design/polish): a fill, never text (brief 4.3) */
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--marigold);
+  flex: none;
+}
+
+/* a nav link with its icon beside the word */
+.item,
+.account {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.navIcon {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+.accountName {
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .nav {
   display: flex;
-  gap: 28px;
+  align-items: center;
+  gap: 26px;
   font-weight: 500;
 }
 
@@ -84,13 +123,14 @@
   cursor: pointer;
 }
 
-/* the colour theme control: an icon at every width, the word on desktop, like the bell */
+/* the colour theme control: a pill with its icon and word on desktop, the icon alone on phones */
 .theme {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0;
-  border: 0;
+  padding: 5px 13px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
   background: none;
   color: inherit;
   font: inherit;
@@ -162,8 +202,7 @@
     gap: 12px;
   }
 
-  /* one line: the wordmark keeps its width, the name gives way (an ellipsis; its accessible name
-     stays whole) */
+  /* one line: the wordmark keeps its width; the account is an icon named by the user's name */
   .mark {
     flex: none;
     white-space: nowrap;
@@ -176,16 +215,19 @@
   }
 
   .bell,
-  .theme {
+  .theme,
+  .account {
     flex: none;
   }
 
-  .account {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* room for the icons at 12 px apart: the dot and the pill are desktop only */
+  .dot {
+    display: none;
+  }
+
+  .theme {
+    padding: 0;
+    border: 0;
   }
 }
 

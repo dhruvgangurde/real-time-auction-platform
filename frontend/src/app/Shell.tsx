@@ -62,6 +62,17 @@ function ThemeToggle() {
   );
 }
 
+// the nav's outline icons (24 px grid, drawn with stroke): the gavel matches public/favicon.svg
+const GAVEL = 'M14 13l-8.381 8.38a1 1 0 0 1-3.001-3L11 9.999M15.973 4.027l4.5 4.5M16 16l6-6M8 8l6-6M9 7l8 8M21 11l-8-8';
+const HELP = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01';
+const PERSON = 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z';
+
+const NavIcon = ({ d }: { d: string }) => (
+  <svg className={styles.navIcon} viewBox="0 0 24 24" aria-hidden="true">
+    <path d={d} />
+  </svg>
+);
+
 export function Shell() {
   const s = useStrings();
   const token = useToken();
@@ -76,10 +87,12 @@ export function Shell() {
       <header className={styles.header}>
         <div className={styles.wrap}>
           <Link className={styles.mark} to="/">
+            <i className={styles.dot} aria-hidden="true" />
             {s.app.name}
           </Link>
           <nav className={styles.nav} aria-label={s.app.mainNav}>
-            <NavLink className={() => styles.deskOnly} to="/auctions">
+            <NavLink className={() => `${styles.item} ${styles.deskOnly}`} to="/auctions">
+              <NavIcon d={GAVEL} />
               {s.nav.live}
             </NavLink>
             {signedIn ? (
@@ -115,8 +128,10 @@ export function Shell() {
                     {s.nav.admin}
                   </NavLink>
                 ) : null}
-                <NavLink className={() => styles.account} to="/account">
-                  {me.data?.full_name ?? s.nav.account}
+                {/* an icon at 390, the name beside it on desktop; the name is the accessible name throughout */}
+                <NavLink className={() => styles.account} to="/account" aria-label={me.data?.full_name ?? s.nav.account}>
+                  <NavIcon d={PERSON} />
+                  <span className={`${styles.accountName} ${styles.deskOnly}`}>{me.data?.full_name ?? s.nav.account}</span>
                 </NavLink>
                 <Suspense fallback={null}>
                   <SignOutButton className={`${styles.signOut} ${styles.deskOnly}`} />
@@ -124,10 +139,14 @@ export function Shell() {
               </>
             ) : (
               <>
-                <NavLink className={() => styles.deskOnly} to="/help">
+                <NavLink className={() => `${styles.item} ${styles.deskOnly}`} to="/help">
+                  <NavIcon d={HELP} />
                   {s.nav.how}
                 </NavLink>
-                <NavLink to="/sign-in">{s.nav.signIn}</NavLink>
+                <NavLink className={() => styles.item} to="/sign-in">
+                  <NavIcon d={PERSON} />
+                  {s.nav.signIn}
+                </NavLink>
               </>
             )}
             <ThemeToggle />

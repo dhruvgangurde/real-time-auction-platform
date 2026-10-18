@@ -101,7 +101,7 @@ test('the skip link reaches main with the keyboard', async ({ page }) => {
   expect(await page.evaluate(() => document.activeElement?.id)).toBe('main');
 });
 
-test('at 390, signed in with an unread badge and the Sell icon, the header is one line: the wordmark never wraps, a long name truncates and keeps its full accessible name', async ({ browser, request }) => {
+test('at 390, signed in with an unread badge and the Sell icon, the header is one line: the wordmark never wraps, every icon-only link keeps its name, the account is named by the full name', async ({ browser, request }) => {
   test.setTimeout(90_000);
   const { API, bearer, newAccount, newAuction, restBid, signInUi, waitForStatus } = await import('./fixtures/stack');
   const name = 'AnanthaPadmanabhanKrishnaswamy'; // the email is built from it: no spaces
@@ -120,20 +120,34 @@ test('at 390, signed in with an unread badge and the Sell icon, the header is on
   const page = await ctx.newPage();
   await signInUi(page, viewer);
   const header = page.getByRole('banner');
-  await expect(header.getByRole('link', { name: enIN.nav.notificationsLabel(1) })).toBeVisible();
-  const account = header.getByRole('link', { name, exact: true }); // the full name stays its accessible name
-  await expect(account).toBeVisible();
+  // every icon-only control keeps an accessible name (amendment B); the account's is the user's name
+  for (const link of [enIN.nav.notificationsLabel(1), enIN.nav.watchlist, enIN.nav.sell, name]) {
+    await expect(header.getByRole('link', { name: link, exact: true })).toBeVisible();
+  }
+  await expect(header.getByRole('button', { name: enIN.nav.themeLabel(enIN.nav.themes.system, enIN.nav.themes.light) })).toBeVisible();
   const box = await page.evaluate(() => {
     const mark = document.querySelector('header a') as HTMLElement;
-    const acct = [...document.querySelectorAll('header a')].at(-1) as HTMLElement;
     const lineHeight = parseFloat(getComputedStyle(mark).lineHeight);
     return {
       markLines: Math.round(mark.getBoundingClientRect().height / lineHeight),
-      truncated: acct.scrollWidth > acct.clientWidth,
+      // icons only: no visible words in the nav at 390
+      words: (document.querySelector('header nav') as HTMLElement).innerText.trim(),
       header: document.querySelector('header')!.getBoundingClientRect().height,
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
-  expect(box).toEqual({ markLines: 1, truncated: true, header: 57, overflow: 0 }); // 56 px row + its 1 px rule
+  expect(box).toEqual({ markLines: 1, words: '1', header: 57, overflow: 0 }); // the badge's count; 56 px row + its 1 px rule
+  await ctx.close();
+});
+
+test('at 390, signed out: Sign in keeps its word, the theme control its name, nothing overflows', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  const header = page.getByRole('banner');
+  await expect(header.getByRole('link', { name: enIN.nav.signIn, exact: true })).toHaveText(enIN.nav.signIn);
+  await expect(header.getByRole('button', { name: enIN.nav.themeLabel(enIN.nav.themes.system, enIN.nav.themes.light) })).toBeVisible();
+  await expect(header.getByRole('link', { name: enIN.nav.live })).toBeHidden(); // desktop only
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await ctx.close();
 });
