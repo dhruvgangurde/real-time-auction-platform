@@ -1,15 +1,15 @@
 // Brief 8.4, the numbers strip: measured results from the committed load-test results file
 // (loadtest/results/<date>.json, written by `bash loadtest/run.sh`), read at build time. Only
-// measured values, and only the requirements the brief lists. The results file holds each figure
-// as its requirement's line of text, so each is read by a strict pattern (slice 5 Q1 (a)): a line in
-// any other format, or a requirement that did not pass, drops the whole strip rather than show a
-// figure that might be wrong (measured.test.ts pins the committed figures). A structured figures
-// block in the results file is for Phase 11 part 2.
+// measured values, and only the requirements the brief lists. Since Phase 11 part 2 each row carries
+// a figures block (slice 5 Q1 (b)), read when present; a file before it (2026-10-17) is read from
+// each requirement's line of text by a strict pattern (Q1 (a)). A figures block or a line in any
+// other form, or a requirement that did not pass, drops the whole strip rather than show a figure
+// that might be wrong (measured.test.ts pins the committed figures).
 const FILES = import.meta.glob<ResultsFile>('../../../loadtest/results/*.json', { eager: true, import: 'default' });
 
 export type ResultsFile = {
   date: string;
-  requirements: { id: string; target: string; measured: string; pass: boolean | null }[];
+  requirements: { id: string; target: string; measured: string; pass: boolean | null; figures?: Record<string, unknown> | null }[];
   machine: {
     cpu: string;
     threads: number;
@@ -45,6 +45,28 @@ const PATTERNS: Record<(typeof STRIP)[number], { line: RegExp; read: (m: RegExpE
   },
 };
 
+// the figures blocks loadtest-report writes (backend app/loadtest.py requirements())
+type Read = [string, string | null] | null;
+const decimals = (d: number) => new Intl.NumberFormat('en-US', { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: false });
+const ms3 = decimals(3);
+const ms1 = decimals(1);
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+const whole = (v: unknown): v is number => num(v) && Number.isSafeInteger(v);
+const FIGURES: Record<(typeof STRIP)[number], (f: Record<string, unknown>) => Read> = {
+  'NFR-1': (f) => (num(f.p95_ms) && whole(f.executions) && f.executions === f.decided ? [`${ms3.format(f.p95_ms)} ms`, grouped.format(f.executions)] : null),
+  'NFR-2': (f) => (num(f.p95_ms) ? [`${ms1.format(f.p95_ms)} ms`, null] : null),
+  'NFR-3': (f) => (num(f.p95_ms) ? [`${ms1.format(f.p95_ms)} ms`, null] : null),
+  'NFR-4': (f) => (num(f.slowest_window_per_s) ? [ms1.format(f.slowest_window_per_s), null] : null),
+  'NFR-5': (f) => (whole(f.sockets) && f.missing === 0 && f.duplicates === 0 ? [String(f.sockets), null] : null),
+  'NFR-28': (f) =>
+    whole(f.bids) && whole(f.checks) && f.checks > 0 && f.checks_passed === f.checks && f.concurrent_close_passed === true ? ['0', grouped.format(f.bids)] : null,
+};
+
+/** A committed results file by its date (its name), or null. */
+export function resultsFile(date: string): ResultsFile | null {
+  return FILES[`../../../loadtest/results/${date}.json`] ?? null;
+}
+
 /** The newest results file committed, by its date. */
 export function latestResults(): ResultsFile | null {
   const newest = Object.keys(FILES).sort().at(-1);
@@ -56,9 +78,16 @@ export function extract(file: ResultsFile): Measured | null {
   const figures: Figure[] = [];
   for (const id of STRIP) {
     const row = file.requirements.find((r) => r.id === id);
-    const m = row?.pass === true ? PATTERNS[id].line.exec(row.measured) : null;
-    if (m === null || m === undefined) return null;
-    const [value, detail] = PATTERNS[id].read(m);
+    if (row?.pass !== true) return null;
+    let read: Read;
+    if (row.figures != null) {
+      read = FIGURES[id](row.figures);
+    } else {
+      const m = PATTERNS[id].line.exec(row.measured);
+      read = m === null ? null : PATTERNS[id].read(m);
+    }
+    if (read === null) return null;
+    const [value, detail] = read;
     figures.push({ id, value, detail });
   }
   const { cpu, threads, ram_gib, docker, k6 } = file.machine;
