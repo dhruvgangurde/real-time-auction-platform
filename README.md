@@ -37,6 +37,17 @@ Open http://localhost:8011. `docker compose ps` shows `migrate` as `Exited (0)`:
 
 Change them with `WEB_HOST_PORT`, `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` and `MAILPIT_UI_HOST_PORT` in `.env`.
 
+### Demo mode
+
+Demo mode turns on "Try to break it" on the home page (50 simulated bidders against a fresh lot, then the ledger checked in Postgres) and its runner. It is off by default. To turn it on, set `DEMO_MODE=true` in `.env` and start the stack with the `demo` profile, which adds the runner:
+
+```
+docker compose --profile demo up -d
+curl localhost:8011/api/v1/demo      # "enabled": true, and "unavailable_reason": null once the runner is up
+```
+
+To turn it off again, set `DEMO_MODE=false` (or remove it), stop the runner with `docker compose --profile demo stop demo` and run `docker compose up -d`; `GET /api/v1/demo` then says `"enabled": false` and the other demo routes answer 404.
+
 ## Demo accounts
 
 For a local demo on the development stack:
@@ -51,7 +62,7 @@ For a local demo on the development stack:
 
 3. Read the credentials file the seed writes to a local folder outside the repository (`DEMO_PRIVATE_DIR` in `.env`). It lists every account with its email and password, the six lots with their state and end time, and the app and Mailpit links.
 
-"Try to break it" on the home page sends 50 simulated bidders at a fresh lot and then checks the ledger in Postgres; it runs with demo mode on: `DEMO_MODE=true docker compose --profile demo up -d`.
+"Try to break it" on the home page needs demo mode on ([Demo mode](#demo-mode)).
 
 ## Payment test details (Razorpay test mode)
 
