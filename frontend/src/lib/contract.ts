@@ -335,7 +335,8 @@ function optional<T>(v: unknown, check: (v: unknown) => v is T): v is T | undefi
   return v === undefined || check(v);
 }
 
-function recentBid(v: unknown): RecentBid | null {
+/** One ledger row, as /live, the bid history and the demo's run status carry it. */
+export function recentBid(v: unknown): RecentBid | null {
   if (!isObj(v)) return null;
   const { sequence_no, amount, bidder_alias, bid_type, placed_at_ms } = v;
   if (!isInt(sequence_no) || !isMoney(amount) || !isStr(bidder_alias) || !isBidType(bid_type)) {
