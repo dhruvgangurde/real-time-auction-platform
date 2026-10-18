@@ -29,9 +29,9 @@ export const landingEnIN = guardSentences({
     closedAt: (time) => `Closed at ${time}.`,
     sold: (alias, amount, sequence) => `Sold to ${alias} at ${amount}, bid №${sequence}.`,
     noSale: 'Closed without a sale.',
-    noReserve: 'No reserve',
-    reserveMet: 'Reserve met',
-    reserveNotMet: 'Reserve not met',
+    noReserve: 'No reserve.',
+    reserveMet: 'Reserve met.',
+    reserveNotMet: 'Reserve not met.',
     ledger: {
       caption: 'The newest bids of the run',
       sequence: '№',
