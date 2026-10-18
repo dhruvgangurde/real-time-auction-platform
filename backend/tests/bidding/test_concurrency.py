@@ -1,4 +1,5 @@
-"""Concurrent bids on one auction: no lost update, no duplicate sequence (NFR-28, FR-35, NFR-29).
+"""Concurrent bids on one auction: no lost update, no duplicate sequence (NFR-28, FR-35, NFR-29,
+DC-2: one atomic serialisation point per auction).
 
 20 bidders, each on its own Redis connection pool (as separate API instances would be), race to
 place 25 accepted bids each. A bidder always bids exactly the minimum next amount the script

@@ -12,12 +12,13 @@ celerybeat-schedule*
 # Claude Code local settings
 .claude/
 
-# kept local, not published: design work, Superdesign files, and all docs but these two
+# kept local, not published: design work, Superdesign files, and all docs but these three
 design/
 .superdesign/
 docs/*
 !docs/architecture.md
 !docs/decisions.md
+!docs/verification.md
 
 # the built SPA, served by the web service (Phase 10c builds it)
 frontend/dist/

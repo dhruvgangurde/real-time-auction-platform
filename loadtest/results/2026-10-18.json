@@ -244,12 +244,16 @@
   {
    "id": "OR-12",
    "target": "Every requirement mapped to a verification activity",
-   "measured": "no verification matrix found",
-   "pass": null,
+   "measured": "181 of 199 requirements mapped; 18 without a verification activity, listed as gaps in docs/verification.md",
+   "pass": false,
    "note": null,
    "method": "Inspection: docs/verification.md, generated and checked by frontend/scripts/verification.mjs (npm run verification:check)",
    "details": [],
-   "figures": null
+   "figures": {
+    "ids": 199,
+    "mapped": 181,
+    "gaps": 18
+   }
   },
   {
    "id": "OR-14",

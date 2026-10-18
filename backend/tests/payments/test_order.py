@@ -26,7 +26,7 @@ async def _payment_rows(db: asyncpg.Connection, sale: Sale) -> int:
 async def test_only_the_winner_may_start_payment(
     api: AsyncClient, sold, payment_service: PaymentService, make_user, ended, redis, sessions
 ) -> None:
-    """FR-65: the seller and other bidders get NOT_WINNER; anonymous callers 401."""
+    """FR-65, BR-11: the seller and other bidders get NOT_WINNER; anonymous callers 401."""
     sale = await sold()
     for headers in (sale.seller, sale.loser):
         response = await api.post(sale.payment_url, headers=headers)

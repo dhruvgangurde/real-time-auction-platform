@@ -53,6 +53,8 @@ async def test_unknown_email_and_wrong_password_are_indistinguishable(
 async def test_unverified_then_suspended_only_after_correct_password(
     client: AsyncClient, email: RecordingEmail, db
 ) -> None:
+    """BR-3: an unverified account gets no session, so it can neither bid, set a maximum nor
+    watch; a suspended one neither."""
     address = fresh_email()
     user_id = (await register(client, address)).json()["id"]
     wrong = await _login(client, address, "wrong-password-here")

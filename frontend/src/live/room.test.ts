@@ -230,7 +230,7 @@ describe('B1: polling never goes backwards', () => {
 });
 
 describe('items 13, 14, 16: own bids', () => {
-  test('a sent bid is pending until its ack, then takes its sequence', () => {
+  test('a sent bid is pending until its ack, then takes its sequence (UI-5)', () => {
     const sent = run(connected(), { type: 'bidSent', requestId: 'r1', amount: 1050000, kind: 'bid' });
     expect(sent.state.pending).toEqual({ requestId: 'r1', amount: 1050000, kind: 'bid' });
     expect(canBid(sent.state)).toBe(false);
@@ -244,7 +244,7 @@ describe('items 13, 14, 16: own bids', () => {
     expect(run(acked.state, frame(placed(3))).state.recentBids.filter((b) => b.sequence_no === 3)).toHaveLength(1);
   });
 
-  test('a rejection shows its code and min_next and clears the pending bid', () => {
+  test('a rejection shows its code and min_next and clears the pending bid (UI-5)', () => {
     const sent = run(connected(), { type: 'bidSent', requestId: 'r1', amount: 1000000, kind: 'bid' });
     const { state } = run(sent.state, frame({ type: 'bid_rejected', request_id: 'r1', auction_id: A, code: 'BID_TOO_LOW', message: 'low', current_highest: 1050000, min_next: 1100000, server_time_ms: T }));
     expect(state.pending).toBeNull();

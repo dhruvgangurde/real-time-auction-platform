@@ -1,5 +1,5 @@
 // A proxy maximum and the reserve are never exposed to anyone but their owner (BR-7, FR-51,
-// BR-6). Amendment 2: alice's maximum (₹12,345.67) is not a valid bid amount (not the start plus
+// BR-6, UI-6). Amendment 2: alice's maximum (₹12,345.67) is not a valid bid amount (not the start plus
 // a multiple of the increment) and stays more than one increment above bob's highest bid for the
 // whole run, so her proxy always answers one step above bob and never bids at its limit
 // (_core.lua resolve: target = min(max, floor)). Across the run, bob's DOM, every response body

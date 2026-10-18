@@ -1,4 +1,4 @@
-"""Fail closed when the real-time layer is unreachable (FR-42, NFR-9, BR-14)."""
+"""Fail closed when the real-time layer is unreachable (FR-42, NFR-9, BR-14; DP-2)."""
 
 import asyncpg
 from redis.asyncio import Redis

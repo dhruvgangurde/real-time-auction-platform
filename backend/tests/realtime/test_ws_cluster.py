@@ -1,4 +1,5 @@
-"""Two API instances on one Redis (FR-31, CI-7, NFR-5, NFR-28, FR-6)."""
+"""Two API instances on one Redis (FR-31, CI-7, NFR-5, NFR-28, FR-6; DC-7: events between instances
+through Redis publish/subscribe)."""
 
 import asyncio
 

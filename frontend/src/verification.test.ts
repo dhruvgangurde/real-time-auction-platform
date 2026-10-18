@@ -1,0 +1,11 @@
+// OR-12: docs/verification.md maps every SRS requirement ID to its verification activities or
+// lists it as a gap. This runs the matrix's own check, so npm test fails when a test is added,
+// renamed or re-cited without regenerating the page, or when anything cites an ID the SRS lacks.
+import { execFileSync } from 'node:child_process';
+
+import { expect, test } from 'vitest';
+
+test('the verification matrix is current and cites only SRS IDs', () => {
+  const said = execFileSync('node', ['scripts/verification.mjs', '--check'], { encoding: 'utf8' });
+  expect(said).toMatch(/^docs\/verification\.md is current: \d+ mapped, \d+ gaps/);
+});

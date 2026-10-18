@@ -1,4 +1,5 @@
-"""Rebuild live state from Postgres (FR-43, DC-1, D2)."""
+"""Rebuild live state from Postgres (FR-43, DC-1, D2; NFR-31: the real-time layer is rebuildable
+from the database)."""
 
 import asyncio
 import logging

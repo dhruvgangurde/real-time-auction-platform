@@ -1,0 +1,20 @@
+# Verification activities that are not tests (OR-12): ID<TAB>kind<TAB>where to look.
+# kind is inspection, demonstration or analysis. Each row names a file, a service or a result that
+# a reader can open; nothing is listed without one.
+OE-2	inspection	docker-compose.yml: every server component (api, api-2, worker, beat, web, postgres, redis, backup) is a Linux container, run with Docker Compose
+OE-3	inspection	backend/app/main.py: one FastAPI app serves the REST routers and the WebSocket endpoint /api/v1/ws in the same uvicorn process
+OE-4	inspection	docker-compose.yml and docs/architecture.md: Postgres the system of record; Redis for live state, arbitration, pub/sub, rate limits and the Celery broker
+SI-1	inspection	backend/app/core/db.py: SQLAlchemy's async engine on asyncpg; every query in backend/app/repositories
+SI-2	inspection	backend/app/services/live_state.py, fanout.py, backend/app/core/ratelimit.py, backend/app/workers/celery_app.py: live state, arbitration scripts, pub/sub, rate limits, the task queue
+UI-1	inspection	frontend/src/app/routes.tsx: a route for each screen UI-1 lists; frontend/e2e/budgets.spec.ts loads every one
+AS-1	inspection	frontend/src/lib/money.ts and backend/app/schemas: rupees in paise only, one currency (DC-6)
+AS-4	analysis	loadtest/RESULTS.md: the load test's model is one auction with 110 bidders, bidding at twice the pace in the final minute
+NFR-20	inspection	backend/app/repositories: SQLAlchemy expressions and text() with bound parameters only; no SQL is built from strings
+NFR-26	inspection	.env.example (no secret values), .gitignore (.env), backend/alembic/versions/0005_app_role_grants.py (the app role has no UPDATE or DELETE on bids and audit_log)
+NFR-30	analysis	loadtest/RESULTS.md, NFR-5: 110 sockets across two stateless api instances behind nginx, events through Redis pub/sub
+NFR-36	inspection	docker-compose.yml and README.md: the whole stack in containers, started from a clean checkout with docker compose up --build
+OR-6	demonstration	ops/evidence/restore-drill-2026-10-18.md: the restore drill (backend/scripts/restore-drill.sh) passed
+OR-8	inspection	docker-compose.yml, .env.example, README.md: containers only, configuration from environment variables, one Compose command
+OR-9	inspection	docker-compose.yml: api and api-2 and the Celery worker are separate services, scaled separately (CELERY_CONCURRENCY for the worker)
+OR-12	inspection	docs/verification.md (this matrix), checked by npm run verification:check
+OR-16	inspection	the SRS's Revision History and its change rule (the SRS is kept with the project's local documents)
