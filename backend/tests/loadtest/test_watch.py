@@ -87,6 +87,10 @@ async def test_the_watcher_measures_until_the_lot_is_settled_and_puts_the_slow_l
     assert len(watched["persistence_ms"]) == 2
     assert all(ms >= 0 for ms in watched["persistence_ms"])
     assert len(watched["arbitration_us"]) >= 2  # both executions, by place_bid's SHA
+    assert watched["arbitration_max_at_ms"] is not None
+    assert watched["persistence_max_at_ms"] is not None
+    # NFR-8: the platform's own counters, read beside the run (no bid was counted here)
+    assert set(watched["counters"]) == {"accepted", "rejected", "sockets_peak", "queue_peak"}
     in_force = {"slowlog-log-slower-than": "0", "slowlog-max-len": "100000"}
     assert watched["slowlog_settings"] == {"start": in_force, "end": in_force}
     assert await redis.config_get("slowlog-*") == before

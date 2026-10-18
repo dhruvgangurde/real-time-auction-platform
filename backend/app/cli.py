@@ -20,6 +20,7 @@ import asyncio
 import json
 import sys
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -207,7 +208,10 @@ async def _loadtest_watch(sessions: async_sessionmaker[AsyncSession], run: Path)
 
 async def _loadtest_report(sessions: async_sessionmaker[AsyncSession], base: Path) -> int:
     evidence = await loadtest.evidence(sessions, base / ".run")
-    doc = loadtest.document(evidence, loadtest.machine(base / ".run"))
+    run_date = datetime.fromtimestamp(evidence.plan["start_ms"] / 1000, UTC).date().isoformat()
+    earlier = sorted(p for p in (base / "results").glob("*.json") if p.stem < run_date)
+    previous = json.loads(earlier[-1].read_text(encoding="utf-8")) if earlier else None
+    doc = loadtest.document(evidence, loadtest.machine(base / ".run"), previous)
     out = base / "results" / f"{doc['date']}.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")

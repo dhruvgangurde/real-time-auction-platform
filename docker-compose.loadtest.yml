@@ -25,4 +25,6 @@ services:
       - ./backend:/app
       - ./loadtest:/loadtest  # the plan (tokens included) and the run's records, in loadtest/.run/
       - media:/media  # the lot's photo, served by the api like any upload
+      - ./ops:/ops:ro  # the newest restore drill's evidence, for OR-6's row
+      - ./docs:/docs:ro  # the verification matrix, for OR-12's row
     networks: [default]

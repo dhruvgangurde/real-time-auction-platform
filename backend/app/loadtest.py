@@ -46,6 +46,7 @@ from app.services.catalog import CatalogService
 from app.services.demo_checks import verify
 from app.services.fanout import presence_key
 from app.services.live_state import to_ms
+from app.services.metrics import BIDS, Metrics
 from app.workers.celery_app import celery_app
 
 DOMAIN = "loadtest.invalid"  # reserved: no mail is delivered there, and the API refuses it
@@ -192,15 +193,21 @@ SETTLED_GRACE_S = 5.0  # the slow log is read this long past the settlement
 CLOSED = ("closed_sold", "closed_no_sale")
 
 
-def place_bid_durations(entries: Iterable[list[Any]]) -> list[int]:
-    """The execution times, in microseconds, of the place_bid script among raw SLOWLOG GET
-    entries: [id, start, duration, [command, arguments...], client address, client name]."""
+def place_bid_executions(entries: Iterable[list[Any]]) -> list[tuple[int, int]]:
+    """(start in Unix seconds, duration in microseconds) of each execution of the place_bid
+    script among raw SLOWLOG GET entries: [id, start, duration, [command, arguments...],
+    client address, client name]."""
     found = []
     for entry in entries:
         words = [w.decode(errors="replace") if isinstance(w, bytes) else str(w) for w in entry[3]]
         if len(words) > 1 and words[0].upper() == "EVALSHA" and words[1].lower() == PLACE_BID_SHA:
-            found.append(int(entry[2]))
+            found.append((int(entry[1]), int(entry[2])))
     return found
+
+
+def place_bid_durations(entries: Iterable[list[Any]]) -> list[int]:
+    """The execution times, in microseconds, of the place_bid script (place_bid_executions)."""
+    return [us for _, us in place_bid_executions(entries)]
 
 
 async def watch(
@@ -224,6 +231,10 @@ async def watch(
       time (bids.created_at, Redis TIME). The time is taken after the read, so never too early.
     - NFR-5: the room's presence count, each second; and the Celery queue, waiting and in
       flight, at each poll.
+    - NFR-8: the platform's own counters, each second: every completed second's bucket of
+      accepted and rejected bids, read once, the socket count each instance published, and the
+      queue depth, so the report can hold them against the run's own measurements.
+    - When the slowest place_bid execution and the slowest persistence happened.
 
     The slow-log settings are put back however the watcher ends.
     """
@@ -235,6 +246,13 @@ async def watch(
     seen: dict[int, float] = {}  # sequence_no -> ms from acceptance to first sight
     floor = 0  # every sequence number up to here has been seen
     durations: list[int] = []
+    slowest = (0, 0)  # (microseconds, start in Unix seconds) of the slowest place_bid
+    persisted_max = (0.0, 0.0)  # (ms, epoch ms when seen) of the slowest first sight
+    metrics = Metrics(redis, broker)
+    counted: dict[str, Any] = {"accepted": 0, "rejected": Counter()}
+    sockets_peak: dict[str, int] = {}
+    queue_peak = {"celery_waiting": 0, "celery_unacked": 0, "outbox_backlog": 0}
+    last_second = int((await redis.time())[0]) - 1  # buckets from here on are this run's
     entries = presence_peak = waiting_peak = in_flight_peak = 0
     sampled = 0.0
     settled_at: float | None = None
@@ -246,8 +264,30 @@ async def watch(
             pipe.execute_command("SLOWLOG", "GET", SLOWLOG_LEN)
             pipe.execute_command("SLOWLOG", "RESET")
             logged, _ = await pipe.execute()
+        nonlocal slowest
         entries += len(logged)
-        durations.extend(place_bid_durations(logged))
+        for start_s, us in place_bid_executions(logged):
+            durations.append(us)
+            slowest = max(slowest, (us, start_s))
+
+    async def read_counters(final: bool = False) -> None:
+        """Each completed second's bid bucket once; at the end the current one too."""
+        nonlocal last_second
+        now_s = int((await redis.time())[0])
+        upto = now_s if final else now_s - 1
+        for second in range(last_second + 1, upto + 1):
+            for field, n in (await redis.hgetall(f"{BIDS}:{second}")).items():
+                if field == "accepted":
+                    counted["accepted"] += int(n)
+                elif field.startswith("rejected:"):
+                    counted["rejected"][field.removeprefix("rejected:")] += int(n)
+        last_second = max(last_second, upto)
+        for row in await metrics.instances():
+            sockets_peak[row["instance"]] = max(
+                sockets_peak.get(row["instance"], 0), row["sockets"]
+            )
+        for name, depth in (await metrics.queues()).items():
+            queue_peak[name] = max(queue_peak[name], depth)
 
     try:
         while time.time() < deadline:
@@ -257,7 +297,9 @@ async def watch(
                 settlement = await SettlementRepository(session).for_auction(auction_id)
             now = time.time()
             for sequence_no, accepted_at in rows:
-                seen.setdefault(sequence_no, now * 1000 - to_ms(accepted_at))
+                if sequence_no not in seen:
+                    seen[sequence_no] = now * 1000 - to_ms(accepted_at)
+                    persisted_max = max(persisted_max, (seen[sequence_no], now * 1000))
             while floor + 1 in seen:
                 floor += 1
             waiting_peak = max(waiting_peak, await broker.llen("celery"))
@@ -265,6 +307,7 @@ async def watch(
             if now - sampled >= 1:
                 sampled = now
                 await read_slowlog()
+                await read_counters()
                 present = await redis.zcount(presence_key(auction_id), int(now * 1000), "+inf")
                 presence_peak = max(presence_peak, present)
             if settled_at is None and (
@@ -278,6 +321,7 @@ async def watch(
                 break
             await asyncio.sleep(poll_s)
         await read_slowlog()  # the last second's executions
+        await read_counters(final=True)
         in_force["end"] = await redis.config_get("slowlog-*")
     finally:
         for name, value in saved.items():
@@ -292,6 +336,14 @@ async def watch(
         "presence_peak": presence_peak,
         "celery_waiting_peak": waiting_peak,
         "celery_in_flight_peak": in_flight_peak,
+        "arbitration_max_at_ms": slowest[1] * 1000 if durations else None,
+        "persistence_max_at_ms": persisted_max[1] if seen else None,
+        "counters": {
+            "accepted": counted["accepted"],
+            "rejected": dict(sorted(counted["rejected"].items())),
+            "sockets_peak": dict(sorted(sockets_peak.items())),
+            "queue_peak": queue_peak,
+        },
     }
 
 
@@ -459,6 +511,8 @@ class Evidence:
     outcomes: dict[str, str]
     printed: list[str]
     reconcile_s: float
+    drill: dict[str, str] | None = None  # OR-6: the newest restore drill's summary line
+    matrix: dict[str, str] | None = None  # OR-12: the verification matrix's summary line
 
 
 def _ms(value: float | None) -> str:
@@ -552,6 +606,39 @@ def _outcomes(ev: Evidence, requirement: str) -> list[str]:
     return [f"{n}: {ev.outcomes.get(n, 'not run')}" for n in CITED[requirement]]
 
 
+SUMMARY = re.compile(r"<!-- (restore-drill|verification) ((?:[a-z_]+=\S+ ?)+)-->")
+
+
+def summary_line(text: str, kind: str) -> dict[str, str] | None:
+    """The machine-readable summary an evidence file carries: <!-- kind key=value ... -->."""
+    for found, pairs in SUMMARY.findall(text):
+        if found == kind:
+            return dict(pair.split("=", 1) for pair in pairs.split())
+    return None
+
+
+def _round(value: float | None) -> float | None:
+    return None if value is None else round(value, 3)
+
+
+def _figures(s: dict[str, Any]) -> dict[str, Any]:
+    """A stats() dict as the figures block: n and the percentiles in ms."""
+    return {
+        "n": s["n"],
+        "p50_ms": _round(s["p50"]),
+        "p95_ms": _round(s["p95"]),
+        "p99_ms": _round(s["p99"]),
+        "max_ms": _round(s["max"]),
+    }
+
+
+def _after_open(ev: Evidence, at_ms: float | None) -> str:
+    """Where in the run a moment fell: seconds after the lot opened."""
+    if at_ms is None:
+        return "when: not recorded"
+    return f"at +{(at_ms - ev.plan['start_ms']) / 1000:.0f} s after the opening"
+
+
 def requirements(ev: Evidence) -> list[dict[str, Any]]:
     """One row per requirement: target, measured, pass (None: not assessed here), method."""
     w, r = ev.watched, ev.records
@@ -566,6 +653,7 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         method: str,
         details: list[str],
         note: str | None = None,  # where an unmet or unassessed requirement is taken up
+        figures: dict[str, Any] | None = None,  # the same figures as numbers (slice 5 Q1 b)
     ) -> None:
         rows[rid] = {
             "id": rid,
@@ -575,6 +663,7 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
             "note": note,
             "method": method,
             "details": details,
+            "figures": figures,
         }
 
     accepted = sum(i["bids"].get("accepted", 0) for i in ev.instances.values())
@@ -592,10 +681,12 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         "(both instances' FR-44 lines)",
         [
             f"settings in force, read back from Redis: {_slowlog_settings(w)}",
-            f"p50 {_ms(arb['p50'])}, p99 {_ms(arb['p99'])}, max {_ms(arb['max'])}",
+            f"p50 {_ms(arb['p50'])}, p99 {_ms(arb['p99'])}, max {_ms(arb['max'])}, "
+            f"the max {_after_open(ev, w.get('arbitration_max_at_ms'))}",
             *[p for p in ev.printed if p.startswith("[NFR-1]")],
             *_outcomes(ev, "NFR-1"),
         ],
+        figures={**_figures(arb), "executions": arb["n"], "decided": accepted + rejected},
     )
 
     instance_of = {u: name for name, i in ev.instances.items() for u in i["subscribed_users"]}
@@ -603,6 +694,9 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         x["vu"]: instance_of.get(ev.bidder_ids[x["vu"]], "unknown") for x in r["rx"]
     }
     e2e = stats(end_to_end_ms(r["ack"], r["rx"]))
+    sent_at = {a["seq"]: a["sent"] for a in r["ack"]}
+    joined_rx = [x for x in r["rx"] if x["seq"] in sent_at]
+    slowest_rx = max(joined_rx, key=lambda x: x["t"] - sent_at[x["seq"]], default=None)
     by_instance = []
     for name, count in sorted(Counter(sockets.values()).items()):
         s = stats(end_to_end_ms(r["ack"], [x for x in r["rx"] if sockets[x["vu"]] == name]))
@@ -617,11 +711,13 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         "bid_placed receipt at every fifth socket, one clock",
         [
             f"{e2e['n']} deliveries at {len(sockets)} sockets; p50 {_ms(e2e['p50'])}, "
-            f"p99 {_ms(e2e['p99'])}, max {_ms(e2e['max'])}",
+            f"p99 {_ms(e2e['p99'])}, max {_ms(e2e['max'])}, the max "
+            f"{_after_open(ev, slowest_rx['t'] if slowest_rx else None)}",
             *by_instance,
             "the submitter's own bid_placed: "
             + (f"p95 {_ms(own['p(95)'])} (n {int(own['count'])})" if own else "n/a"),
         ],
+        figures=_figures(e2e),
     )
 
     delivery = _trend(ev, "nfr3_delivery_ms")
@@ -642,7 +738,17 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
             else "no deliveries",
             "the submitter's acknowledgement (send to bid_accepted): "
             + (f"p95 {_ms(ack['p(95)'])} (n {int(ack['count'])})" if ack else "n/a"),
+            "the max: when not recorded (k6 keeps only the trend's summary)",
         ],
+        figures=None
+        if delivery is None
+        else {
+            "n": int(delivery["count"]),
+            "p50_ms": _round(delivery["med"]),
+            "p95_ms": _round(delivery["p(95)"]),
+            "p99_ms": _round(delivery["p(99)"]),
+            "max_ms": _round(delivery["max"]),
+        },
     )
 
     failing = [c for c in ev.checks if not c["passed"]]
@@ -667,6 +773,12 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
             f"accepted in the instances' logs: {logged}; in the ledger: {ledger_n}",
             *_outcomes(ev, "NFR-28"),
         ],
+        figures={
+            "bids": ledger_n,
+            "checks_passed": len(ev.checks) - len(failing),
+            "checks": len(ev.checks),
+            "concurrent_close_passed": closes_ok,
+        },
     )
 
     start, end = steady_window(ev.plan)
@@ -704,6 +816,15 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
             "NFR-1, NFR-2 and NFR-28 in the same run: "
             + ", ".join(f"{k} {_word(rows[k]['pass'])}" for k in ("NFR-1", "NFR-2", "NFR-28")),
         ],
+        figures={
+            "slowest_window_per_s": _round(slowest),
+            "median_window_per_s": _round(percentile(rates, 50)),
+            "slowest_second": min(seconds) if seconds else None,
+            "window_s": WINDOW_S,
+            "offered_per_s": _round(offered["sent"] / window_s),
+            "winnable_per_s": _round(offered["winnable"] / window_s),
+            "accepted_run": ledger_n,
+        },
     )
 
     summaries = r["rx_summary"]
@@ -739,6 +860,13 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
                 for k, v in sorted(ev.instances.items())
             ],
         ],
+        figures={
+            "sockets": len(joined),
+            "per_instance": dict(sorted(per_instance.items())),
+            "presence_peak": w["presence_peak"],
+            "missing": missing,
+            "duplicates": duplicates,
+        },
     )
 
     reads = {name: _trend(ev, f"rest_{name}_ms") for name in ("listing", "search", "detail")}
@@ -760,6 +888,7 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
             *[p for p in ev.printed if p.startswith("[NFR-6]")],
             *_outcomes(ev, "NFR-6"),
         ],
+        figures={f"{k}_p95_ms": _round(v["p(95)"]) if v else None for k, v in reads.items()},
     )
 
     persisted = stats(w["persistence_ms"])
@@ -778,41 +907,125 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
         "acceptance time; the second clause by tests and the reconciler's schedule",
         [
             f"{persisted['n']} rows seen of {ledger_n}; p50 {_ms(persisted['p50'])}, "
-            f"p99 {_ms(persisted['p99'])}, max {_ms(persisted['max'])}",
+            f"p99 {_ms(persisted['p99'])}, max {_ms(persisted['max'])}, the max "
+            f"{_after_open(ev, w.get('persistence_max_at_ms'))} (the 100 ms poll adds up to "
+            "100 ms to each figure)",
             f"Celery queue peak: {w['celery_waiting_peak']} waiting, "
             f"{w['celery_in_flight_peak']} in flight",
             *_outcomes(ev, "NFR-7"),
         ],
+        figures=_figures(persisted),
     )
 
-    row(
-        "NFR-8",
+    nfr8_target = (
         "Counters exposed: accepted bids per second, rejections by reason, sockets per "
-        "instance, queue depth, reconciliation gaps",
-        "not exposed: the platform has no metrics endpoint or counters",
-        False,
-        "Inspection",
-        ["this run measured those quantities itself (k6, the ledger, the logs, Redis)"],
-        note="Phase 11 part 2",
+        "instance, queue depth, reconciliation gaps"
     )
-    row(
-        "OR-6",
-        "Daily logical backup, kept 7 days, restore demonstrated",
-        "no scheduled backup; restore not demonstrated",
-        False,
-        "Inspection (operational, not a load-test measurement)",
-        [],
-        note="Phase 11 part 2",
+    nfr8_method = (
+        "The platform's own counters (GET /api/v1/admin/overview, services/metrics.py), read "
+        "by the watcher each second, held against the run's own figures: the ledger, both "
+        "instances' FR-44 lines, the subscriptions per instance"
     )
-    row(
-        "OR-12",
-        "Every requirement mapped to a verification activity",
-        "not assessed by the load test",
-        None,
-        "Inspection of docs/testing.md and docs/requirements-map.md",
-        [],
-        note="verification matrix in Phase 11 part 2",
+    c = w.get("counters")
+    if c is None:
+        row("NFR-8", nfr8_target, "not read by this run's watcher", None, nfr8_method, [])
+    else:
+        fr44_rejected: Counter[str] = Counter()
+        for i in ev.instances.values():
+            fr44_rejected.update({k: n for k, n in i["bids"].items() if k != "accepted"})
+        peaks = {k: c["sockets_peak"].get(k, 0) for k in per_instance}
+        same = {
+            "accepted": c["accepted"] == ledger_n,
+            "rejected": c["rejected"] == dict(fr44_rejected),
+            "sockets": peaks == per_instance,
+        }
+        rejected_n = sum(c["rejected"].values())
+        row(
+            "NFR-8",
+            nfr8_target,
+            f"counted {c['accepted']:,} accepted (ledger {ledger_n:,}) and {rejected_n:,} "
+            f"rejected by reason ({'as' if same['rejected'] else 'not as'} the FR-44 lines); "
+            "sockets peak "
+            + ", ".join(f"{k} {v}" for k, v in sorted(peaks.items()))
+            + f" ({'as' if same['sockets'] else 'not as'} subscribed)",
+            all(same.values()),
+            nfr8_method,
+            [
+                f"rejected, counted: {c['rejected'] or 'none'}; in the FR-44 lines: "
+                f"{dict(sorted(fr44_rejected.items())) or 'none'}",
+                f"sockets peak per instance, counted: {c['sockets_peak']}; subscribed: "
+                f"{dict(sorted(per_instance.items()))}",
+                f"queue depth peak, counted: {c['queue_peak']}",
+                "every bid in the window is this lot's: nothing else bids on the dev stack "
+                "during a run",
+            ],
+            figures={
+                "accepted_counted": c["accepted"],
+                "accepted_ledger": ledger_n,
+                "rejected_counted": c["rejected"],
+                "rejected_fr44": dict(sorted(fr44_rejected.items())),
+                "sockets_peak": c["sockets_peak"],
+                "sockets_subscribed": dict(sorted(per_instance.items())),
+                "queue_peak": c["queue_peak"],
+            },
+        )
+    d = ev.drill
+    or6_method = (
+        "Demonstration: the restore drill (backend/scripts/restore-drill.sh), its evidence in "
+        "ops/evidence/; inspection: the backup service of docker-compose.yml, its retention "
+        "tested (tests/ops/test_backup_script.py)"
     )
+    if d is None:
+        row(
+            "OR-6",
+            "Daily logical backup, kept 7 days, restore demonstrated",
+            "no restore drill recorded",
+            False,
+            or6_method,
+            [],
+            note="no restore drill yet",
+        )
+    else:
+        row(
+            "OR-6",
+            "Daily logical backup, kept 7 days, restore demonstrated",
+            f"restore drill of {d.get('date')}: {d.get('result')}; {d.get('tables')} tables' rows, "
+            f"the six ledger checks ({d.get('checks')}) and {d.get('media')} media files as before",
+            d.get("result") == "pass",
+            or6_method,
+            [f"ops/evidence/restore-drill-{d.get('date')}.md"],
+            figures={k: d[k] for k in sorted(d)},
+        )
+    m = ev.matrix
+    or12_method = (
+        "Inspection: docs/verification.md, generated and checked by "
+        "frontend/scripts/verification.mjs (npm run verification:check)"
+    )
+    if m is None:
+        row(
+            "OR-12",
+            "Every requirement mapped to a verification activity",
+            "no verification matrix found",
+            None,
+            or12_method,
+            [],
+        )
+    else:
+        gaps = int(m.get("gaps", "0"))
+        row(
+            "OR-12",
+            "Every requirement mapped to a verification activity",
+            f"{m.get('mapped')} of {m.get('ids')} requirements mapped; {gaps} without a "
+            "verification activity, listed as gaps in docs/verification.md",
+            gaps == 0,
+            or12_method,
+            [],
+            figures={
+                "ids": int(m.get("ids", "0")),
+                "mapped": int(m.get("mapped", "0")),
+                "gaps": gaps,
+            },
+        )
     row(
         "OR-14",
         "Settlement uniqueness verified with concurrent close invocations, and separately with "
@@ -841,8 +1054,19 @@ def requirements(ev: Evidence) -> list[dict[str, Any]]:
     return [rows[k] for k in [*order, "OR-6", "OR-12", "OR-14", "OR-15"]]
 
 
-async def evidence(sessions: async_sessionmaker[AsyncSession], run: Path) -> Evidence:
-    """Reads back what loadtest/run.sh left in `run`, and the lot's ledger."""
+def _newest_summary(folder: Path, pattern: str, kind: str) -> dict[str, str] | None:
+    files = sorted(folder.glob(pattern)) if folder.is_dir() else []
+    return summary_line(files[-1].read_text(encoding="utf-8"), kind) if files else None
+
+
+async def evidence(
+    sessions: async_sessionmaker[AsyncSession],
+    run: Path,
+    ops: Path = Path("/ops"),
+    docs: Path = Path("/docs"),
+) -> Evidence:
+    """Reads back what loadtest/run.sh left in `run`, and the lot's ledger; and the newest
+    restore drill (`ops`/evidence) and the verification matrix (`docs`/verification.md)."""
     plan = json.loads((run / "plan.json").read_text())
     bidder_ids = [b["id"] for b in plan.pop("bidders")]  # the tokens go no further
     lot = UUID(plan["auction_id"])
@@ -877,6 +1101,8 @@ async def evidence(sessions: async_sessionmaker[AsyncSession], run: Path) -> Evi
         printed=printed,
         # NFR-7's second clause: how often the reconciler looks for a gap
         reconcile_s=float(celery_app.conf.beat_schedule["reconcile-live-auctions"]["schedule"]),
+        drill=_newest_summary(ops / "evidence", "restore-drill-*.md", "restore-drill"),
+        matrix=_newest_summary(docs, "verification.md", "verification"),
     )
 
 
@@ -919,8 +1145,43 @@ def verdict(row: dict[str, Any]) -> str:
     return f"**{word}**" if row["pass"] is False else word
 
 
-def document(ev: Evidence, host: dict[str, Any]) -> dict[str, Any]:
-    """The results file: the requirements, the run, the machine, the limits raised."""
+COMPARED = ("NFR-1", "NFR-2")  # p95 beside the previous run (Phase 11 part 2, Q3's condition)
+P95 = re.compile(r"\bp95 (\d+(?:\.\d+)?) ms\b")
+
+
+def _p95(row: dict[str, Any]) -> float | None:
+    """A row's p95 in ms: from its figures, else from its sentence (files before figures)."""
+    figures = row.get("figures") or {}
+    if figures.get("p95_ms") is not None:
+        return float(figures["p95_ms"])
+    found = P95.search(row.get("measured", ""))
+    return float(found.group(1)) if found else None
+
+
+def comparison(
+    rows: list[dict[str, Any]], previous: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """NFR-1 and NFR-2 p95, this run beside the previous results file."""
+    if previous is None:
+        return None
+    before = {r["id"]: r for r in previous["requirements"]}
+    now = {r["id"]: r for r in rows}
+    return {
+        "date": previous["date"],
+        "rows": [
+            {"id": k, "previous_p95_ms": _p95(before[k]), "p95_ms": _p95(now[k])}
+            for k in COMPARED
+            if k in before and k in now
+        ],
+    }
+
+
+def document(
+    ev: Evidence, host: dict[str, Any], previous: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """The results file: the requirements, the run, the machine, the limits raised, and NFR-1
+    and NFR-2 beside the previous run's."""
+    rows = requirements(ev)
     opened = datetime.fromtimestamp(ev.plan["start_ms"] / 1000, UTC)
     summaries = ev.records["rx_summary"]
     rejected: Counter[str] = Counter()
@@ -933,7 +1194,8 @@ def document(ev: Evidence, host: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         "date": opened.date().isoformat(),
-        "requirements": requirements(ev),
+        "requirements": rows,
+        "compared_with": comparison(rows, previous),
         "run": {
             "auction_id": ev.plan["auction_id"],
             "opened_at": opened.isoformat(),
@@ -967,6 +1229,26 @@ def document(ev: Evidence, host: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _compared(compared: dict[str, Any] | None) -> list[str]:
+    if not compared:
+        return []
+
+    def ms(v: float | None) -> str:
+        return _ms(v)
+
+    return [
+        f"## Compared with the run of {compared['date']}",
+        "",
+        "| Requirement | p95, " + compared["date"] + " | p95, this run |",
+        "|---|---|---|",
+        *[
+            f"| {r['id']} | {ms(r['previous_p95_ms'])} | {ms(r['p95_ms'])} |"
+            for r in compared["rows"]
+        ],
+        "",
+    ]
+
+
 def markdown(doc: dict[str, Any]) -> str:
     """loadtest/RESULTS.md, from the results file only."""
 
@@ -990,6 +1272,7 @@ def markdown(doc: dict[str, Any]) -> str:
             for r in doc["requirements"]
         ],
         "",
+        *_compared(doc.get("compared_with")),
         "## The run",
         "",
         f"- One auction, `{run['auction_id']}`: opened {run['opened_at']}, scheduled to end "

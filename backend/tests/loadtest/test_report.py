@@ -1,7 +1,9 @@
 """The load test's report (Phase 11, loadtest/README.md), from synthetic runs: how each
 requirement's figure is computed from what the run left behind, and when it passes. Each target
-is the SRS's own (NFR-1 to NFR-7, NFR-28, OR-15); NFR-8 and OR-6 are not met by inspection and
-are reported so, whatever the run measured."""
+is the SRS's own (NFR-1 to NFR-8, NFR-28, OR-15). NFR-8 holds the platform's own counters against
+the run's figures; OR-6 and OR-12 come from the restore drill's and the verification matrix's
+summary lines; every row also carries its figures as numbers, and NFR-1 and NFR-2 are set beside
+the previous run's."""
 
 import json
 from dataclasses import replace
@@ -15,6 +17,7 @@ from app.loadtest import (
     CITED,
     PLACE_BID_SHA,
     Evidence,
+    comparison,
     document,
     end_to_end_ms,
     gap_distribution,
@@ -29,6 +32,7 @@ from app.loadtest import (
     pytest_results,
     requirements,
     steady_window,
+    summary_line,
     verdict,
     window_rates,
 )
@@ -244,6 +248,14 @@ def passing() -> Evidence:
             "presence_peak": 110,
             "celery_waiting_peak": 3,
             "celery_in_flight_peak": 4,
+            "arbitration_max_at_ms": START_MS + 61_000,
+            "persistence_max_at_ms": START_MS + 95_000,
+            "counters": {  # the platform's own, as the run: 3,600 in the ledger, 2,400 refused
+                "accepted": 3600,
+                "rejected": {"BID_TOO_LOW": 2400},
+                "sockets_peak": {"api": 55, "api-2": 55},
+                "queue_peak": {"celery_waiting": 3, "celery_unacked": 4, "outbox_backlog": 9},
+            },
         },
         records={"ack": acks, "rej": rejections, "rx": rx, "rx_summary": summaries, "other": []},
         summary={
@@ -284,10 +296,10 @@ def test_a_run_meeting_every_measured_target() -> None:
         "NFR-5": True,
         "NFR-6": True,
         "NFR-7": True,
-        "NFR-8": False,  # no counters are exposed, whatever the run shows
+        "NFR-8": True,  # the counters agree with the ledger, the FR-44 lines and the sockets
         "NFR-28": True,
-        "OR-6": False,  # no scheduled backup, no restore demonstrated
-        "OR-12": None,  # not a load-test measurement
+        "OR-6": False,  # no restore drill recorded
+        "OR-12": None,  # no verification matrix found
         "OR-14": True,
         "OR-15": True,
     }
@@ -385,16 +397,6 @@ FAILURES = {
         lambda ev: with_watched(ev, arbitration_us=[80] * 5999),
         {"NFR-1", "NFR-4"},
     ),
-    "a bid refused before arbitration, so without an execution (also NFR-4)": (
-        lambda ev: replace(
-            ev,
-            instances={
-                **ev.instances,
-                "api": {**ev.instances["api"], "bids": {**BIDS, "RATE_LIMITED": 1}},
-            },
-        ),
-        {"NFR-1", "NFR-4"},
-    ),
     "deliveries 301 ms after the send (also fails NFR-4)": (
         lambda ev: replace(
             ev,
@@ -428,7 +430,7 @@ FAILURES = {
                 "api-2": {**ev.instances["api-2"], "subscribed_users": []},
             },
         ),
-        {"NFR-5"},
+        {"NFR-5", "NFR-8"},  # the sockets counted per instance no longer match either
     ),
     "fewer than 100 sockets in the room at once": (
         lambda ev: with_watched(ev, presence_peak=99),
@@ -462,6 +464,26 @@ FAILURES = {
         lambda ev: replace(ev, outcomes={**ev.outcomes, CITED["OR-14"][1]: "FAILED"}),
         {"NFR-28", "NFR-4", "OR-14"},
     ),
+    "the counters one accepted bid short of the ledger": (
+        lambda ev: with_watched(ev, counters={**ev.watched["counters"], "accepted": 3599}),
+        {"NFR-8"},
+    ),
+    "the counters missing a rejection reason the FR-44 lines have": (
+        lambda ev: replace(
+            ev,
+            instances={
+                **ev.instances,
+                "api": {**ev.instances["api"], "bids": {**BIDS, "RATE_LIMITED": 1}},
+            },
+        ),
+        {"NFR-1", "NFR-4", "NFR-8"},  # also: a refusal without an execution
+    ),
+    "an instance's sockets counted short": (
+        lambda ev: with_watched(
+            ev, counters={**ev.watched["counters"], "sockets_peak": {"api": 55, "api-2": 54}}
+        ),
+        {"NFR-8"},
+    ),
     "a soft-close boundary test failed": (
         lambda ev: replace(ev, outcomes={**ev.outcomes, CITED["OR-15"][0]: "FAILED"}),
         {"OR-15"},
@@ -478,31 +500,142 @@ def test_each_missed_target_fails_its_requirements_and_no_other(failure: str) ->
 
 def test_results_page_has_a_row_per_requirement_and_says_no_limit_was_raised() -> None:
     ev = passing()
-    host = {
-        "cpu": "CPU",
-        "cores": 8,
-        "threads": 16,
-        "ram_gib": 32.0,
-        "os": "OS",
-        "docker": {
-            "server_version": "1",
-            "operating_system": "Docker Desktop",
-            "kernel": "6",
-            "cpus": 16,
-            "memory_gib": 15.6,
-        },
-        "k6": "k6 v2.3.0",
-    }
-    doc = document(ev, host)
+    doc = document(ev, HOST)
     page = markdown(doc)
     rows = [line for line in page.splitlines() if line.startswith(("| NFR-", "| OR-"))]
     assert [row.split(" | ")[0][2:] for row in rows] == [r["id"] for r in doc["requirements"]]
     by_id = {row.split(" | ")[0][2:]: row for row in rows}
-    assert "| Not met - Phase 11 part 2 |" in by_id["NFR-8"]
-    assert "| Not met - Phase 11 part 2 |" in by_id["OR-6"]
-    assert "| Not assessed - verification matrix in Phase 11 part 2 |" in by_id["OR-12"]
+    assert "| Pass |" in by_id["NFR-8"]
+    assert "| Not met - no restore drill yet |" in by_id["OR-6"]
+    assert "| Not assessed |" in by_id["OR-12"]
     assert "| Pass |" in by_id["OR-14"]
     assert "**Not met**" not in page  # every measured target met
     assert "None. Every application limit kept its production value." in page
     assert doc["date"] == "2027-01-15"
     assert doc["run"]["bids_rejected"] == {"BID_TOO_LOW": 1100}
+
+
+HOST = {
+    "cpu": "CPU",
+    "cores": 8,
+    "threads": 16,
+    "ram_gib": 32.0,
+    "os": "OS",
+    "docker": {
+        "server_version": "1",
+        "operating_system": "Docker Desktop",
+        "kernel": "6",
+        "cpus": 16,
+        "memory_gib": 15.6,
+    },
+    "k6": "k6 v2.3.0",
+}
+
+
+def test_every_row_carries_its_figures_and_when_the_slowest_happened() -> None:
+    rows = {r["id"]: r for r in requirements(passing())}
+    assert rows["NFR-1"]["figures"] == {
+        "n": 6000,
+        "p50_ms": 0.08,
+        "p95_ms": 0.08,
+        "p99_ms": 0.4,
+        "max_ms": 0.4,
+        "executions": 6000,
+        "decided": 6000,
+    }
+    assert rows["NFR-2"]["figures"]["p95_ms"] == 40.0
+    assert rows["NFR-3"]["figures"] == {
+        "n": 1000,
+        "p50_ms": 10.0,
+        "p95_ms": 20.0,
+        "p99_ms": 20.0,
+        "max_ms": 20.0,
+    }
+    assert rows["NFR-4"]["figures"]["slowest_window_per_s"] == 30.0
+    assert rows["NFR-5"]["figures"] == {
+        "sockets": 110,
+        "per_instance": {"api": 55, "api-2": 55},
+        "presence_peak": 110,
+        "missing": 0,
+        "duplicates": 0,
+    }
+    assert rows["NFR-6"]["figures"] == {
+        "listing_p95_ms": 40.0,
+        "search_p95_ms": 60.0,
+        "detail_p95_ms": 30.0,
+    }
+    assert rows["NFR-7"]["figures"]["p95_ms"] == 120.0
+    assert rows["NFR-28"]["figures"] == {
+        "bids": 3600,
+        "checks_passed": 2,
+        "checks": 2,
+        "concurrent_close_passed": True,
+    }
+    assert (
+        rows["NFR-8"]["figures"]["accepted_counted"]
+        == rows["NFR-8"]["figures"]["accepted_ledger"]
+        == 3600
+    )
+    assert "the max at +61 s after the opening" in rows["NFR-1"]["details"][1]
+    assert "the max at +95 s after the opening" in rows["NFR-7"]["details"][0]
+    assert "the max at +" in rows["NFR-2"]["details"][0]
+
+
+def test_a_watcher_that_read_no_counters_leaves_nfr8_not_assessed() -> None:
+    ev = with_watched(passing(), counters=None)
+    assert verdicts(ev)["NFR-8"] is None
+
+
+def test_or6_and_or12_come_from_the_drill_and_the_matrix() -> None:
+    drill = summary_line(
+        "# Restore drill\n"
+        "<!-- restore-drill result=pass date=2026-10-19 tables=23 checks=6/6 media=14 -->\n",
+        "restore-drill",
+    )
+    assert drill == {
+        "result": "pass",
+        "date": "2026-10-19",
+        "tables": "23",
+        "checks": "6/6",
+        "media": "14",
+    }
+    rows = {r["id"]: r for r in requirements(replace(passing(), drill=drill))}
+    assert rows["OR-6"]["pass"] is True and "2026-10-19" in rows["OR-6"]["measured"]
+    failed = replace(passing(), drill={**drill, "result": "fail"})
+    assert verdicts(failed)["OR-6"] is False
+    gaps = {"ids": "199", "mapped": "180", "gaps": "19"}
+    row = {r["id"]: r for r in requirements(replace(passing(), matrix=gaps))}["OR-12"]
+    assert row["pass"] is False and row["measured"].startswith("180 of 199 requirements mapped; 19")
+    assert (
+        verdicts(replace(passing(), matrix={"ids": "199", "mapped": "199", "gaps": "0"}))["OR-12"]
+        is True
+    )
+    assert summary_line("no summary here", "verification") is None
+
+
+def test_nfr1_and_nfr2_are_set_beside_the_previous_run() -> None:
+    previous = {  # a file from before the figures block: its sentences are read
+        "date": "2026-10-17",
+        "requirements": [
+            {
+                "id": "NFR-1",
+                "measured": (
+                    "p95 0.128 ms; 27,691 EVALSHA entries for 17,356 accepted "
+                    "+ 10,335 rejected bids"
+                ),
+            },
+            {"id": "NFR-2", "measured": "p95 10.0 ms"},
+        ],
+    }
+    rows = requirements(passing())
+    assert comparison(rows, previous) == {
+        "date": "2026-10-17",
+        "rows": [
+            {"id": "NFR-1", "previous_p95_ms": 0.128, "p95_ms": 0.08},
+            {"id": "NFR-2", "previous_p95_ms": 10.0, "p95_ms": 40.0},
+        ],
+    }
+    page = markdown(document(passing(), HOST, previous))
+    assert "## Compared with the run of 2026-10-17" in page
+    assert "| NFR-1 | 0.128 ms | 0.080 ms |" in page
+    assert comparison(rows, None) is None
