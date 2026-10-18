@@ -9,7 +9,7 @@ const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; " +
   "connect-src 'self' ws://localhost:8011; font-src 'self'; object-src 'none'; base-uri 'none'; " +
   "form-action 'self'; frame-ancestors 'none'";
-const PAPER = { light: 'rgb(255, 255, 255)', dark: 'rgb(13, 20, 36)' } as const;
+const PAPER = { light: 'rgb(247, 244, 236)', dark: 'rgb(13, 20, 36)' } as const; // tokens.css --paper
 // the font budget itself (every font before load, per route) is e2e/budgets.spec.ts
 const PRELOADED = ['/fonts/spectral/Spectral-Regular.woff2', '/fonts/anek-latin/AnekLatin.woff2'];
 

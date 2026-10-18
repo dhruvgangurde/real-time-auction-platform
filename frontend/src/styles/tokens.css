@@ -1,4 +1,5 @@
-/* Colour tokens, exactly brief section 4.1. The tokens are the only colours in the app;
+/* Colour tokens: brief section 4.1, with the polish pass of 2026-10-19 (design/polish: a cream page,
+   bands, cards and a darker rule-strong in light; a card step in dark; the landing's footer). The tokens are the only colours in the app;
    components never use raw hex. Marigold is a fill only, never text, border or line (4.3).
    Light is the default; dark follows prefers-color-scheme unless [data-theme="light"] is set;
    [data-theme="dark"] forces dark. src/styles/tokens.test.ts checks every value against the
@@ -6,14 +7,14 @@
 
 :root {
   color-scheme: light;
-  --paper: #FFFFFF;
-  --paper-2: #F3F4F1;
+  --paper: #F7F4EC;
+  --paper-2: #EFEADF;
   --plate: #E8E9E5;
   --ink: #162036;
   --ink-2: #4A5466;
   --ink-3: #5B6476;
   --rule: #D5DAE2;
-  --rule-strong: #808B9D;
+  --rule-strong: #7A8598;
   --marigold: #F5B400;
   --on-marigold: #162036;
   --red: #B42318;
@@ -21,6 +22,10 @@
   --green: #0F6B4B;
   --green-wash: #E6F2EC;
   --focus: #1D4ED8;
+  --card: #FFFDF8;
+  --footer: #162036;
+  --on-footer: #E9EDF4;
+  --on-footer-2: #B3BDCC;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,6 +46,10 @@
     --green: #5CD3A2;
     --green-wash: #12291F;
     --focus: #8DB2FF;
+    --card: #162036;
+    --footer: #080D18;
+    --on-footer: #E9EDF4;
+    --on-footer-2: #929DB0;
   }
 }
 
@@ -61,4 +70,8 @@
   --green: #5CD3A2;
   --green-wash: #12291F;
   --focus: #8DB2FF;
+  --card: #162036;
+  --footer: #080D18;
+  --on-footer: #E9EDF4;
+  --on-footer-2: #929DB0;
 }

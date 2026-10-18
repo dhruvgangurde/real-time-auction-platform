@@ -6,7 +6,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
 
-const PAPER = { light: 'rgb(255, 255, 255)', dark: 'rgb(13, 20, 36)' } as const;
+const PAPER = { light: 'rgb(247, 244, 236)', dark: 'rgb(13, 20, 36)' } as const; // tokens.css --paper
 const n = enIN.nav;
 const label = (current: keyof typeof n.themes, next: keyof typeof n.themes) => n.themeLabel(n.themes[current], n.themes[next]);
 

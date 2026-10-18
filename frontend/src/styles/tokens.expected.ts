@@ -1,14 +1,16 @@
-// The colour tokens of the design brief, section 4.1 (copied from its table; the brief is kept local).
+// The colour tokens: the design brief's section 4.1 table (the brief is kept local), changed deliberately by
+// the polish pass of 2026-10-19 (design/polish/palette.png): page, bands and rule-strong in light, and four
+// new tokens, --card and the landing footer's three, in both themes.
 export const expectedTokens: { light: Record<string, string>; dark: Record<string, string> } = {
   light: {
-    '--paper': '#FFFFFF',
-    '--paper-2': '#F3F4F1',
+    '--paper': '#F7F4EC',
+    '--paper-2': '#EFEADF',
     '--plate': '#E8E9E5',
     '--ink': '#162036',
     '--ink-2': '#4A5466',
     '--ink-3': '#5B6476',
     '--rule': '#D5DAE2',
-    '--rule-strong': '#808B9D',
+    '--rule-strong': '#7A8598',
     '--marigold': '#F5B400',
     '--on-marigold': '#162036',
     '--red': '#B42318',
@@ -16,6 +18,10 @@ export const expectedTokens: { light: Record<string, string>; dark: Record<strin
     '--green': '#0F6B4B',
     '--green-wash': '#E6F2EC',
     '--focus': '#1D4ED8',
+    '--card': '#FFFDF8',
+    '--footer': '#162036',
+    '--on-footer': '#E9EDF4',
+    '--on-footer-2': '#B3BDCC',
   },
   dark: {
     '--paper': '#0D1424',
@@ -33,5 +39,9 @@ export const expectedTokens: { light: Record<string, string>; dark: Record<strin
     '--green': '#5CD3A2',
     '--green-wash': '#12291F',
     '--focus': '#8DB2FF',
+    '--card': '#162036',
+    '--footer': '#080D18',
+    '--on-footer': '#E9EDF4',
+    '--on-footer-2': '#929DB0',
   },
 };

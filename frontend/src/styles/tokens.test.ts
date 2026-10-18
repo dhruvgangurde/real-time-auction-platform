@@ -14,8 +14,9 @@ function block(selector: string): Record<string, string> {
   return out;
 }
 
-test('the brief lists fifteen tokens', () => {
-  expect(Object.keys(table.light)).toHaveLength(15);
+test('fifteen tokens from the brief and four from the polish pass', () => {
+  expect(Object.keys(table.light)).toHaveLength(19);
+  expect(Object.keys(table.dark)).toHaveLength(19);
 });
 
 test('the light theme equals the brief', () => {
