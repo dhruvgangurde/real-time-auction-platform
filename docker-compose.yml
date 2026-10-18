@@ -140,6 +140,22 @@ services:
       api-2:
         condition: service_started
 
+  # OR-6: a daily logical backup kept seven days, and the images (backend/scripts/backup.sh): the
+  # postgres image, so pg_dump matches the server. The files go to a host folder outside the
+  # repository, which `docker compose down -v` does not delete; restore: scripts/restore-drill.sh
+  backup:
+    image: postgres:16
+    env_file: .env
+    entrypoint: ["bash", "/scripts/backup.sh"]
+    volumes:
+      - ./backend/scripts:/scripts:ro
+      - media:/media:ro
+      - ${BACKUP_DIR:-../auction-private/backups}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 networks:
   # the web proxy's network; its fixed address is the only one the api trusts for X-Forwarded-For
   edge:
