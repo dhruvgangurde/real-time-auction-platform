@@ -352,14 +352,15 @@
 }
 
 /* featured lots (brief 8.5): an editorial spread, one large plate and smaller ones on a shared
-   baseline; no hover lifts, no card shadows */
+   baseline: in each row the photo tops align and the captions hang below, whatever their length;
+   no hover lifts, no card shadows */
 .spread {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   column-gap: 24px;
   row-gap: 48px;
   margin-top: 48px;
-  align-items: end;
+  align-items: start;
 }
 
 .spreadReserve {

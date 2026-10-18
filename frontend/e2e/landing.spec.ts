@@ -177,3 +177,42 @@ test('signed in, the second action is Browse auctions; the landing still opens n
   await expect(page.getByRole('link', { name: l.hero.start })).toHaveCount(0);
   expect(sockets).toEqual([]);
 });
+
+test('the featured spread: in each row of small plates the photo tops align, whatever the captions (brief 8.5)', async ({ browser, request: api }) => {
+  test.setTimeout(90_000);
+  const seller = await newAccount(api, 'seller', 'seller');
+  const t = tag();
+  const long = 'hand-carved rosewood writing box with brass inlay, its original key and the fitted pen tray';
+  const titles = Array.from({ length: 7 }, (_, i) => (i % 2 === 0 ? `Lot ${t} ${i}` : `Lot ${t} ${i}, ${long}`));
+  for (const title of titles) await newAuction(api, seller, { title, startInS: 3600, endInS: 7200, reservePrice: null }); // upcoming; the last is newest
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    const context = await browser.newContext({ viewport });
+    const page = await context.newPage();
+    await page.goto('/');
+    const lots = page.getByRole('region', { name: l.featured.title });
+    await expect(lots.getByRole('link', { name: titles[6]! })).toBeVisible();
+    await expect(lots.locator('figure')).toHaveCount(7);
+    // the small plates (all but the first, large one), grouped into rows: figures in one row overlap vertically
+    const plates = await lots.locator('figure').evaluateAll((figures) =>
+      figures.slice(1).map((f) => {
+        const box = f.getBoundingClientRect();
+        return { top: box.top, bottom: box.bottom, image: f.querySelector('img')!.getBoundingClientRect().top };
+      }),
+    );
+    const rows: (typeof plates)[] = [];
+    for (const plate of plates) {
+      const row = rows.find((r) => r.some((p) => p.top < plate.bottom && plate.top < p.bottom));
+      if (row) row.push(plate);
+      else rows.push([plate]);
+    }
+    if (viewport.width === 1440) expect(rows.some((r) => r.length > 1)).toBe(true); // rows of several plates to compare
+    for (const row of rows) {
+      const tops = row.map((p) => p.image);
+      expect(Math.max(...tops) - Math.min(...tops), `${viewport.width}: image tops ${tops.join(', ')}`).toBeLessThanOrEqual(1);
+    }
+    await context.close();
+  }
+});
