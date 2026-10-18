@@ -24,6 +24,8 @@ export const enIN = guardSentences({
     account: 'Your account',
     sell: 'Sell',
     admin: 'Admin',
+    themes: { system: 'System', light: 'Light', dark: 'Dark' },
+    themeLabel: (current, next) => `Theme: ${current}. Switch to ${next}`,
   },
   home: {
     lines: ['Every bid lands.', 'In order.', 'Exactly once.'],

@@ -97,6 +97,9 @@ export type Catalogue = {
     account: string;
     sell: string;
     admin: string;
+    /** the colour theme control: its words, and its accessible name (now, then on press) */
+    themes: { system: string; light: string; dark: string };
+    themeLabel: (current: string, next: string) => string;
   };
   /** the landing's h1 (brief 8.1), in the entry so it paints with the shell; the rest of the
    * landing's strings are in strings/landing-en-IN.ts, imported by the landing chunk only */

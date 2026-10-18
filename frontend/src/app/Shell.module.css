@@ -84,6 +84,30 @@
   cursor: pointer;
 }
 
+/* the colour theme control: an icon at every width, the word on desktop, like the bell */
+.theme {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.themeIcon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .nav a[aria-current='page'] {
   text-decoration: underline;
   text-underline-offset: 6px;
@@ -135,7 +159,7 @@
 
   .header .wrap {
     height: 56px;
-    gap: 16px;
+    gap: 12px;
   }
 
   /* one line: the wordmark keeps its width, the name gives way (an ellipsis; its accessible name
@@ -146,12 +170,13 @@
   }
 
   .nav {
-    gap: 14px;
+    gap: 12px;
     min-width: 0;
     align-items: center;
   }
 
-  .bell {
+  .bell,
+  .theme {
     flex: none;
   }
 

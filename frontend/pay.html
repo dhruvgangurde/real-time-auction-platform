@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0D1424" />
+    <!-- the stored colour theme, set before first paint (src/app/theme.ts); no inline script under the CSP -->
+    <script src="/theme.js"></script>
     <!-- the payment page (brief 13 item 25): its own document, served with its own CSP; the same
          two fonts as the SPA preloaded (brief 3.4) -->
     <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/spectral/Spectral-Regular.woff2" />
