@@ -1,6 +1,8 @@
 // The landing under its headline (brief 8): the hero, then the sections. Loaded lazily by
 // app/Home.tsx: this chunk holds the landing's code and strings. Every request it makes is
 // anonymous and goes through one scheduler (useLanding.ts); no socket is opened (FR-28).
+import { useState } from 'react';
+
 import { useApp, useToken } from '../app/context';
 import { Break } from './Break';
 import { Built, Footer } from './Built';
@@ -15,10 +17,11 @@ export default function LandingBody() {
   const demo = useLandingApi(api);
   const [overview, refresh] = useOverview(demo);
   const live = useNewestLive(demo);
+  const [watching, setWatching] = useState(false); // a run watched in "Try to break it", maybe started here
   return (
     <>
-      <Hero demo={demo} overview={overview} live={live} signedIn={signedIn} />
-      <Break demo={demo} overview={overview} refresh={refresh} />
+      <Hero demo={demo} overview={overview} watching={watching} live={live} signedIn={signedIn} />
+      <Break demo={demo} overview={overview} refresh={refresh} onWatching={setWatching} />
       <MeasuredStrip />
       <Featured demo={demo} />
       <Built />

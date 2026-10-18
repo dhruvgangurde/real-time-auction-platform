@@ -8,6 +8,7 @@ export const landingEnIN = guardSentences({
       'A recorded demo auction replays below. One atomic step decided every bid, so the ledger never skips a number and never counts one twice.',
     ledeEmpty:
       'When the demo runs, a real auction appears below. One atomic step decides every bid, so the ledger never skips a number and never counts one twice.',
+    ledeRunning: "A run is in progress below; its replay appears here when it's checked.",
     watch: 'Watch a live auction',
     start: 'Start bidding',
     browse: 'Browse auctions',

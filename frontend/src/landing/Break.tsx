@@ -226,7 +226,18 @@ function Panel({ state, leftMs }: { state: BreakState; leftMs: number | null }) 
   }
 }
 
-export function Break({ demo, overview, refresh }: { demo: LandingApi; overview: OverviewState; refresh: () => void }) {
+export function Break({
+  demo,
+  overview,
+  refresh,
+  onWatching,
+}: {
+  demo: LandingApi;
+  overview: OverviewState;
+  refresh: () => void;
+  /** whether a run is being watched here, for the hero's sentence */
+  onWatching: (watching: boolean) => void;
+}) {
   const { clock } = useApp();
   const [state, dispatch] = useReducer(breakReducer, INITIAL);
   const now = useNow(clock);
@@ -250,6 +261,7 @@ export function Break({ demo, overview, refresh }: { demo: LandingApi; overview:
 
   // the run's status, every second while it lasts; the reducer keeps the highest version
   const watchingRun = control.kind === 'watching' ? state.runId : null;
+  useEffect(() => onWatching(watchingRun !== null), [watchingRun, onWatching]);
   useEffect(() => {
     if (watchingRun === null) return;
     let gone = false;

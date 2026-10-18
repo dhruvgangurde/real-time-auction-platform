@@ -775,6 +775,7 @@ export type LandingCatalogue = {
     lede: string;
     ledeReplay: string;
     ledeEmpty: string;
+    ledeRunning: string;
     watch: string;
     start: string;
     browse: string;

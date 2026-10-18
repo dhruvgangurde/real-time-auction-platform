@@ -1,11 +1,13 @@
 // The hero under the headline (brief 8.1): one sentence, the actions, the board. There is no live
 // hero lot (the hero loop is deferred): with demo mode on and a verified stress run, the board
-// replays that run; with demo mode off or no run yet, the brief's empty state. "Watch a live
+// replays that run; before any run is verified, a run in progress is said so (heroLede.ts); with
+// demo mode off or no run yet, the brief's empty state. "Watch a live
 // auction" opens the newest live real lot, and is left out when there is none (slice 5 Q4).
 import { Link } from 'react-router';
 
 import { landingEnIN } from '../strings/landing-en-IN';
 import type { LandingApi } from './api';
+import { heroLede } from './heroLede';
 import { Board, EmptyBoard } from './Board';
 import boardStyles from './board.module.css';
 import styles from './landing.module.css';
@@ -13,13 +15,26 @@ import type { LiveLot, OverviewState } from './useLanding';
 
 const t = landingEnIN.hero;
 
-export function Hero({ demo, overview, live, signedIn }: { demo: LandingApi; overview: OverviewState; live: LiveLot; signedIn: boolean }) {
+export function Hero({
+  demo,
+  overview,
+  watching,
+  live,
+  signedIn,
+}: {
+  demo: LandingApi;
+  overview: OverviewState;
+  watching: boolean;
+  live: LiveLot;
+  signedIn: boolean;
+}) {
   const replayId = overview.kind === 'on' ? overview.overview.last_closed_auction_id : null;
   const known = overview.kind !== 'loading';
   const watch = live.kind === 'done' ? live.lot : null;
+  const lede = { pending: null, empty: t.ledeEmpty, running: t.ledeRunning, replay: t.ledeReplay }[heroLede(overview, watching)];
   return (
     <>
-      <p className={styles.lede}>{known ? (replayId === null ? t.ledeEmpty : t.ledeReplay) : null}</p>
+      <p className={styles.lede}>{lede}</p>
       <div className={styles.actions}>
         {live.kind === 'done' ? (
           <>

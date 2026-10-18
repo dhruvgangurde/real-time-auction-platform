@@ -176,6 +176,7 @@ for (const theme of ['light', 'dark'] as const) {
     await shoot(page, 'break-01-ready', theme, box);
     await at({ overview: overview(null, { active_run_id: 'run-e2e' }), status: polls('running') }, false, l.break.joined);
     await shoot(page, 'break-02-already-running', theme, box, 'GET /demo names an active run');
+    await shoot(page, 'hero-08-run-in-progress', theme, 'hero', 'GET /demo names an active run, no verified run yet');
     await at(sent(polls('running')), true, l.break.watchingRow);
     await shoot(page, 'break-03-running', theme, box);
     await at(sent(polls('settling')), true, l.break.settling);
