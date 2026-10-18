@@ -68,7 +68,7 @@ test('Send, the results and How we checked, from the keyboard', async ({ page })
   await expect(page.getByText(l.hero.ledeRunning)).toBeVisible(); // no verified run yet: the hero says one is in progress
   await expect(page.getByRole('heading', { name: l.board.emptyRunning })).toBeVisible();
   await expect(polite).toHaveText(l.break.announce.verified, { timeout: 15_000 });
-  await expect(page.getByText(l.break.postgres)).toBeVisible();
+  await expect(page.locator('section[aria-labelledby="break-title"]').getByText(l.break.postgres)).toBeVisible(); // the hero's tick says it too
   await expect(page.getByText(l.break.pass, { exact: true })).toHaveCount(7); // six checks and the watcher
   await expect(page.getByRole('button', { name: /^Next run in / })).toBeDisabled();
 

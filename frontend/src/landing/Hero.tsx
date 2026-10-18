@@ -1,4 +1,5 @@
-// The hero under the headline (brief 8.1): one sentence, the actions, the board. There is no live
+// The hero beside and under the headline (brief 8.1, design/polish): one sentence, the actions,
+// the ticks in the headline's column; the card in the other (app/Home.module.css lays out the grid). There is no live
 // hero lot (the hero loop is deferred): with demo mode on and a verified stress run, the board
 // replays that run; before any run is verified, a run in progress is said so (heroLede.ts); with
 // demo mode off or no run yet, the brief's empty state. "Watch a live
@@ -50,7 +51,17 @@ export function Hero({
           </>
         ) : null}
       </div>
-      {!known ? <div className={boardStyles.band} /> : replayId === null ? <EmptyBoard title={emptyBoardTitle(state)} /> : <Board demo={demo} auctionId={replayId} />}
+      <ul className={styles.ticks}>
+        {t.ticks.map((tick) => (
+          <li key={tick}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+            {tick}
+          </li>
+        ))}
+      </ul>
+      {!known ? <div className={boardStyles.card} /> : replayId === null ? <EmptyBoard title={emptyBoardTitle(state)} /> : <Board demo={demo} auctionId={replayId} />}
     </>
   );
 }

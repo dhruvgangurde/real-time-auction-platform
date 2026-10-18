@@ -818,12 +818,12 @@ export type LandingCatalogue = {
     start: string;
     browse: string;
     actions: string;
+    ticks: readonly string[];
   };
   board: {
     label: string;
-    demoLot: string;
+    replay: string;
     replayOf: (day: string, time: string) => string;
-    replayNote: (day: string, at: string, total: string) => string;
     loading: string;
     currentBid: string;
     startingPrice: string;
@@ -839,7 +839,9 @@ export type LandingCatalogue = {
     reserveMet: string;
     reserveNotMet: string;
     ledger: { caption: string; sequence: string; bidder: string; amount: string; decided: string; byMaximum: string };
-    earlier: (n: number) => string;
+    steps: { sent: string; decides: (sequence: number) => string; sees: string };
+    verified: readonly string[];
+    seeLedger: string;
     again: string;
     emptyTitle: string;
     emptyRunning: string;

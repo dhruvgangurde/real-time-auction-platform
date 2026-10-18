@@ -1,9 +1,16 @@
 /* The landing (brief 8, design/mockups/landing.html), on the shell's wrap. */
 
+/* the hero's text, in the headline's column (app/Home.module.css) */
+.lede,
+.actions,
+.ticks {
+  grid-column: 1;
+}
+
 .lede {
   font: var(--ui-lg);
   color: var(--ink-2);
-  max-width: 36em;
+  max-width: 30em;
   min-height: 64px; /* two lines, before GET /demo says which sentence (CLS) */
   margin: 16px 0 0;
 }
@@ -14,6 +21,35 @@
   margin-top: 32px;
   flex-wrap: wrap;
   min-height: 44px; /* the actions appear together, once the live lot is known */
+}
+
+/* what the run proves, in three ticks */
+.ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  list-style: none;
+  padding: 0;
+  margin: 28px 0 0;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.ticks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ticks svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
 }
 
 .primary,

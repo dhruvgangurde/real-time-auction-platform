@@ -1,109 +1,73 @@
-/* The hero's board (brief 8.1, design/mockups/landing.html): the live band under the headline,
-   photo plate left, the price as the page's one large element, the clock ruler, the ledger. */
+/* The hero's card (design/polish): the replay of the last verified run beside the headline, its
+   price and clock, how the newest bid landed, the last four rows, what the run proved. No photo, so
+   the h1 stays the largest contentful paint (brief 8.1 Performance). */
 
-.band {
-  border-top: 2px solid var(--ink);
-  padding-top: 24px;
-  margin-top: 56px;
-  display: grid;
-  /* 3/12 for the photo, not the mockup's 4/12: at 4/12 the photo outgrows the h1 and becomes the
-     largest contentful paint, which must stay the h1 (brief 8.1 Performance) */
-  grid-template-columns: 3fr 9fr;
-  column-gap: 24px;
-  min-height: 640px; /* the final size before data arrives (CLS) */
-}
-
-.figure {
-  margin: 0;
-}
-
-.plate {
-  background: var(--plate);
-  aspect-ratio: 4 / 5;
-  overflow: hidden;
-}
-
-.plate img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.credit {
-  font: var(--ui-sm);
-  color: var(--ink-3);
-  margin: 8px 0 0;
+.card {
+  grid-column: 2;
+  grid-row: 1 / span 5;
+  align-self: center;
+  margin-top: 40px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 7%);
+  padding: 22px 22px 18px;
+  min-height: 460px; /* the final size before data arrives (CLS) */
 }
 
 .head {
   display: flex;
   align-items: baseline;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.thumb {
-  display: none;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .title {
-  font: var(--title-1);
+  font: 500 17px/22px var(--font-ui);
   margin: 0;
 }
 
 .tag {
-  display: inline-block;
-  font: 600 14px/1 var(--font-ui);
-  padding: 5px 8px;
-  border: 1px solid var(--rule-strong);
-  border-radius: 4px;
+  flex: none;
+  font: 600 12px/16px var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--ink-2);
+  padding: 3px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
 }
 
 .status {
-  margin-left: auto;
-  font-size: 15px;
+  font: var(--ui-sm);
   color: var(--ink-3);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  border: 2px solid var(--ink-3);
-  display: inline-block;
-  flex: none;
+  margin: 4px 0 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
 }
 
 .loading {
   color: var(--ink-2);
-  margin-top: 28px;
+  margin-top: 20px;
 }
 
-.replay {
-  display: inline-flex;
-  font-size: 15px;
-  color: var(--ink);
-  background: var(--paper-2);
-  padding: 6px 10px;
-  border-left: 3px solid var(--ink);
-  margin: 16px 0 0;
+.priceRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding-top: 16px;
 }
 
 .label {
-  font-size: 16px;
-  color: var(--ink-2);
-  margin-top: 28px;
+  font: var(--ui-sm);
+  color: var(--ink-3);
 }
 
 .price {
-  font: var(--price-xl);
+  font: 700 44px/44px var(--font-ui);
   font-stretch: 78%;
-  letter-spacing: -0.01em;
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   white-space: nowrap;
 }
 
@@ -111,78 +75,83 @@
   animation: tick 1.2s ease-out both;
 }
 
-.lead {
-  font-size: 18px;
-  color: var(--ink-2);
-  margin: 12px 0 0;
-}
-
-.clock {
-  margin-top: 28px;
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
 .clockTime {
-  font: 600 40px/40px var(--font-ui);
+  font: 600 28px/28px var(--font-ui);
 }
 
-.clockNote {
-  font-size: 16px;
+.lead {
+  font: var(--ui-sm);
   color: var(--ink-2);
+  margin: 10px 0 0;
+}
+
+/* how one bid lands: sent, decided by Redis with its number, seen by everyone */
+.steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 12px;
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.steps li {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 7px 4px;
+  background: var(--paper);
+}
+
+.steps .key {
+  border-color: var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--card);
 }
 
 .ledger {
-  margin-top: 24px;
   width: 100%;
   border-collapse: collapse;
-  font-size: 17px;
-}
-
-.ledger th {
-  text-align: left;
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--ink-3);
-  padding: 0 0 8px;
-  border-bottom: 1px solid var(--ink);
+  font: 400 14px/20px var(--font-mono);
 }
 
 .ledger td {
-  padding: 9px 0;
-  border-bottom: 1px solid var(--rule);
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-2);
+  white-space: nowrap;
 }
 
 .ledger .seq {
+  width: 44px;
   color: var(--ink-3);
-  width: 64px;
-  padding-left: 8px;
+}
+
+.ledger .seq::before {
+  content: '№';
 }
 
 .ledger .amount {
   text-align: right;
-  font-weight: 600;
+  color: var(--ink);
 }
 
 .ledger .time {
   text-align: right;
   color: var(--ink-3);
-  width: 150px;
+  width: 128px;
+  padding-left: 16px;
 }
 
 .ledger .kind {
+  font: var(--ui-sm);
   color: var(--ink-3);
-  font-size: 15px;
-  padding-left: 20px;
-  width: 120px;
-}
-
-.ledger .more {
-  font-size: 15px;
-  color: var(--ink-3);
-  padding-left: 8px;
+  text-align: right;
+  width: 84px;
 }
 
 .rowNew td {
@@ -193,13 +162,56 @@
   animation: enter 240ms ease-out both;
 }
 
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+  font-size: 13px;
+}
+
+.verified {
+  display: flex;
+  gap: 14px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  color: var(--green);
+}
+
+.verified li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.check {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+.ledgerLink {
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
 .result {
   display: flex;
   align-items: center;
-  gap: 20px;
+  justify-content: space-between;
+  gap: 12px 16px;
   flex-wrap: wrap;
-  margin-top: 20px;
-  font-weight: 600;
+  margin-top: 14px;
+  font: 600 15px/20px var(--font-ui);
 }
 
 .result p {
@@ -207,8 +219,8 @@
 }
 
 .again {
-  height: 44px;
-  padding: 0 20px;
+  height: 40px;
+  padding: 0 16px;
   border-radius: 4px;
   border: 1px solid var(--rule-strong);
   background: transparent;
@@ -218,20 +230,21 @@
 }
 
 .empty {
-  border: 1px dashed var(--rule-strong);
-  padding: 48px 32px;
-  margin-top: 56px;
+  border-style: dashed;
+  border-color: var(--rule-strong);
+  box-shadow: none;
+  min-height: 0;
+  padding: 32px 28px;
 }
 
 .emptyTitle {
-  font: 400 28px/34px var(--font-serif);
+  font: 400 26px/32px var(--font-serif);
   margin: 0;
 }
 
 .empty p {
   color: var(--ink-2);
   margin: 12px 0 0;
-  max-width: 34em;
 }
 
 /* marigold is a fill only, with on-marigold text (brief 4.3) */
@@ -264,66 +277,43 @@
   }
 }
 
+/* one column: the card under the hero's text */
+@media (max-width: 1000px) {
+  .card {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 40px;
+  }
+}
+
 @media (max-width: 700px) {
-  .band {
-    display: block;
-    padding-top: 16px;
+  .card {
     margin-top: 32px;
-    min-height: 560px;
+    padding: 18px 16px 14px;
+    min-height: 420px;
   }
 
-  .figure {
-    display: none;
+  .empty {
+    min-height: 0;
+    padding: 28px 20px;
   }
 
-  .head {
-    gap: 10px;
-  }
-
-  .thumb {
-    display: block;
-    width: 56px;
-    height: 56px;
-    object-fit: cover;
-    background: var(--plate);
-    flex: none;
-  }
-
-  .title {
-    font: var(--title-2);
-    flex: 1;
-  }
-
-  .status {
-    margin-left: 0;
-    width: 100%;
-  }
-
-  .lead {
-    font-size: 16px;
+  .price {
+    font-size: 38px;
+    line-height: 40px;
   }
 
   .clockTime {
-    font-size: 34px;
-    line-height: 34px;
+    font-size: 24px;
+    line-height: 24px;
   }
 
-  .ledger {
-    font-size: 15px;
+  .steps {
+    font-size: 12px;
   }
 
   .ledger .time,
   .ledger .kind {
     display: none;
-  }
-
-  /* three bid rows on a phone (brief 8.1); the honest "earlier bids" row stays */
-  .ledger tbody tr:nth-child(n + 4):has(td.seq) {
-    display: none;
-  }
-
-  .empty {
-    padding: 32px 20px;
-    margin-top: 32px;
   }
 }

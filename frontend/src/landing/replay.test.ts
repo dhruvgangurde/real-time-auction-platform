@@ -70,22 +70,18 @@ test('the clock is the recorded end minus the replay time, and the lot closes at
   expect(end.remainingMs).toBe(0);
 });
 
-test('at most six rows, newest first', () => {
+test('at most four rows, newest first', () => {
   const many = Array.from({ length: 20 }, (_, i) => row(i + 1, START + 1_000 * (i + 1)));
   const rec = record([newestFirst(many)], lot);
-  expect(frameAt(rec, START + 30_000).rows.map((b) => b.seq)).toEqual([20, 19, 18, 17, 16, 15]);
+  expect(frameAt(rec, START + 30_000).rows.map((b) => b.seq)).toEqual([20, 19, 18, 17]);
   expect(frameAt(rec, START + 30_000, 3).rows.map((b) => b.seq)).toEqual([20, 19, 18]);
 });
 
-test('older bids that could not be loaded are one honest row, and the replay starts at the first loaded', () => {
+test('older bids that could not be loaded are counted as earlier, and the replay starts at the first loaded', () => {
   const rec = record([newestFirst([row(312, START + 40_000), row(313, START + 40_500), row(314, START + 41_000)])], lot);
   expect(rec.earlier).toBe(311);
   expect(rec.startMs).toBe(START + 39_000); // a second's lead-in, not the opening it cannot show
-  expect(frameAt(rec, rec.startMs).earlierRow).toBe(311);
   expect(frameAt(rec, START + 41_000).rows.map((b) => b.seq)).toEqual([314, 313, 312]);
-  expect(frameAt(rec, START + 41_000).earlierRow).toBe(311); // under the rows while they fit
-  const full = record([newestFirst(Array.from({ length: 8 }, (_, i) => row(100 + i, START + 40_000 + i * 100)))], lot);
-  expect(frameAt(full, START + 50_000).earlierRow).toBeNull(); // six rows fill the table
 });
 
 test('rows without a decision time cannot be placed: they and everything before them count as earlier', () => {

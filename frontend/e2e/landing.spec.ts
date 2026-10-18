@@ -129,7 +129,7 @@ test('the hero replays a real run from its ledger, once, and again on Replay aga
   await expect(page.getByText(l.hero.ledeReplay)).toBeVisible();
   await expect(b.getByRole('heading', { name: replay.title })).toBeVisible();
   await expect(b.getByText(/^Replay of a real run, /)).toBeVisible();
-  await expect(b.getByText(l.board.demoLot, { exact: true })).toBeVisible();
+  await expect(b.getByText(l.board.replay, { exact: true })).toBeVisible();
   // it plays by itself, at the recorded pace: the first bid, then the end
   await expect(b.locator('tbody tr')).not.toHaveCount(0, { timeout: 20_000 });
   await expect(b.getByRole('button', { name: l.board.again })).toBeVisible({ timeout: 40_000 });
@@ -142,6 +142,11 @@ test('the hero replays a real run from its ledger, once, and again on Replay aga
   await expect(b.locator('tbody td').getByText(l.board.ledger.byMaximum, { exact: true })).toHaveCount(2);
   await expect(b.getByText(l.board.sold(winner, '₹10,500', 4))).toBeVisible();
   await expect(b.getByText(l.board.reserveMet)).toBeVisible();
+  // the card (design/polish): how the newest bid landed, with its real number; what the run proved; its ledger
+  await expect(b.getByRole('listitem').filter({ hasText: l.board.steps.decides(4) })).toBeVisible();
+  for (const v of l.board.verified) await expect(b.getByRole('listitem').filter({ hasText: v })).toBeVisible();
+  await expect(b.getByRole('link', { name: l.board.seeLedger })).toHaveAttribute('href', `/auctions/${replay.id}/bids`);
+  expect(await b.locator('img').count()).toBe(0); // no photo in the card
   const paint = await lcp(page);
   console.log(`LCP replay @1440: ${paint.tag} "${paint.text}" (${paint.size} px²)`);
   expect(paint.tag).toBe('H1'); // the replay's photo stays smaller than the headline

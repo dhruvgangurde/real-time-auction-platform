@@ -6,7 +6,7 @@ import type { HistoryBid } from '../lib/contract';
 
 /** a stress run is at most 50 bidders x 20 bids; the loader stops at ten pages of 100 */
 export const LEDGER_CAP = 1_000;
-export const SHOWN = 6; // the hero ledger's rows (brief 8.1)
+export const SHOWN = 4; // the hero card's rows (design/polish)
 export const ANIMATED = 5; // a frame that applies several bids animates at most five (8.1)
 const LEAD_IN_MS = 1_000; // before the first loaded bid, when the opening itself is not loaded
 
@@ -28,7 +28,6 @@ export type Frame = {
   latest: ReplayBid | null;
   /** newest first */
   rows: ReplayBid[];
-  earlierRow: number | null;
   remainingMs: number;
   closed: boolean;
 };
@@ -71,7 +70,6 @@ export function frameAt(rec: Recording, t: number, shown = SHOWN): Frame {
     applied,
     latest: applied > 0 ? rec.bids[applied - 1]! : null,
     rows,
-    earlierRow: rec.earlier > 0 && rows.length < shown ? rec.earlier : null,
     remainingMs: Math.max(0, rec.endMs - t),
     closed: t >= rec.endMs,
   };

@@ -1,14 +1,26 @@
-/* The landing's headline (brief 8.1, design/mockups/landing.html): two lines on desktop, one
-   sentence a line on phones. Spectral 400 above the fold keeps the font budget (decisions.md). */
+/* The landing's headline (brief 8.1, design/polish): three lines, in the first column of the hero
+   grid beside the replay card; one column on phones and narrow windows. Spectral 400 above the
+   fold keeps the font budget (decisions.md). */
+
+.page {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  /* the headline, the sentence, the actions, the ticks; the card spans all five, and the last,
+     flexible row takes what the card needs beyond the text, so the text keeps its spacing */
+  grid-template-rows: auto auto auto auto 1fr;
+  column-gap: 56px;
+}
+
+/* every section under the hero spans the page; the hero's own pieces say their column */
+:where(.page) > * {
+  grid-column: 1 / -1;
+}
 
 .title {
+  grid-column: 1;
   font: var(--display-1);
   letter-spacing: -0.02em;
   margin: 40px 0 0;
-}
-
-.phoneBreak {
-  display: none;
 }
 
 /* the landing chunk's space while it loads, so nothing under the headline jumps (CLS) */
@@ -16,12 +28,14 @@
   min-height: 720px;
 }
 
+@media (max-width: 1000px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 700px) {
   .title {
     margin-top: 0;
-  }
-
-  .phoneBreak {
-    display: inline;
   }
 }
