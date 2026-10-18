@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     ws_max_strikes: int = 5
     ws_strike_decay_s: float = 60.0  # one strike is forgiven per interval
     ws_presence_interval_s: float = 5.0
+    # NFR-8: this instance's name in the overview (compose: api, api-2; else the hostname), and
+    # how often it publishes its socket count (the record expires after 15 s)
+    instance_name: str = ""
+    metrics_publish_interval_s: float = 5.0
     # per user and message type, shared across instances; bid submission is the strictest (CI-3)
     rate_limit_ws_place_bid: str = "10/1"  # FR-44 default: 10 bid submissions per second
     # reads of /live and bid history (brief 12.2 item 2): anonymous per client address,

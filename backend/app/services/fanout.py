@@ -345,6 +345,11 @@ class Hub:
                 else:
                     conn.offer(message)
 
+    @property
+    def socket_count(self) -> int:
+        """Authenticated sockets on this instance (NFR-8)."""
+        return len(self._conns)
+
     # ---------------------------------------------------------------- presence (FR-32)
 
     async def _presence_loop(self) -> None:

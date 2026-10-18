@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.services.bidding import BidService
 from app.services.ledger import persist_outbox
 from app.services.live_state import outbox_key, remove_stale_state, state_key
+from app.services.metrics import Metrics
 from app.services.reconciliation import reconcile, reconcile_auction
 from tests.bidding.conftest import AuctionFactory
 
@@ -157,3 +158,26 @@ async def test_stale_live_state_is_removed_only_when_nothing_uses_it(
     await redis.hset(state_key(stale), mapping={"status": "scheduled", "sequence": "0"})
     await reconcile(redis, sessions)  # every reconciliation run cleans up
     assert await redis.exists(state_key(stale)) == 0
+
+
+async def test_each_run_records_its_gaps_for_the_overview(
+    service: BidService,
+    auction: AuctionFactory,
+    new_user,
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """NFR-8: the reconciliation gap count, as a running total and the last run's figures."""
+    broken, gapped = await auction(), await auction()
+    await redis.hset(state_key(broken), "sequence", "not-a-number")
+    await _two_bids(service, gapped, new_user)
+    await persist_outbox(gapped, redis, sessions)
+    await redis.hset(state_key(gapped), "sequence", "4")
+    alerts = await reconcile(redis, sessions)
+    await reconcile(redis, sessions)  # the gap is still there on the next run
+    counted = await Metrics(redis).reconciliation()
+    gaps = sum(1 for code in alerts.values() if code == "SEQUENCE_GAP")
+    assert gaps >= 1
+    assert counted["gaps_total"] == 2 * gaps
+    last = counted["last_run"]
+    assert last["gaps"] == gaps and last["failed"] >= 1 and last["checked"] >= 2

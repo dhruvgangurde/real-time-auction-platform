@@ -167,6 +167,7 @@ async def start_instance(
         overrides: dict[Callable[..., Any], Any] | None = None,
         ws_ping_interval: float | None = None,
         forwarded_allow_ips: str = WEB_PROXY_IP,
+        instance_name: str | None = None,
     ) -> Instance:
         """One uvicorn server. `overrides` replaces dependency providers (values are the
         instances to serve); `ws_ping_interval` turns on the protocol keepalive (the timeout
@@ -175,6 +176,7 @@ async def start_instance(
         default their header is ignored (uvicorn alone would trust 127.0.0.1)."""
         app = app_main.create_app()
         app.state.redis_url = redis_url
+        app.state.instance_name = instance_name or f"instance-{len(started) + 1}"
         services: dict[Callable[..., Any], Any] = {
             deps.get_auth_service: auth_service,
             deps.get_user_service: user_service,

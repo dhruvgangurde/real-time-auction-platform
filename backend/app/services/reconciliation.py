@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.repositories import AuctionRepository, BidRepository
 from app.services.live_state import outbox_key, remove_stale_state, state_key
+from app.services.metrics import Metrics
 
 log = logging.getLogger("reconciliation")
 
@@ -106,5 +107,15 @@ async def reconcile(redis: Redis, sessions: async_sessionmaker[AsyncSession]) ->
             code = "RECONCILE_FAILED"
         if code:
             alerts[str(auction_id)] = code
+    codes = list(alerts.values())
+    try:  # NFR-8's gap count; a metrics failure never stops a reconciliation run
+        await Metrics(redis).record_reconciliation(
+            checked=len(live),
+            gaps=codes.count("SEQUENCE_GAP"),
+            regressions=codes.count("SEQUENCE_REGRESSION"),
+            failed=codes.count("RECONCILE_FAILED"),
+        )
+    except Exception:
+        log.warning("reconciliation metrics not recorded", exc_info=True)
     await remove_stale_state(redis, sessions)
     return alerts

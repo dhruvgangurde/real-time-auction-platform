@@ -28,6 +28,7 @@ class RequestIdMiddleware:
         request_id = incoming.decode("latin-1") if incoming else uuid4().hex
         token = request_id_var.set(request_id)
         status = 0
+        failed = False  # an exception escaped: the outer error handler answers 500
         start = time.perf_counter()
 
         async def send_with_header(message: Message) -> None:
@@ -43,7 +44,14 @@ class RequestIdMiddleware:
                 await self.app(scope, receive, send)
             else:
                 await self.app(scope, receive, send_with_header)
+        except BaseException:
+            failed = True
+            raise
         finally:
+            if scope["type"] == "http" and (status >= 500 or failed):
+                metrics = getattr(scope["app"].state, "metrics", None) if "app" in scope else None
+                if metrics is not None:
+                    metrics.record_5xx()  # FR-81 error rate, fire-and-forget
             fields = {
                 "method": scope.get("method", scope["type"]),
                 "path": scope["path"],

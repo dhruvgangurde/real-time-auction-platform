@@ -42,12 +42,13 @@ services:
     # reaches the api directly cannot choose the address its rate limits key on
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --ws-max-size 65536 --ws-ping-interval 20 --ws-ping-timeout 20 --proxy-headers --forwarded-allow-ips=${WEB_PROXY_IP:-10.201.0.10}
     env_file: .env
-    environment:
+    environment: &api-env
       WATCHFILES_FORCE_POLLING: "true"
       # the web origin joins the WebSocket Origin allowlist unless .env sets its own
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8011}
       # demo mode (brief 12.3): .env or the shell turns it on; off, every demo route is a 404
       DEMO_MODE: ${DEMO_MODE:-false}
+      INSTANCE_NAME: api  # this instance in the admin overview (NFR-8)
     volumes:
       - ./backend:/app
       - media:/media  # one volume for both instances: an upload is served by either (D10)
@@ -59,7 +60,11 @@ services:
       redis:
         condition: service_healthy
 
-  api-2: *api
+  api-2:
+    <<: *api
+    environment:
+      <<: *api-env
+      INSTANCE_NAME: api-2
 
   # the front door (brief 12.5): the built SPA, and /api (with the WebSocket upgrade) and /media
   # balanced across both api instances, with the CSP and security headers

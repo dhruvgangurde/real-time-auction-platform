@@ -1,5 +1,8 @@
+import asyncio
+import logging
+import socket
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from starlette.staticfiles import StaticFiles
@@ -25,6 +28,20 @@ from app.core.storage import MEDIA_URL_PREFIX
 from app.services.metrics import Metrics
 from app.services.snapshot import SnapshotCache
 
+log = logging.getLogger("metrics")
+
+
+async def _publish_sockets(metrics: Metrics, hub: object, name: str) -> None:
+    """This instance's socket count, every few seconds, under its own expiring key (NFR-8)."""
+    while True:
+        try:
+            await metrics.publish_instance(name, sockets=hub.socket_count)  # type: ignore[attr-defined]
+        except Exception as exc:  # never takes the instance down
+            log.warning(
+                "instance metrics not published", extra={"fields": {"error": type(exc).__name__}}
+            )
+        await asyncio.sleep(settings.metrics_publish_interval_s)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -33,11 +50,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from app.services.fanout import Hub
 
     url = getattr(app.state, "redis_url", settings.redis_url)
-    app.state.metrics = Metrics(create_redis(url), create_redis(settings.celery_broker_url))
+    metrics = app.state.metrics = Metrics(
+        create_redis(url), create_redis(settings.celery_broker_url)
+    )
     hub = Hub(url, create_redis(url))
     await hub.start()
     app.state.hub = hub
+    name = (
+        getattr(app.state, "instance_name", None) or settings.instance_name or socket.gethostname()
+    )
+    publisher = asyncio.create_task(_publish_sockets(metrics, hub, name))
     yield
+    publisher.cancel()
+    with suppress(asyncio.CancelledError):
+        await publisher
     await hub.stop()
 
 
