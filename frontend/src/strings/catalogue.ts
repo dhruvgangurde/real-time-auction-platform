@@ -858,6 +858,16 @@ export type LandingCatalogue = {
       none: string;
     };
   };
+  measured: {
+    title: string;
+    labels: Record<'NFR-1' | 'NFR-2' | 'NFR-3' | 'NFR-4' | 'NFR-5' | 'NFR-28', string>;
+    targets: Record<'NFR-1' | 'NFR-2' | 'NFR-3' | 'NFR-4' | 'NFR-5' | 'NFR-28', string>;
+    details: { 'NFR-1': (n: string) => string; 'NFR-28': (n: string) => string };
+    when: (date: string, k6: string) => string;
+    machine: (cpu: string, threads: number, ramGib: number, dockerCpus: number, dockerGib: number) => string;
+    results: string;
+    scripts: string;
+  };
 };
 
 /** The seller screens' strings (brief 9.8), imported only by the seller chunk (strings/

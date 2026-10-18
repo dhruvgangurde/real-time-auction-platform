@@ -140,4 +140,33 @@ export const landingEnIN = guardSentences({
       none: 'none',
     },
   },
+  measured: {
+    title: 'Measured',
+    labels: {
+      'NFR-1': 'Deciding a bid, 95th percentile',
+      'NFR-2': 'Bid sent to bid shown to the room, 95th percentile',
+      'NFR-3': 'Room event delivered, 95th percentile',
+      'NFR-4': 'Accepted bids a second on one auction, slowest 5 seconds',
+      'NFR-5': 'Bidders in one room, across two servers',
+      'NFR-28': 'Lost or duplicated bids',
+    },
+    targets: {
+      'NFR-1': 'Target: 10 ms or less',
+      'NFR-2': 'Target: 300 ms or less',
+      'NFR-3': 'Target: 150 ms or less',
+      'NFR-4': 'Target: at least 20',
+      'NFR-5': 'Target: at least 100',
+      'NFR-28': 'Target: none',
+    },
+    details: {
+      'NFR-1': (n) => `Every one of ${n} bids timed`,
+      'NFR-28': (n) => `In ${n} accepted bids`,
+    },
+    when: (date, k6) =>
+      `Measured on ${date} with ${k6}: 110 simulated bidders in one auction, through nginx to two API servers, at production limits.`,
+    machine: (cpu, threads, ramGib, dockerCpus, dockerGib) =>
+      `One laptop: ${cpu}, ${threads} threads, ${ramGib} GiB of RAM; Docker had ${dockerCpus} CPUs and ${dockerGib} GiB for everything, the load generator included.`,
+    results: 'The full results',
+    scripts: 'The k6 script',
+  },
 } satisfies LandingCatalogue);

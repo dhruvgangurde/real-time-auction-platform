@@ -4,6 +4,7 @@
 import { useApp, useToken } from '../app/context';
 import { Break } from './Break';
 import { Hero } from './Hero';
+import { MeasuredStrip } from './MeasuredStrip';
 import { useLandingApi, useNewestLive, useOverview } from './useLanding';
 
 export default function LandingBody() {
@@ -16,6 +17,7 @@ export default function LandingBody() {
     <>
       <Hero demo={demo} overview={overview} live={live} signedIn={signedIn} />
       <Break demo={demo} overview={overview} refresh={refresh} />
+      <MeasuredStrip />
     </>
   );
 }

@@ -24,6 +24,8 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // the landing's numbers strip reads the committed load-test results at build time (brief 8.4)
+    fs: { allow: ['.', '../loadtest/results'] },
     proxy: {
       '/api': { target: 'http://localhost:8011', ws: true },
       '/media': { target: 'http://localhost:8011' },

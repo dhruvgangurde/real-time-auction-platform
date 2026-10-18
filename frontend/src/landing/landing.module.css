@@ -305,6 +305,52 @@
   color: var(--ink-2);
 }
 
+/* measured (brief 8.4): one row of measured results, each with its target */
+.strip {
+  list-style: none;
+  margin: 40px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  column-gap: 24px;
+  border-top: 2px solid var(--ink);
+}
+
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.figureValue {
+  font: var(--price-m);
+  font-stretch: 78%;
+  white-space: nowrap;
+}
+
+.figureLabel {
+  font: var(--label);
+  color: var(--ink);
+}
+
+.figureTarget,
+.figureId {
+  font: var(--ui-sm);
+  color: var(--ink-2);
+}
+
+.figureId {
+  color: var(--ink-3);
+}
+
+.conditions {
+  color: var(--ink-2);
+  max-width: 60em;
+  margin: 20px 0 0;
+}
+
 @media (max-width: 700px) {
   .lede {
     font-size: 18px;
@@ -361,5 +407,9 @@
 
   .ledger tbody tr:nth-child(n + 4) {
     display: none;
+  }
+
+  .strip {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
