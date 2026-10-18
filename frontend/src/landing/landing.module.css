@@ -77,9 +77,50 @@
   background: transparent;
 }
 
-/* the sections under the hero (brief 8.3 to 8.7) */
+/* the sections under the hero (brief 8.3 to 8.7, design/polish): plain sections and bands in
+   turn. A band's fill and rules reach the window's edges through a border image outset sideways,
+   which paints outside the wrap without widening the page (outsets never scroll). */
 .section {
-  padding-top: 128px;
+  padding-block: 96px;
+}
+
+.band {
+  border-image: linear-gradient(var(--rule) 0 1px, var(--paper-2) 1px calc(100% - 1px), var(--rule) calc(100% - 1px)) fill 0 // 0 100vmax;
+}
+
+.afterHero {
+  margin-top: 88px;
+}
+
+/* the section's kind above its title; the marigold dash is a fill (brief 4.3) */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font: 600 13px/16px var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.eyebrow::before {
+  content: '';
+  width: 28px;
+  height: 2px;
+  background: var(--marigold);
+}
+
+/* a raised surface: the run checks, the Measured tiles, the lots, the drawing */
+.checks,
+.figure,
+.lot,
+.lotBig,
+.arch {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 7%);
 }
 
 .sectionTitle {
@@ -147,7 +188,28 @@
 }
 
 .checks {
-  border-top: 2px solid var(--ink);
+  padding: 4px 24px 8px;
+}
+
+.ready {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 28px 0 0;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.ready::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.ready + .actions {
+  margin-top: 16px;
 }
 
 .runHead {
@@ -341,23 +403,25 @@
   color: var(--ink-2);
 }
 
-/* measured (brief 8.4): one row of measured results, each with its target */
+.will li:last-child {
+  border-bottom: 0;
+}
+
+/* measured (brief 8.4): the measured results as tiles, three a row, each with its target */
 .strip {
   list-style: none;
   margin: 40px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  column-gap: 24px;
-  border-top: 2px solid var(--ink);
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
 }
 
 .figure {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--rule);
+  padding: 22px 24px;
 }
 
 .figureValue {
@@ -387,9 +451,9 @@
   margin: 20px 0 0;
 }
 
-/* featured lots (brief 8.5): an editorial spread, one large plate and smaller ones on a shared
+/* featured lots (brief 8.5, design/polish): one large card and smaller ones on a shared
    baseline: in each row the photo tops align and the captions hang below, whatever their length;
-   no hover lifts, no card shadows */
+   no hover lifts */
 .spread {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
@@ -406,6 +470,7 @@
 .lot {
   grid-column: span 3;
   margin: 0;
+  overflow: hidden;
 }
 
 .lotBig {
@@ -415,6 +480,7 @@
   display: flex;
   flex-direction: column;
   margin: 0;
+  overflow: hidden;
 }
 
 .lotPlate {
@@ -436,7 +502,7 @@
 }
 
 .caption {
-  margin-top: 14px;
+  padding: 14px 16px 18px;
 }
 
 .lotTitle {
@@ -492,7 +558,6 @@
 }
 
 .arch {
-  background: var(--paper-2);
   padding: 24px;
   margin: 0;
 }
@@ -527,11 +592,11 @@
   color: var(--ink-3);
 }
 
-/* the footer (brief 8.7) */
+/* the footer (brief 8.7, design/polish): dark, to the window's edges and the page's end */
 .footer {
-  margin-top: 128px;
-  border-top: 2px solid var(--ink);
-  padding-top: 28px;
+  padding-block: 40px;
+  border-image: linear-gradient(var(--footer) 0 0) fill 0 // 0 100vmax 100vmax;
+  color: var(--on-footer);
   display: flex;
   gap: 48px;
   align-items: baseline;
@@ -540,7 +605,12 @@
 
 .footer p {
   margin: 0;
-  color: var(--ink-2);
+  color: var(--on-footer-2);
+}
+
+/* the focus ring in the footer's own light ink: the page's focus blue is too dark on it */
+.footer :focus-visible {
+  outline-color: var(--on-footer);
 }
 
 .footerLinks {
@@ -570,7 +640,15 @@
   }
 
   .section {
-    padding-top: 64px;
+    padding-block: 64px;
+  }
+
+  .afterHero {
+    margin-top: 56px;
+  }
+
+  .checks {
+    padding: 4px 16px 8px;
   }
 
   .sectionTitle {
@@ -609,6 +687,11 @@
 
   .strip {
     grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .figure {
+    padding: 16px;
   }
 
   .spread {
@@ -652,7 +735,6 @@
   .footer {
     flex-direction: column;
     gap: 12px;
-    margin-top: 64px;
   }
 
   .footerLinks {

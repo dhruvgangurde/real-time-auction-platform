@@ -330,13 +330,15 @@ export function Break({
   }
 
   return (
-    <section className={styles.section} aria-labelledby="break-title">
+    <section className={`${styles.section} ${styles.band} ${styles.afterHero}`} aria-labelledby="break-title">
+      <p className={styles.eyebrow}>{t.eyebrow}</p>
       <h2 className={styles.sectionTitle} id="break-title">
         {t.title}
       </h2>
       <div className={styles.break}>
         <div>
           <p className={styles.intro}>{t.intro}</p>
+          {control.kind === 'ready' ? <p className={styles.ready}>{t.ready}</p> : null}
           <div className={styles.actions}>{action}</div>
           {state.joined && control.kind === 'watching' ? <p className={styles.joined}>{t.joined}</p> : null}
         </div>

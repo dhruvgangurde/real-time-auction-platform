@@ -849,7 +849,9 @@ export type LandingCatalogue = {
   };
   break: {
     title: string;
+    eyebrow: string;
     intro: string;
+    ready: string;
     send: string;
     sending: string;
     runningLeft: (left: string) => string;
@@ -903,6 +905,7 @@ export type LandingCatalogue = {
   };
   measured: {
     title: string;
+    eyebrow: string;
     labels: Record<'NFR-1' | 'NFR-2' | 'NFR-3' | 'NFR-4' | 'NFR-5' | 'NFR-28', string>;
     targets: Record<'NFR-1' | 'NFR-2' | 'NFR-3' | 'NFR-4' | 'NFR-5' | 'NFR-28', string>;
     details: { 'NFR-1': (n: string) => string; 'NFR-28': (n: string) => string };
@@ -913,12 +916,14 @@ export type LandingCatalogue = {
   };
   featured: {
     title: string;
+    eyebrow: string;
     none: string;
     failed: string;
     browse: string;
   };
   built: {
     title: string;
+    eyebrow: string;
     drawing: {
       browser: string;
       browserSub: string;

@@ -52,8 +52,10 @@ export const landingEnIN = guardSentences({
   },
   break: {
     title: 'Try to break it',
+    eyebrow: 'Live stress test',
     intro:
       'Fifty simulated bidders, each with its own account and session, open sockets and bid up to 20 times each over 60 seconds. Then we check the ledger in Postgres.',
+    ready: 'Ready to run',
     send: 'Send 50 bidders at once',
     sending: 'Starting the run',
     runningLeft: (left) => `Running, ${left} left`,
@@ -146,6 +148,7 @@ export const landingEnIN = guardSentences({
   },
   measured: {
     title: 'Measured',
+    eyebrow: 'Load test',
     labels: {
       'NFR-1': 'Deciding a bid, 95th percentile',
       'NFR-2': 'Bid sent to bid shown to the room, 95th percentile',
@@ -175,12 +178,14 @@ export const landingEnIN = guardSentences({
   },
   featured: {
     title: 'Live and upcoming lots',
+    eyebrow: 'Auctions',
     none: 'No lots are live or coming up right now.',
     failed: 'The lots could not be loaded.',
     browse: 'Browse auctions',
   },
   built: {
     title: "How it's built",
+    eyebrow: 'Architecture',
     drawing: {
       browser: 'Browser',
       browserSub: 'React, one socket',

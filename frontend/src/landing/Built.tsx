@@ -89,6 +89,7 @@ export function Built() {
   const decisions = repo('docs/decisions.md');
   return (
     <section className={styles.section} aria-labelledby="built-title">
+      <p className={styles.eyebrow}>{t.eyebrow}</p>
       <h2 className={styles.sectionTitle} id="built-title">
         {t.title}
       </h2>

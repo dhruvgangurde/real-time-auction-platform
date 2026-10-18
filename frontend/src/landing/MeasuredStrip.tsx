@@ -19,6 +19,7 @@ export function MeasuredStrip() {
   const scripts = repo('loadtest/room.js');
   return (
     <section className={styles.section} aria-labelledby="measured-title">
+      <p className={styles.eyebrow}>{t.eyebrow}</p>
       <h2 className={styles.sectionTitle} id="measured-title">
         {t.title}
       </h2>

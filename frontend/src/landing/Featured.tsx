@@ -75,7 +75,8 @@ export function Featured({ demo }: { demo: LandingApi }) {
   }, [demo]);
 
   return (
-    <section className={styles.section} aria-labelledby="lots-title">
+    <section className={`${styles.section} ${styles.band}`} aria-labelledby="lots-title">
+      <p className={styles.eyebrow}>{t.eyebrow}</p>
       <h2 className={styles.sectionTitle} id="lots-title">
         {t.title}
       </h2>
