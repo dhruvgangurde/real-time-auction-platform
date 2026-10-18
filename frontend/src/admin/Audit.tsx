@@ -21,7 +21,7 @@ const at = (ms: number) => `${formatDay(ms)}, ${formatLocal(ms, { seconds: true 
 const short = (id: string) => id.slice(0, 8);
 const FILTERS = ['actor', 'type', 'id', 'from', 'to'] as const;
 
-function Entry({ entry }: { entry: AuditEntry }) {
+export function Entry({ entry }: { entry: AuditEntry }) {
   const a = adminEnIN.audit;
   const known = (TYPES as readonly string[]).includes(entry.entity_type);
   const about = a.entity(known ? a.kinds[entry.entity_type as (typeof TYPES)[number]] : entry.entity_type, short(entry.entity_id));

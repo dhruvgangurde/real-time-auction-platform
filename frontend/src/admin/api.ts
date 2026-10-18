@@ -55,7 +55,7 @@ export type AuditEntry = {
 export type AuditPage = { items: AuditEntry[]; next_before_id: number | null };
 
 const record = (v: unknown): v is Record<string, unknown> | null => v === null || (typeof v === 'object' && !Array.isArray(v));
-function entry(v: unknown): AuditEntry | null {
+export function auditEntry(v: unknown): AuditEntry | null {
   const e = v as Partial<Record<keyof AuditEntry, unknown>> | null;
   if (e === null || typeof e !== 'object') return null;
   const { id, actor_id, entity_type, entity_id, action, before, after, reason, created_at_ms } = e;
@@ -66,7 +66,7 @@ function entry(v: unknown): AuditEntry | null {
 function auditPage(v: unknown): AuditPage | null {
   const p = v as { items?: unknown; next_before_id?: unknown } | null;
   if (p === null || !Array.isArray(p.items) || (p.next_before_id !== null && typeof p.next_before_id !== 'number')) return null;
-  const items = p.items.map(entry);
+  const items = p.items.map(auditEntry);
   return items.every((x): x is AuditEntry => x !== null) ? { items, next_before_id: p.next_before_id } : null;
 }
 

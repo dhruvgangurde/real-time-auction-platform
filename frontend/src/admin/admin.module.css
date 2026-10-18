@@ -179,3 +179,40 @@
     justify-content: flex-start;
   }
 }
+
+/* the overview (FR-81): plain figures in a grid, health first */
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 24px 32px;
+  margin: 8px 0 32px;
+}
+
+.figureTitle {
+  font: var(--ui-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+  margin: 24px 0 8px;
+}
+
+.figure .figureTitle {
+  margin-top: 0;
+}
+
+.figure p {
+  margin: 0 0 4px;
+}
+
+.health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.unhealthy strong {
+  color: var(--red);
+  text-decoration: underline;
+}

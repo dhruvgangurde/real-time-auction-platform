@@ -10,11 +10,12 @@ import { adminEnIN } from '../strings/admin-en-IN';
 import own from './admin.module.css';
 import { Audit } from './Audit';
 import { Categories } from './Categories';
+import { OverviewScreen } from './OverviewScreen';
 import { Users } from './Users';
 
 // the section is the rest of the path under /admin/*: picked here rather than with <Routes>, whose
 // code would land in the entry's shared router chunk (the entry is at its budget)
-const SECTIONS = { '': Users, users: Users, audit: Audit, categories: Categories } as const;
+const SECTIONS = { '': OverviewScreen, users: Users, audit: Audit, categories: Categories } as const;
 
 export default function AdminArea() {
   const a = adminEnIN.area;
@@ -24,6 +25,9 @@ export default function AdminArea() {
     <section className={styles.page}>
       <h1 className={styles.title}>{a.title}</h1>
       <nav className={own.tabs} aria-label={a.nav}>
+        <NavLink to="/admin" end>
+          {a.overview}
+        </NavLink>
         <NavLink to="/admin/users">
           {a.users}
         </NavLink>

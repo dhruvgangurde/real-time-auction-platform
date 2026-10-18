@@ -648,6 +648,7 @@ export type AdminCatalogue = {
   area: {
     title: string;
     nav: string;
+    overview: string;
     users: string;
     audit: string;
     categories: string;
@@ -689,6 +690,37 @@ export type AdminCatalogue = {
     reinstated: (name: string) => string;
     granted: (role: string, name: string) => string;
     revoked: (role: string, name: string) => string;
+  };
+  overview: {
+    title: string;
+    readAt: (time: string) => string;
+    search: string;
+    searchLabel: string;
+    searchButton: string;
+    health: string;
+    names: { postgres: string; redis: string; broker: string };
+    ok: string;
+    unreachable: string;
+    bids: string;
+    accepted: (n: number, max: number) => string;
+    rejected: (n: number, rate: string) => string;
+    reasons: (line: string) => string;
+    sockets: string;
+    instance: (name: string, n: number, dropped: number) => string;
+    noInstances: string;
+    queues: string;
+    waiting: (n: number) => string;
+    inFlight: (n: number) => string;
+    backlog: (n: number) => string;
+    reconciliation: string;
+    gapsTotal: (n: number) => string;
+    lastRun: (time: string, checked: number, gaps: number, regressions: number, failed: number) => string;
+    notRun: string;
+    errors: string;
+    errorsLine: (n: number) => string;
+    recent: string;
+    allAudit: string;
+    failed: string;
   };
   access: {
     title: string;
