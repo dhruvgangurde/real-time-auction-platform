@@ -114,16 +114,24 @@ async def test_concurrent_dispatchers_send_each_group_once(
     outbox: Outbox,
     db: asyncpg.Connection,
 ) -> None:
-    """FR-72, DC-5: the claim (SKIP LOCKED plus a lease) gives each group to one dispatcher."""
+    """FR-72, DC-5: the claim (SKIP LOCKED plus a lease) gives each group to one dispatcher.
+    Only this test's users are counted: rows other tests leave pending become due after 60 s,
+    and any dispatcher sends them too (the stranger's row stands in for one)."""
     auction = await make_auction(db)
     users = [(await make_user())[0] for _ in range(4)]
     for user_id in users:
         for _ in range(3):
             await add_notification(db, user_id, auction, age_s=90)
+    stranger = (await make_user())[0]  # a row another test left pending, as the suite can
+    await add_notification(db, stranger, auction, age_s=90)
     dispatchers = [NotificationService(sessions, redis, outbox) for _ in range(4)]
     await asyncio.gather(*(d.dispatch_emails() for d in dispatchers))
-    assert len(outbox.sent) == 4
-    assert len({to for to, _, _ in outbox.sent}) == 4
+    emails = {
+        r["email"] for r in await db.fetch("SELECT email FROM users WHERE id = ANY($1)", users)
+    }
+    mine = [to for to, _, _ in outbox.sent if to in emails]
+    assert len(mine) == 4  # one email per user's group, from whichever dispatcher claimed it
+    assert set(mine) == emails
 
 
 async def test_a_slow_send_never_blocks_the_users_own_actions(
