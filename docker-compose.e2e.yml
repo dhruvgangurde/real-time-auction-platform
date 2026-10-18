@@ -8,6 +8,7 @@ services:
   api:
     environment: &e2e-limits
       E2E_STACK: "1"   # marks this stack: `python -m app.cli seed-demo` refuses to run on it
+      DEMO_MODE: "false"   # the suite expects demo mode off (a local .env may turn it on for a recording); the demo endpoints are routed in the browser
       RATE_LIMIT_REGISTER_IP: "5000/3600"
       RATE_LIMIT_VERIFY_IP: "5000/3600"
       RATE_LIMIT_LOGIN_IP: "1000/60"
