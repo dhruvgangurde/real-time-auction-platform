@@ -79,8 +79,10 @@ export const HELP_TOPICS: readonly HelpTopic[] = ['reserve', 'increment', 'maxim
 /** The four help topics' strings (UD-4): their own module, strings/help-en-IN.ts, imported only
  * by the help, room and sell chunks, so the entry never carries them. */
 export type HelpCatalogue = {
+  eyebrow: string;
   title: string;
   lede: string;
+  onThisPage: string;
   close: string;
   openLabel: (title: string) => string;
   topics: Record<

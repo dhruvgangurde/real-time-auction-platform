@@ -34,29 +34,142 @@
   margin: 0;
 }
 
+/* the page (design/polish): a header band to the window's edges (a border image outset sideways
+   never widens the page), the contents beside the topics, each topic a card */
 .page {
-  max-width: 60ch;
+  margin-top: -32px; /* the band meets the header */
+}
+
+.top {
+  padding: 64px 0 48px;
+  text-align: center;
+  border-image: linear-gradient(var(--paper-2) 0 calc(100% - 1px), var(--rule) calc(100% - 1px)) fill 0 // 0 100vmax;
+}
+
+/* the page's kind above its title; the marigold dash is a fill (brief 4.3) */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font: 600 13px/16px var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.eyebrow::before {
+  content: '';
+  width: 28px;
+  height: 2px;
+  background: var(--marigold);
 }
 
 .pageTitle {
   font: var(--display-2);
   letter-spacing: -0.01em;
-  margin: 0 0 8px;
+  margin: 0;
 }
 
 .lede {
   font: var(--ui-lg);
   color: var(--ink-2);
-  margin: 0 0 16px;
+  max-width: 34em;
+  margin: 14px auto 0;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 56px;
+  max-width: 1040px;
+  margin: 56px auto 0;
 }
 
 .toc {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 0;
-  margin: 0 0 24px;
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  border-left: 2px solid var(--rule);
+  padding-left: 16px;
+}
+
+.tocTitle {
+  font: 600 12px/16px var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 8px;
+}
+
+.toc ul {
   list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.toc a {
+  display: block;
+  padding: 6px 0;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+
+.toc a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.toc a[aria-current='page'] {
+  color: var(--ink);
+  font-weight: 600;
+  margin-left: -18px;
+  padding-left: 16px;
+  border-left: 2px solid var(--marigold);
+}
+
+.page .topic {
+  max-width: none;
+  margin-bottom: 24px;
+  padding: 28px 32px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 7%);
+  scroll-margin-top: 24px;
+}
+
+.page .topic .body {
+  max-width: 58ch;
+}
+
+.page .diagram {
+  max-width: 520px;
+}
+
+.page .example {
+  border-radius: 8px;
+}
+
+@media (max-width: 800px) {
+  .top {
+    padding: 40px 0 32px;
+  }
+
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    margin-top: 32px;
+  }
+
+  .toc {
+    position: static;
+  }
+
+  .page .topic {
+    padding: 20px;
+  }
 }
 
 /* the drawer: a non-modal side panel (brief 5 and 10: no modal for help) */

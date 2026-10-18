@@ -3,8 +3,10 @@
 import { guardSentences, type HelpCatalogue } from './catalogue';
 
 export const helpEnIN = guardSentences({
+  eyebrow: 'Help',
   title: 'How bidding works',
   lede: 'Four short answers to the questions the room raises. Every amount is in rupees.',
+  onThisPage: 'On this page',
   close: 'Close help',
   openLabel: (title) => `Help: ${title}`,
   topics: {
