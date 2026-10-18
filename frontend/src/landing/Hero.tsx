@@ -7,7 +7,7 @@ import { Link } from 'react-router';
 
 import { landingEnIN } from '../strings/landing-en-IN';
 import type { LandingApi } from './api';
-import { heroLede } from './heroLede';
+import { emptyBoardTitle, heroLede } from './heroLede';
 import { Board, EmptyBoard } from './Board';
 import boardStyles from './board.module.css';
 import styles from './landing.module.css';
@@ -31,7 +31,8 @@ export function Hero({
   const replayId = overview.kind === 'on' ? overview.overview.last_closed_auction_id : null;
   const known = overview.kind !== 'loading';
   const watch = live.kind === 'done' ? live.lot : null;
-  const lede = { pending: null, empty: t.ledeEmpty, running: t.ledeRunning, replay: t.ledeReplay }[heroLede(overview, watching)];
+  const state = heroLede(overview, watching);
+  const lede = { pending: null, empty: t.ledeEmpty, running: t.ledeRunning, replay: t.ledeReplay }[state];
   return (
     <>
       <p className={styles.lede}>{lede}</p>
@@ -49,7 +50,7 @@ export function Hero({
           </>
         ) : null}
       </div>
-      {!known ? <div className={boardStyles.band} /> : replayId === null ? <EmptyBoard /> : <Board demo={demo} auctionId={replayId} />}
+      {!known ? <div className={boardStyles.band} /> : replayId === null ? <EmptyBoard title={emptyBoardTitle(state)} /> : <Board demo={demo} auctionId={replayId} />}
     </>
   );
 }

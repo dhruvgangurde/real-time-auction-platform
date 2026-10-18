@@ -66,6 +66,7 @@ test('Send, the results and How we checked, from the keyboard', async ({ page })
   const polite = page.locator('section[aria-labelledby="break-title"] [aria-live="polite"]');
   await expect(polite).toHaveText(l.break.announce.running);
   await expect(page.getByText(l.hero.ledeRunning)).toBeVisible(); // no verified run yet: the hero says one is in progress
+  await expect(page.getByRole('heading', { name: l.board.emptyRunning })).toBeVisible();
   await expect(polite).toHaveText(l.break.announce.verified, { timeout: 15_000 });
   await expect(page.getByText(l.break.postgres)).toBeVisible();
   await expect(page.getByText(l.break.pass, { exact: true })).toHaveCount(7); // six checks and the watcher

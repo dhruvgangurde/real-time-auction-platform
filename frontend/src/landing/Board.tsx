@@ -20,10 +20,10 @@ const t = landingEnIN.board;
 const BAND_MS = 1_200; // how long the newest row and the changed digits keep their marigold fill
 const FINAL_EXTENSION = 10; // FR-54
 
-export function EmptyBoard() {
+export function EmptyBoard({ title = t.emptyTitle }: { title?: string }) {
   return (
     <div className={styles.empty}>
-      <h2 className={styles.emptyTitle}>{t.emptyTitle}</h2>
+      <h2 className={styles.emptyTitle}>{title}</h2>
       <p>{t.emptyBody}</p>
     </div>
   );

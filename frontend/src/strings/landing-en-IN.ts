@@ -44,6 +44,7 @@ export const landingEnIN = guardSentences({
     earlier: (n) => (n === 1 ? '1 earlier bid' : `${n} earlier bids`),
     again: 'Replay again',
     emptyTitle: "The demo hasn't run yet.",
+    emptyRunning: 'A run is in progress.',
     emptyBody:
       'When it runs, every bid appears here with its sequence number and the time Redis decided it. Until then you can browse the live and upcoming lots or start bidding.',
   },

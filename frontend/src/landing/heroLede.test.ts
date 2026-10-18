@@ -4,7 +4,7 @@
 import { expect, test } from 'vitest';
 
 import type { DemoOverview } from './contract';
-import { heroLede } from './heroLede';
+import { emptyBoardTitle, heroLede } from './heroLede';
 
 const on = (lastClosed: string | null, activeRun: string | null): { kind: 'on'; overview: DemoOverview } => ({
   kind: 'on',
@@ -35,4 +35,9 @@ test('no verified run yet: a run in progress is said so; otherwise the empty sta
 test('a verified run is replayed, whether or not another run is in progress', () => {
   expect(heroLede(on('a1', null), false)).toBe('replay');
   expect(heroLede(on('a1', 'r2'), true)).toBe('replay');
+});
+
+test('the empty board says a run is in progress while one is, and that the demo has not run otherwise', () => {
+  expect(emptyBoardTitle('running')).toBe('A run is in progress.');
+  for (const lede of ['pending', 'empty', 'replay'] as const) expect(emptyBoardTitle(lede)).toBe("The demo hasn't run yet.");
 });

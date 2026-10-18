@@ -804,6 +804,7 @@ export type LandingCatalogue = {
     earlier: (n: number) => string;
     again: string;
     emptyTitle: string;
+    emptyRunning: string;
     emptyBody: string;
   };
   break: {
