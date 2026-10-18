@@ -3,6 +3,9 @@
 // Unavailable, and no socket is ever opened (FR-28). The h1 is the largest contentful paint.
 // The replay is routed: GET /demo points the hero at a real closed lot with a real ledger, which
 // plays at its recorded pace, once, and again on "Replay again" (slice 5 Q2).
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { expect, request, test, type Page } from '@playwright/test';
 
 import { enIN } from '../src/strings/en-IN';
@@ -17,6 +20,14 @@ declare global {
 }
 
 const tag = () => Math.random().toString(36).slice(2, 8);
+
+/** NFR-1's p95 in the newest committed results, as the strip shows it (src/landing/measured.ts). */
+function newestNfr1(): string {
+  const dir = fileURLToPath(new URL('../../loadtest/results/', import.meta.url));
+  const newest = readdirSync(dir).filter((f) => f.endsWith('.json')).sort().at(-1)!;
+  const file = JSON.parse(readFileSync(`${dir}${newest}`, 'utf8')) as { requirements: { id: string; measured: string }[] };
+  return /^p95 (\d+\.\d{3} ms)/.exec(file.requirements.find((r) => r.id === 'NFR-1')!.measured)![1]!;
+}
 let replay: ReplayLot;
 let liveId: string;
 let liveTitle: string;
@@ -86,7 +97,7 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(page.getByRole('button', { name: l.break.send })).toHaveCount(0);
       // Measured: the committed figures, each with its target
       const measured = page.getByRole('region', { name: l.measured.title });
-      await expect(measured.getByText('0.128 ms')).toBeVisible();
+      await expect(measured.getByText(newestNfr1(), { exact: true })).toBeVisible();
       await expect(measured.getByText(l.measured.targets['NFR-1'])).toBeVisible();
       // the featured lots: real listings, the newest first
       const lots = page.getByRole('region', { name: l.featured.title });
