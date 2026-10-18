@@ -10,6 +10,9 @@
     python -m app.cli loadtest-report [--dir PATH] [--cited]
         (development only, from the loadtest-tools service, as loadtest/run.sh runs them:
         app/loadtest.py)
+    python -m app.cli restore-check --db NAME --counts FILE --media DIR [--date D] [--timings T]
+        (OR-6: the check half of backend/scripts/restore-drill.sh, app/restore_check.py; prints
+        the evidence page, exit 1 when any part fails)
 
 Every change is written to audit_log in the same transaction (actor NULL, reason 'cli'). A
 revoke also revokes every session of the user, so the role is gone from the next request on.
@@ -71,6 +74,13 @@ def _parser() -> argparse.ArgumentParser:
         "--dir", default="/loadtest", help="reads .run/, writes results/<date>.json, RESULTS.md"
     )
     report.add_argument("--cited", action="store_true", help="only print the cited tests' ids")
+    restore = commands.add_parser("restore-check")
+    restore.add_argument("--db", required=True, help="the scratch database the drill restored")
+    restore.add_argument("--counts", required=True, help="table<TAB>rows, taken at the dump")
+    restore.add_argument("--media", required=True, help="the restored images")
+    restore.add_argument("--live-media", default=settings.media_root)
+    restore.add_argument("--date", default="")
+    restore.add_argument("--timings", default="", help="name=seconds,... for the page")
     reinstate = commands.add_parser("reinstate")
     reinstate.add_argument("email")
     reinstate.add_argument("--reason", required=True, type=_reason)
@@ -119,6 +129,8 @@ async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> in
         return await _loadtest_watch(sessions, Path(args.dir))
     if args.command == "loadtest-report":
         return await _loadtest_report(sessions, Path(args.dir))
+    if args.command == "restore-check":
+        return await _restore_check(sessions, args)
     if args.command == "seed-demo" and (refused := demo.refusal()) is not None:
         print(f"error: {refused}", file=sys.stderr)  # before any connection is made
         return 1
@@ -220,6 +232,40 @@ async def _loadtest_report(sessions: async_sessionmaker[AsyncSession], base: Pat
     for r in doc["requirements"]:
         print(f"{r['id']:<7} {loadtest.verdict(r):<28} {r['measured']}")
     return 0
+
+
+async def _restore_check(live: async_sessionmaker[AsyncSession], args: argparse.Namespace) -> int:
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app import restore_check
+
+    expected = {}
+    for line in Path(args.counts).read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            name, rows = line.split("\t")
+            expected[name] = int(rows)
+    timings = {k: float(v) for k, v in (p.split("=") for p in args.timings.split(",") if p)}
+    url = make_url(settings.migration_database_url).set(database=args.db)
+    owner = create_async_engine(url)
+    app_role = create_async_engine(
+        url.set(username=settings.app_db_user, password=settings.app_db_password)
+    )
+    try:
+        result = await restore_check.check(
+            async_sessionmaker(owner, expire_on_commit=False),
+            async_sessionmaker(app_role, expire_on_commit=False),
+            live,
+            expected,
+            Path(args.media),
+            Path(args.live_media),
+        )
+    finally:
+        await owner.dispose()
+        await app_role.dispose()
+    date = args.date or datetime.now(UTC).date().isoformat()
+    print(restore_check.evidence_markdown(result, date, timings))
+    return 0 if result["result"] == "pass" else 1
 
 
 def main() -> None:
