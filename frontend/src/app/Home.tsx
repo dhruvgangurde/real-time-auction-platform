@@ -13,8 +13,10 @@ export function Home() {
   return (
     <>
       <h1 className={styles.title} id="hero-title">
-        <span>{first}</span> <span>{second}</span>
-        <br className={styles.deskBreak} /> <span>{third}</span>
+        {/* line breaks, not block spans: the h1 stays one text block, so it is the one LCP candidate */}
+        <span>{first}</span>
+        <br className={styles.phoneBreak} /> <span>{second}</span>
+        <br /> <span>{third}</span>
       </h1>
       <Suspense fallback={<div className={styles.reserve} />}>
         <LandingBody />

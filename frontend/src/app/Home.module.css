@@ -7,6 +7,10 @@
   margin: 40px 0 0;
 }
 
+.phoneBreak {
+  display: none;
+}
+
 /* the landing chunk's space while it loads, so nothing under the headline jumps (CLS) */
 .reserve {
   min-height: 720px;
@@ -17,11 +21,7 @@
     margin-top: 0;
   }
 
-  .title span {
-    display: block;
-  }
-
-  .deskBreak {
-    display: none;
+  .phoneBreak {
+    display: inline;
   }
 }

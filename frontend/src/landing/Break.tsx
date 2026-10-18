@@ -259,8 +259,8 @@ export function Break({ demo, overview, refresh }: { demo: LandingApi; overview:
         const status = await demo.stressStatus(watchingRun);
         if (gone) return;
         dispatch({ type: 'status', status, nowMs: clock.now() });
-        const until = status.cooldown_until_ms;
-        if (FINAL_STATES.has(status.state) && (until === null || until <= clock.now())) refresh();
+        // a finished run: read GET /demo again, for the next control and for the hero's replay
+        if (FINAL_STATES.has(status.state)) refresh();
       } catch {
         // a missed poll: the next one follows
       }
