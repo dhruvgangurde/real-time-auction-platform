@@ -11,7 +11,8 @@ const MARIGOLD = ['rgb(245, 180, 0)', 'rgb(255, 194, 26)']; // light, dark
 
 async function marigoldCount(page: import('@playwright/test').Page): Promise<number> {
   return page.evaluate(
-    (colors) => [...document.querySelectorAll('*')].filter((el) => colors.includes(getComputedStyle(el).backgroundColor)).length,
+    // the room only: the header's wordmark dot is a permanent brand mark, not a highlight
+    (colors) => [...document.querySelectorAll('main *')].filter((el) => colors.includes(getComputedStyle(el).backgroundColor)).length,
     MARIGOLD,
   );
 }
