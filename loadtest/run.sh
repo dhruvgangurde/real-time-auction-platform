@@ -14,7 +14,17 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1 # Git Bash on Windows: leave the container paths alone
 cd "$(dirname "$0")/.."
 
-LT=(docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.loadtest.yml --profile loadtest)
+# the isolated stack (its own database, Redis databases and media: docker-compose.isolated.yml) at
+# production limits, so a run never adds accounts or lots to the development data; the
+# development stack is brought back however the run ends
+ISOLATED=(docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml)
+LT=("${ISOLATED[@]}" -f docker-compose.loadtest.yml --profile loadtest)
+trap 'docker compose up -d >/dev/null 2>&1 && echo "the development stack is back" >&2' EXIT
+"${ISOLATED[@]}" up -d
+for _ in $(seq 1 60); do
+  curl -fs localhost:${WEB_HOST_PORT:-8011}/api/v1/health/ready >/dev/null && break
+  sleep 2
+done
 RUN=loadtest/.run
 mkdir -p "$RUN"
 rm -f "$RUN"/{events.log,summary.json,watch.json,api.log,api-2.log,pytest.txt}

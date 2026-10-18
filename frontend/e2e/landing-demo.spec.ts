@@ -1,8 +1,8 @@
 // "Try to break it" for real (brief 8.1, 8.3; slice 5 amendments 1 and 2): one stress run through
 // Ready, Running, Settling, Verified and Cooling down, then the hero replays that run. The page's
 // requests stay under the anonymous per-address limit throughout: zero 429 responses. Gated: it
-// needs the dev stack at production limits with demo mode on and the runner, not the e2e stack:
-//   DEMO_MODE=true docker compose --profile demo up -d
+// needs the isolated data at production limits with demo mode on and the runner, not the e2e stack:
+//   DEMO_MODE=true docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml --profile demo up -d
 //   E2E_DEMO=1 npm run e2e -- e2e/landing-demo.spec.ts
 // Real-state frames go to design/shots/08-landing/real-*.png (git-ignored).
 import { mkdirSync } from 'node:fs';
@@ -14,7 +14,7 @@ import { landingEnIN as l } from '../src/strings/landing-en-IN';
 
 const OUT = fileURLToPath(new URL('../../design/shots/08-landing', import.meta.url));
 
-test.skip(!process.env.E2E_DEMO, 'needs E2E_DEMO=1 and the dev stack with DEMO_MODE=true --profile demo');
+test.skip(!process.env.E2E_DEMO, 'needs E2E_DEMO=1 and the isolated stack with DEMO_MODE=true --profile demo');
 
 const shot = async (page: Page, name: string) => {
   mkdirSync(OUT, { recursive: true });

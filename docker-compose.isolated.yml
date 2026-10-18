@@ -1,0 +1,36 @@
+# The isolated stack: e2e and load-test runs on their own database (auction_e2e), their own Redis
+# databases (2 for live state, 3 for the task queue) and their own media volume, so they never
+# add accounts, lots or images to the development data. The migrate service creates the database
+# when it is missing, migrates it and seeds the categories. Used with docker-compose.e2e.yml (the
+# e2e suite, raised limits) and docker-compose.loadtest.yml (the load test, production limits):
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml -f docker-compose.e2e.yml up -d
+# The development stack comes back with `docker compose up -d` (the containers are recreated).
+x-isolated: &isolated
+  DATABASE_URL: postgresql+asyncpg://${APP_DB_USER:-auction_app}:${APP_DB_PASSWORD:-auction_app}@postgres:5432/auction_e2e
+  MIGRATION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-auction}:${POSTGRES_PASSWORD:-auction}@postgres:5432/auction_e2e
+  REDIS_URL: redis://redis:6379/2
+  CELERY_BROKER_URL: redis://redis:6379/3
+
+services:
+  migrate:
+    command: sh -c "python -m app.cli ensure-database && alembic upgrade head && python -m app.cli seed-categories"
+    environment: *isolated
+  api:
+    environment: *isolated
+    volumes:
+      - media_e2e:/media
+  api-2:
+    environment: *isolated
+    volumes:
+      - media_e2e:/media
+  worker:
+    environment: *isolated
+  beat:
+    environment: *isolated
+  demo:
+    environment: *isolated
+    volumes:
+      - media_e2e:/media
+
+volumes:
+  media_e2e:

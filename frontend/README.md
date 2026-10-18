@@ -22,7 +22,7 @@ anonymous-read rate limits that one host address running the whole suite would o
 (the default `docker compose up` keeps the production limits):
 
 ```
-docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml -f docker-compose.e2e.yml up -d --build
 cd frontend && npm run build && npm run e2e
 ```
 

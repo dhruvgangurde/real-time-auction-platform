@@ -82,14 +82,14 @@ cd frontend && npm test                         # Vitest, and the verification m
 cd frontend && npm run lint && npm run typecheck
 ```
 
-The browser tests run against 8011 with the real security headers, on a stack with raised rate limits (many accounts from one address), after a build:
+The browser tests run against 8011 with the real security headers, after a build, on the isolated stack: its own database (`auction_e2e`), Redis databases and media volume, so a run never adds accounts or lots to your development data, with raised rate limits (many accounts from one address). `docker compose up -d` brings the development stack back.
 
 ```
-docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml -f docker-compose.e2e.yml up -d
 cd frontend && npm run build && npm run e2e
 ```
 
-The load test (about 10 minutes, on the development stack at its production limits; edit nothing under `backend/` while it runs, the API reloads):
+The load test (about 10 minutes, on the isolated data at production limits, then the development stack again; edit nothing under `backend/` while it runs, the API reloads):
 
 ```
 bash loadtest/run.sh

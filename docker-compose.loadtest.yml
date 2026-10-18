@@ -1,7 +1,7 @@
 # The load test (Phase 11, loadtest/README.md): k6 from the official image, and the backend
 # image as the tools that set the test up and check it afterwards, on the dev stack's networks.
-# Used only with this file and the profile, on the dev stack (never with the e2e overlay):
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.loadtest.yml --profile loadtest run --rm k6 run /loadtest/room.js
+# Used only with this file, docker-compose.isolated.yml and the profile (never with the e2e overlay):
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml -f docker-compose.loadtest.yml --profile loadtest run --rm k6 run /loadtest/room.js
 # The application's limits stay at their production values. Any limit the test had to raise
 # would be set here, with its reason, and listed in loadtest/RESULTS.md: none so far.
 services:
@@ -21,10 +21,19 @@ services:
     build: ./backend
     profiles: [loadtest]
     env_file: .env
+    # the isolated stack's data (docker-compose.isolated.yml), never the development database
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${APP_DB_USER:-auction_app}:${APP_DB_PASSWORD:-auction_app}@postgres:5432/auction_e2e
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-auction}:${POSTGRES_PASSWORD:-auction}@postgres:5432/auction_e2e
+      REDIS_URL: redis://redis:6379/2
+      CELERY_BROKER_URL: redis://redis:6379/3
     volumes:
       - ./backend:/app
       - ./loadtest:/loadtest  # the plan (tokens included) and the run's records, in loadtest/.run/
-      - media:/media  # the lot's photo, served by the api like any upload
+      - media_e2e:/media  # the lot's photo, served by the isolated api like any upload
       - ./ops:/ops:ro  # the newest restore drill's evidence, for OR-6's row
       - ./docs:/docs:ro  # the verification matrix, for OR-12's row
     networks: [default]
+
+volumes:
+  media_e2e:

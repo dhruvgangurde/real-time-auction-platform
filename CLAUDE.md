@@ -133,7 +133,7 @@ docker compose exec api pytest tests/metrics tests/admin/test_overview.py tests/
 docker compose exec api pytest tests/ops       # OR-6: backup retention and the restore check
 docker compose exec api pytest tests/realtime/test_demo_runner.py tests/realtime/test_demo_load_safety.py   # a whole stress run, the caps (about a minute)
 curl -s -X POST -H 'X-Requested-With: x' localhost:8011/api/v1/demo/stress   # start "Try to break it" (demo mode on)
-export MSYS_NO_PATHCONV=1; LT="docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.loadtest.yml --profile loadtest"   # load test (Git Bash)
+export MSYS_NO_PATHCONV=1; LT="docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml -f docker-compose.loadtest.yml --profile loadtest"   # load test (Git Bash), on the isolated data
 $LT run --rm loadtest-tools python -m app.cli loadtest-setup --bidders 110   # minted users, the lot, loadtest/.run/plan.json (gitignored)
 $LT run --rm k6 run /loadtest/smoke.js         # one minted socket through the web service
 bash loadtest/run.sh                           # the load test end to end (~10 min): results/<date>.json, RESULTS.md; edit nothing under backend/ while it runs (the api reloads)
@@ -165,11 +165,11 @@ cd frontend && npm test                        # Vitest (reducer, money, clock, 
 cd frontend && npm run lint                    # ESLint with the project rules
 cd frontend && npm run verification            # OR-12: writes docs/verification.md from the tests' citations, the load test, verification/*.tsv
 cd frontend && npm run verification:check      # fails when docs/verification.md is stale or a cited ID is not in the SRS (npm test runs it)
-docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e.yml up -d   # stack for e2e (raised limits, one host)
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml -f docker-compose.e2e.yml up -d   # stack for e2e: raised limits, its own database auction_e2e, Redis dbs 2-3 and media (never the dev data); `docker compose up -d` brings dev back
 cd frontend && npm run e2e                     # Playwright against 8011 only (real CSP), after a build; one worker
 cd frontend && npm run e2e -- e2e/discover.spec.ts e2e/slice3-privacy.spec.ts   # one or more specs
 cd frontend && E2E_RAZORPAY_SANDBOX=1 npm run e2e -- e2e/checkout-sandbox.spec.ts   # the real Razorpay sandbox (internet, test keys)
 cd frontend && npm run e2e -- e2e/landing.spec.ts e2e/landing-keyboard.spec.ts e2e/landing-privacy.spec.ts   # the landing (demo endpoints routed, real replay lot)
 cd frontend && npm run e2e -- e2e/landing-shots.spec.ts   # design/shots/08-landing frames and index.md
-DEMO_MODE=true docker compose --profile demo up -d; cd frontend && E2E_DEMO=1 npm run e2e -- e2e/landing-demo.spec.ts   # a real run on the dev stack (production limits): zero 429s
+DEMO_MODE=true docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml --profile demo up -d; cd frontend && E2E_DEMO=1 npm run e2e -- e2e/landing-demo.spec.ts   # a real run on the isolated data at production limits: zero 429s
 ```

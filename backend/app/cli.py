@@ -4,6 +4,8 @@
     python -m app.cli revoke-role <email> <role>
     python -m app.cli reinstate <email> --reason "<why>"   (recovery, e.g. no active admin)
     python -m app.cli seed-categories
+    python -m app.cli ensure-database   (creates MIGRATION_DATABASE_URL's database if missing: the
+        isolated e2e and load-test stack, app/ops_db.py)
     python -m app.cli seed-demo [--fresh] [--live-minutes N] [--starts-in M]   (app/demo.py)
     python -m app.cli loadtest-setup [--bidders N] [--starts-in S] [--live S] [--out PATH]
     python -m app.cli loadtest-watch [--dir PATH]
@@ -52,6 +54,7 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("email")
         command.add_argument("role", choices=ROLES)
     commands.add_parser("seed-categories")
+    commands.add_parser("ensure-database")
     seed_demo = commands.add_parser("seed-demo")
     seed_demo.add_argument(
         "--fresh", action="store_true", help="another demo set beside the old one (none deleted)"
@@ -129,6 +132,12 @@ async def run(argv: list[str], sessions: async_sessionmaker[AsyncSession]) -> in
         return await _loadtest_watch(sessions, Path(args.dir))
     if args.command == "loadtest-report":
         return await _loadtest_report(sessions, Path(args.dir))
+    if args.command == "ensure-database":
+        from app.ops_db import ensure_database
+
+        made = await ensure_database(settings.migration_database_url)
+        print(f"database {'created' if made else 'already there'}")
+        return 0
     if args.command == "restore-check":
         return await _restore_check(sessions, args)
     if args.command == "seed-demo" and (refused := demo.refusal()) is not None:

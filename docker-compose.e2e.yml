@@ -1,8 +1,9 @@
 # Used only by the Playwright run, never the default dev stack. The e2e suite registers, verifies
 # and signs in many accounts from one host address and polls /live heavily, which the production
 # identity and anonymous-read limits (brief 12.2, NFR-22) would throttle. Bring the stack up with
-# this file for e2e; the default `docker compose up` keeps the production limits.
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e.yml up -d
+# this file and docker-compose.isolated.yml (the e2e data, never the development database); the
+# default `docker compose up` keeps the production limits and the development data.
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.isolated.yml -f docker-compose.e2e.yml up -d
 services:
   api:
     environment: &e2e-limits
