@@ -66,7 +66,7 @@ for (const theme of ['light', 'dark'] as const) {
       expect(run.refresh.request().headers()['x-requested-with']).toBe('fetch');
 
       // the shell from the catalogue, in the tokens' colours
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText(enIN.home.title);
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(enIN.home.lines.join(' '));
       await expect(page.getByRole('link', { name: enIN.nav.signIn })).toBeVisible();
       expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe(PAPER[theme]);
 

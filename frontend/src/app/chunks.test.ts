@@ -9,11 +9,20 @@ import payPage from '../pay/PayPage.tsx?raw';
 import roomPage from '../room/RoomPage.tsx?raw';
 import { enIN } from '../strings/en-IN';
 import boot from './boot.tsx?raw';
+import home from './Home.tsx?raw';
 import routes from './routes.tsx?raw';
 import shell from './Shell.tsx?raw';
 
 const STATIC_IMPORT = /^import\s[^;]*from\s+['"]([^'"]+)['"]/gm;
-const LIVE = /(^|\/)(live|room|discover|watchlist|notifications|sell|admin|account)\//;
+const LIVE = /(^|\/)(live|room|discover|watchlist|notifications|sell|admin|account|landing)\//;
+
+// brief 8.1: the landing's h1 is in the entry (it is the LCP element); its body, its strings and
+// its sections load as one lazy chunk, so the entry grows by the h1 alone
+test('Home loads the landing body lazily and imports nothing of it statically', () => {
+  const targets = [...home.matchAll(STATIC_IMPORT)].map((m) => m[1]!);
+  expect(targets.filter((t) => /(^|\/)landing\/|landing-en-IN/.test(t))).toEqual([]);
+  expect(home).toMatch(/import\('\.\.\/landing\/LandingBody'\)/);
+});
 
 for (const [name, source] of Object.entries({ main, routes, shell })) {
   test(`${name} imports no live or room module statically`, () => {

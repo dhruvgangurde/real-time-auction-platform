@@ -26,8 +26,7 @@ export const enIN = guardSentences({
     admin: 'Admin',
   },
   home: {
-    title: 'Real-time auctions, decided in order',
-    lede: 'Every bid is placed at one serialisation point and acknowledged before anything else happens.',
+    lines: ['Every bid lands.', 'In order.', 'Exactly once.'],
   },
   notFound: {
     title: 'There is nothing here',

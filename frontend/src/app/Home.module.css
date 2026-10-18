@@ -1,33 +1,27 @@
+/* The landing's headline (brief 8.1, design/mockups/landing.html): two lines on desktop, one
+   sentence a line on phones. Spectral 400 above the fold keeps the font budget (decisions.md). */
+
 .title {
-  font: var(--display-2);
-  letter-spacing: -0.01em;
-  margin: 0;
-  max-width: 24ch;
-  text-wrap: balance;
+  font: var(--display-1);
+  letter-spacing: -0.02em;
+  margin: 40px 0 0;
 }
 
-.lede {
-  font: var(--ui-lg);
-  color: var(--ink-2);
-  margin: 16px 0 0;
-  max-width: 60ch;
+/* the landing chunk's space while it loads, so nothing under the headline jumps (CLS) */
+.reserve {
+  min-height: 720px;
 }
 
-.button {
-  display: inline-flex;
-  align-items: center;
-  height: 44px;
-  margin-top: 24px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: 4px;
-  background: var(--ink);
-  color: var(--paper);
-  font: var(--button);
-  cursor: pointer;
-}
+@media (max-width: 700px) {
+  .title {
+    margin-top: 0;
+  }
 
-.button[aria-disabled='true'] {
-  cursor: progress;
-  opacity: 0.7;
+  .title span {
+    display: block;
+  }
+
+  .deskBreak {
+    display: none;
+  }
 }

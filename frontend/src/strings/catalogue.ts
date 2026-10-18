@@ -98,9 +98,10 @@ export type Catalogue = {
     sell: string;
     admin: string;
   };
+  /** the landing's h1 (brief 8.1), in the entry so it paints with the shell; the rest of the
+   * landing's strings are in strings/landing-en-IN.ts, imported by the landing chunk only */
   home: {
-    title: string;
-    lede: string;
+    lines: readonly [string, string, string];
   };
   notFound: {
     title: string;
@@ -763,6 +764,20 @@ export type AdminCatalogue = {
     reasonLabel: string;
     reasonNote: string;
     keepOpen: string;
+  };
+};
+
+/** The landing's strings (brief 8), imported only by the landing chunk (strings/landing-en-IN.ts),
+ * so the entry does not carry them. Amounts and times arrive formatted. */
+export type LandingCatalogue = {
+  hero: {
+    lede: string;
+    ledeReplay: string;
+    ledeEmpty: string;
+    watch: string;
+    start: string;
+    browse: string;
+    actions: string;
   };
 };
 
