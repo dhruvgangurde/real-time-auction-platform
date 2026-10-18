@@ -874,6 +874,39 @@ export type LandingCatalogue = {
     failed: string;
     browse: string;
   };
+  built: {
+    title: string;
+    drawing: {
+      browser: string;
+      browserSub: string;
+      api1: string;
+      api2: string;
+      apiSub: string;
+      api1Short: string;
+      api2Short: string;
+      apiSubShort: readonly string[];
+      razorpay: string;
+      razorpaySub: readonly string[];
+      razorpayShort: string;
+      redis: string;
+      redisSub: readonly string[];
+      redisSubShort: readonly string[];
+      worker: string;
+      workerSub: readonly string[];
+      postgres: string;
+      postgresSub: readonly string[];
+      postgresShort: string;
+      oneAtATime: string;
+      outbox: string;
+      writes: string;
+      reads: string;
+    };
+    equivalent: readonly string[];
+    decisions: readonly (readonly [string, string])[];
+    architecture: string;
+    decisionsLink: string;
+    footer: { testMode: string; demo: string; help: string; source: string };
+  };
 };
 
 /** The seller screens' strings (brief 9.8), imported only by the seller chunk (strings/

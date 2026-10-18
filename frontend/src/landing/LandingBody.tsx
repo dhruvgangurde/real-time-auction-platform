@@ -3,6 +3,7 @@
 // anonymous and goes through one scheduler (useLanding.ts); no socket is opened (FR-28).
 import { useApp, useToken } from '../app/context';
 import { Break } from './Break';
+import { Built, Footer } from './Built';
 import { Featured } from './Featured';
 import { Hero } from './Hero';
 import { MeasuredStrip } from './MeasuredStrip';
@@ -20,6 +21,8 @@ export default function LandingBody() {
       <Break demo={demo} overview={overview} refresh={refresh} />
       <MeasuredStrip />
       <Featured demo={demo} />
+      <Built />
+      <Footer />
     </>
   );
 }

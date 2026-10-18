@@ -445,6 +445,73 @@
   margin: 24px 0 0;
 }
 
+/* how it's built (brief 8.6) */
+.built {
+  display: grid;
+  grid-template-columns: 7fr 5fr;
+  column-gap: 48px;
+  margin-top: 40px;
+  align-items: start;
+}
+
+.arch {
+  background: var(--paper-2);
+  padding: 24px;
+  margin: 0;
+}
+
+.arch svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* one drawing per viewport; .arch svg would otherwise show both */
+.arch .archM {
+  display: none;
+}
+
+.decisions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 2px solid var(--ink);
+}
+
+.decisions li {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule);
+  font: var(--body-serif);
+}
+
+.decisions li span {
+  display: block;
+  font: var(--ui-sm);
+  color: var(--ink-3);
+}
+
+/* the footer (brief 8.7) */
+.footer {
+  margin-top: 128px;
+  border-top: 2px solid var(--ink);
+  padding-top: 28px;
+  display: flex;
+  gap: 48px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.footer p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.footerLinks {
+  margin-left: auto;
+  display: flex;
+  gap: 24px;
+}
+
 @media (max-width: 700px) {
   .lede {
     font-size: 18px;
@@ -523,5 +590,35 @@
 
   .lotBig .lotTitle {
     font: var(--title-2);
+  }
+
+  .built {
+    display: block;
+  }
+
+  .built .decisions {
+    margin-top: 28px;
+  }
+
+  .arch {
+    padding: 12px;
+  }
+
+  .arch .archD {
+    display: none;
+  }
+
+  .arch .archM {
+    display: block;
+  }
+
+  .footer {
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 64px;
+  }
+
+  .footerLinks {
+    margin-left: 0;
   }
 }
