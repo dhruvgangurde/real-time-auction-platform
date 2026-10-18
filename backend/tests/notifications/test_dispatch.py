@@ -10,8 +10,9 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import settings
+from app.repositories.notification import NotificationRepository
 from app.services.notifications import NotificationService, render
-from tests.db.conftest import make_auction
+from tests.db.conftest import make_auction, owner_dsn
 from tests.lifecycle.conftest import bearer
 from tests.notifications.support import Outbox, add_notification, email_rows, seconds_until
 
@@ -169,3 +170,89 @@ def test_render_never_carries_more_than_the_payload() -> None:
     assert "₹10,500.75" in body
     assert f"{settings.app_base_url}/auctions/a1" in body
     assert render("payment_failed", [{"title": "Clock"}])[0] == "Payment failed for Clock"
+
+
+async def _quiet_queue(db: asyncpg.Connection) -> None:
+    """Rows other tests left pending are out of the way: these tests count every claim."""
+    await db.execute(
+        "UPDATE notifications SET email_status = 'skipped' WHERE email_status = 'pending'"
+    )
+
+
+async def test_a_group_larger_than_the_batch_still_leaves_as_one_email(
+    make_user,
+    sessions,
+    redis,
+    outbox: Outbox,
+    db: asyncpg.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-72, DC-5: the batch counts groups, never rows, so it can never cut a group in two."""
+    await _quiet_queue(db)
+    monkeypatch.setattr(settings, "email_batch", 2)
+    user_id = (await make_user())[0]
+    rows = [await add_notification(db, user_id, await make_auction(db), age_s=90) for _ in range(1)]
+    auction = await make_auction(db)
+    rows += [await add_notification(db, user_id, auction, age_s=90) for _ in range(3)]
+    service = NotificationService(sessions, redis, outbox)
+    for _ in range(5):
+        await service.dispatch_emails()
+    address = await _user_email(db, user_id)
+    assert [to for to, _, _ in outbox.sent] == [address, address]  # two groups, two emails
+    assert {r["email_status"] for r in await email_rows(db, rows)} == {"sent"}
+
+
+async def test_a_group_half_locked_by_another_dispatcher_is_not_split(
+    make_user, sessions, redis, outbox: Outbox, db: asyncpg.Connection, test_db: str
+) -> None:
+    """FR-72, DC-5: while another transaction holds one row of a group, a dispatcher waits for
+    the whole group instead of sending the rest of it alone."""
+    await _quiet_queue(db)
+    user_id = (await make_user())[0]
+    auction = await make_auction(db)
+    rows = [await add_notification(db, user_id, auction, age_s=90) for _ in range(3)]
+    other = await asyncpg.connect(owner_dsn(test_db))
+    try:
+        busy = other.transaction()
+        await busy.start()
+        await other.execute("SELECT id FROM notifications WHERE id = $1 FOR UPDATE", rows[0])
+        dispatch = asyncio.create_task(
+            NotificationService(sessions, redis, outbox).dispatch_emails()
+        )
+        await asyncio.sleep(0.3)  # the dispatcher reaches the group while one row is held
+        await busy.commit()
+        await asyncio.wait_for(dispatch, 10)
+    finally:
+        await other.close()
+    await NotificationService(sessions, redis, outbox).dispatch_emails()  # anything left over
+    assert [to for to, _, _ in outbox.sent] == [await _user_email(db, user_id)]
+    assert {r["email_status"] for r in await email_rows(db, rows)} == {"sent"}
+
+
+async def test_a_group_whose_dispatcher_died_is_sent_once_after_its_lease(
+    make_user, sessions, redis, outbox: Outbox, db: asyncpg.Connection
+) -> None:
+    """DC-5, nothing lost: a dispatcher claims a group and dies before sending; the lease keeps
+    the group from everyone until it runs out, then exactly one dispatcher sends it."""
+    await _quiet_queue(db)
+    user_id = (await make_user())[0]
+    auction = await make_auction(db)
+    rows = [await add_notification(db, user_id, auction, age_s=90) for _ in range(3)]
+    async with sessions() as session, session.begin():  # the claim commits; no send follows
+        claimed = await NotificationRepository(session).claim_email(
+            settings.email_group_window_s, settings.email_lease_s, settings.email_batch
+        )
+    assert sorted(n.id for n in claimed) == rows
+    dispatchers = [NotificationService(sessions, redis, outbox) for _ in range(3)]
+    await asyncio.gather(*(d.dispatch_emails() for d in dispatchers))
+    assert outbox.sent == []  # leased to the dead dispatcher
+    await db.execute(  # the lease runs out
+        "UPDATE notifications SET email_next_at = now() - interval '1 second' "
+        "WHERE id = ANY($1::bigint[])",
+        rows,
+    )
+    await asyncio.gather(*(d.dispatch_emails() for d in dispatchers))
+    await asyncio.gather(*(d.dispatch_emails() for d in dispatchers))
+    assert [to for to, _, _ in outbox.sent] == [await _user_email(db, user_id)]
+    states = await email_rows(db, rows)
+    assert {(r["email_status"], r["email_attempts"]) for r in states} == {("sent", 2)}

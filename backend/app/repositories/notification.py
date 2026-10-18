@@ -76,10 +76,13 @@ class NotificationRepository(BaseRepository):
     # ---------------------------------------------------------------- email delivery (FR-72)
 
     async def claim_email(self, window_s: int, lease_s: int, limit: int) -> list[Notification]:
-        """Claim pending rows of the groups that are due, with a lease, and commit before any
-        sending. A (user, type, auction) group is due once its oldest pending row is older than
-        the window, so rapid repeats wait and leave together. Concurrent dispatchers skip
-        locked rows and leased rows."""
+        """Claim whole groups that are due, with a lease, and commit before any sending (FR-72,
+        DC-5). A (user, type, auction) group is due once its oldest pending row is older than the
+        window, so rapid repeats wait and leave together. `limit` counts groups, never rows, so
+        a batch can never cut a group in two. Each group is claimed under a transaction-level
+        advisory lock, and only when every one of its pending rows can be locked at once: a group
+        another dispatcher is claiming, or with a row someone else holds, is left whole for the
+        next run. Nothing waits on a lock, so no claim deadlocks with a user's own writes."""
         older = aliased(Notification)
         due = (
             select(older.id)
@@ -93,28 +96,47 @@ class NotificationRepository(BaseRepository):
             .exists()
         )
         claimable = (
-            select(Notification.id)
-            .where(
-                Notification.email_status == "pending",
-                or_(Notification.email_next_at.is_(None), Notification.email_next_at <= func.now()),
-                due,
-            )
-            .order_by(
-                Notification.user_id, Notification.type, Notification.auction_id, Notification.id
-            )
-            .limit(limit)
-            .with_for_update(skip_locked=True)
+            Notification.email_status == "pending",
+            or_(Notification.email_next_at.is_(None), Notification.email_next_at <= func.now()),
         )
-        stmt = (
-            update(Notification)
-            .where(Notification.id.in_(claimable.scalar_subquery()))
-            .values(
-                email_attempts=Notification.email_attempts + 1,
-                email_next_at=func.now() + timedelta(seconds=lease_s),
+        groups = (
+            await self.session.execute(
+                select(Notification.user_id, Notification.type, Notification.auction_id)
+                .where(*claimable, due)
+                .group_by(Notification.user_id, Notification.type, Notification.auction_id)
+                .order_by(Notification.user_id, Notification.type, Notification.auction_id)
+                .limit(limit)
             )
-            .returning(Notification)
-        )
-        return list((await self.session.execute(stmt)).scalars())
+        ).all()
+        claimed: list[Notification] = []
+        for user_id, kind, auction_id in groups:
+            key = f"email:{user_id}:{kind}:{auction_id}"
+            locked = select(func.pg_try_advisory_xact_lock(func.hashtextextended(key, 0)))
+            if not await self.session.scalar(locked):
+                continue  # another dispatcher is claiming this group now
+            group = select(Notification.id).where(
+                Notification.user_id == user_id,
+                Notification.type == kind,
+                Notification.auction_id.is_not_distinct_from(auction_id),
+                *claimable,
+            )
+            ids = list(
+                (await self.session.execute(group.with_for_update(skip_locked=True))).scalars()
+            )
+            whole = await self.session.scalar(select(func.count()).select_from(group.subquery()))
+            if not ids or len(ids) != whole:
+                continue  # a row is held elsewhere: the whole group waits for the next run
+            stmt = (
+                update(Notification)
+                .where(Notification.id.in_(ids))
+                .values(
+                    email_attempts=Notification.email_attempts + 1,
+                    email_next_at=func.now() + timedelta(seconds=lease_s),
+                )
+                .returning(Notification)
+            )
+            claimed += list((await self.session.execute(stmt)).scalars())
+        return claimed
 
     async def finish_email(self, ids: list[int], status: str) -> None:
         """sent, skipped or failed: the group leaves the queue."""
