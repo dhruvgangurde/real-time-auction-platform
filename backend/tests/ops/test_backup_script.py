@@ -63,3 +63,8 @@ def test_a_partial_file_left_by_an_interrupted_run_is_cleared(tmp_path: Path) ->
     (tmp_path / ".media-2026-10-19.tgz.partial").write_bytes(b"half")
     run(tmp_path, "prune 2026-10-20")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_backups_are_readable_by_their_owner_only(tmp_path: Path) -> None:
+    """A dump holds every account and its password hash: no other user on the host reads it."""
+    assert run(tmp_path, "umask") == "0077"

@@ -8,6 +8,7 @@
 # like a backup. Files: $BACKUP_DIR/auction-YYYY-MM-DD.dump (pg_dump -Fc) and media-YYYY-MM-DD.tgz.
 # BACKUP_LIB=1 only defines the functions (tests/ops/test_backup_script.py).
 set -euo pipefail
+umask 077 # a dump holds every account and its password hash: readable by its owner only
 
 BACKUP_DIR=${BACKUP_DIR:-/backups}
 KEEP_DAYS=7
