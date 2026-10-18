@@ -13,6 +13,8 @@ function harness(answer: (method: string, path: string) => unknown) {
       priority = p;
       return task();
     },
+    close: () => undefined,
+    open: () => undefined,
   };
   const api = {
     request: (method: string, path: string, options: { auth?: unknown; headers?: unknown } = {}) => {

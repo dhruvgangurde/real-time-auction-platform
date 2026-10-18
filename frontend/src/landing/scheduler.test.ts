@@ -99,3 +99,15 @@ test('a cancelled request that has not started never starts', async () => {
   expect(starts.map((s) => s.name)).not.toContain('unmounted');
   expect(((await dropped) as ApiError).code).toBe('CANCELLED');
 });
+
+test('closed (the landing unmounted), queued requests are dropped and new ones refused; reopened, it runs again', async () => {
+  for (let i = 0; i < RATE; i++) void scheduler.run(job(`busy ${i}`));
+  const queued = scheduler.run(job('queued')).catch((e: unknown) => e);
+  scheduler.close();
+  expect(((await queued) as ApiError).code).toBe('CANCELLED');
+  expect(((await scheduler.run(job('after close')).catch((e: unknown) => e)) as ApiError).code).toBe('CANCELLED');
+  scheduler.open(); // StrictMode mounts twice: the second mount opens it again
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(await scheduler.run(job('reopened'))).toBe('reopened');
+  expect(starts.map((s) => s.name)).not.toContain('queued');
+});

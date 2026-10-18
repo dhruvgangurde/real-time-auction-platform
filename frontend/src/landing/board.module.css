@@ -1,0 +1,327 @@
+/* The hero's board (brief 8.1, design/mockups/landing.html): the live band under the headline,
+   photo plate left, the price as the page's one large element, the clock ruler, the ledger. */
+
+.band {
+  border-top: 2px solid var(--ink);
+  padding-top: 24px;
+  margin-top: 56px;
+  display: grid;
+  grid-template-columns: 4fr 8fr;
+  column-gap: 24px;
+  min-height: 640px; /* the final size before data arrives (CLS) */
+}
+
+.figure {
+  margin: 0;
+}
+
+.plate {
+  background: var(--plate);
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+}
+
+.plate img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.credit {
+  font: var(--ui-sm);
+  color: var(--ink-3);
+  margin: 8px 0 0;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.thumb {
+  display: none;
+}
+
+.title {
+  font: var(--title-1);
+  margin: 0;
+}
+
+.tag {
+  display: inline-block;
+  font: 600 14px/1 var(--font-ui);
+  padding: 5px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  color: var(--ink-2);
+}
+
+.status {
+  margin-left: auto;
+  font-size: 15px;
+  color: var(--ink-3);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--ink-3);
+  display: inline-block;
+  flex: none;
+}
+
+.loading {
+  color: var(--ink-2);
+  margin-top: 28px;
+}
+
+.replay {
+  display: inline-flex;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--paper-2);
+  padding: 6px 10px;
+  border-left: 3px solid var(--ink);
+  margin: 16px 0 0;
+}
+
+.label {
+  font-size: 16px;
+  color: var(--ink-2);
+  margin-top: 28px;
+}
+
+.price {
+  font: var(--price-xl);
+  font-stretch: 78%;
+  letter-spacing: -0.01em;
+  margin: 4px 0 0;
+  white-space: nowrap;
+}
+
+.tick {
+  animation: tick 1.2s ease-out both;
+}
+
+.lead {
+  font-size: 18px;
+  color: var(--ink-2);
+  margin: 12px 0 0;
+}
+
+.clock {
+  margin-top: 28px;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.clockTime {
+  font: 600 40px/40px var(--font-ui);
+}
+
+.clockNote {
+  font-size: 16px;
+  color: var(--ink-2);
+}
+
+.ledger {
+  margin-top: 24px;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 17px;
+}
+
+.ledger th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--ink-3);
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--ink);
+}
+
+.ledger td {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.ledger .seq {
+  color: var(--ink-3);
+  width: 64px;
+  padding-left: 8px;
+}
+
+.ledger .amount {
+  text-align: right;
+  font-weight: 600;
+}
+
+.ledger .time {
+  text-align: right;
+  color: var(--ink-3);
+  width: 150px;
+}
+
+.ledger .kind {
+  color: var(--ink-3);
+  font-size: 15px;
+  padding-left: 20px;
+  width: 120px;
+}
+
+.ledger .more {
+  font-size: 15px;
+  color: var(--ink-3);
+  padding-left: 8px;
+}
+
+.rowNew td {
+  animation: band 1.2s ease-out both;
+}
+
+.rowEnter td {
+  animation: enter 240ms ease-out both;
+}
+
+.result {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  font-weight: 600;
+}
+
+.result p {
+  margin: 0;
+}
+
+.again {
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 4px;
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  color: var(--ink);
+  font: var(--button);
+  cursor: pointer;
+}
+
+.empty {
+  border: 1px dashed var(--rule-strong);
+  padding: 48px 32px;
+  margin-top: 56px;
+}
+
+.emptyTitle {
+  font: 400 28px/34px var(--font-serif);
+  margin: 0;
+}
+
+.empty p {
+  color: var(--ink-2);
+  margin: 12px 0 0;
+  max-width: 34em;
+}
+
+/* marigold is a fill only, with on-marigold text (brief 4.3) */
+@keyframes band {
+  from {
+    background: var(--marigold);
+    color: var(--on-marigold);
+  }
+}
+
+@keyframes tick {
+  from {
+    background: var(--marigold);
+    color: var(--on-marigold);
+  }
+}
+
+@keyframes enter {
+  from {
+    opacity: 0.55;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick,
+  .rowNew td,
+  .rowEnter td {
+    animation: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .band {
+    display: block;
+    padding-top: 16px;
+    margin-top: 32px;
+    min-height: 560px;
+  }
+
+  .figure {
+    display: none;
+  }
+
+  .head {
+    gap: 10px;
+  }
+
+  .thumb {
+    display: block;
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    background: var(--plate);
+    flex: none;
+  }
+
+  .title {
+    font: var(--title-2);
+    flex: 1;
+  }
+
+  .status {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .lead {
+    font-size: 16px;
+  }
+
+  .clockTime {
+    font-size: 34px;
+    line-height: 34px;
+  }
+
+  .ledger {
+    font-size: 15px;
+  }
+
+  .ledger .time,
+  .ledger .kind {
+    display: none;
+  }
+
+  /* three bid rows on a phone (brief 8.1); the honest "earlier bids" row stays */
+  .ledger tbody tr:nth-child(n + 4):has(td.seq) {
+    display: none;
+  }
+
+  .empty {
+    padding: 32px 20px;
+    margin-top: 32px;
+  }
+}

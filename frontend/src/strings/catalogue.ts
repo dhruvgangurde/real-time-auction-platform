@@ -779,6 +779,31 @@ export type LandingCatalogue = {
     browse: string;
     actions: string;
   };
+  board: {
+    label: string;
+    demoLot: string;
+    replayOf: (day: string, time: string) => string;
+    replayNote: (day: string, at: string, total: string) => string;
+    loading: string;
+    currentBid: string;
+    startingPrice: string;
+    leads: (alias: string, sequence: number) => string;
+    bids: (n: number) => string;
+    noBids: (amount: string) => string;
+    ends: (time: string, windowS: number, extension: string) => string;
+    extended: (n: number) => string;
+    closedAt: (time: string) => string;
+    sold: (alias: string, amount: string, sequence: number) => string;
+    noSale: string;
+    noReserve: string;
+    reserveMet: string;
+    reserveNotMet: string;
+    ledger: { caption: string; sequence: string; bidder: string; amount: string; decided: string; byMaximum: string };
+    earlier: (n: number) => string;
+    again: string;
+    emptyTitle: string;
+    emptyBody: string;
+  };
 };
 
 /** The seller screens' strings (brief 9.8), imported only by the seller chunk (strings/

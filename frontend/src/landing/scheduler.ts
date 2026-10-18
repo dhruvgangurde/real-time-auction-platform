@@ -31,13 +31,19 @@ type Job = {
 export type Scheduler = {
   /** Runs `task` when the rate allows; `cancelled` is asked just before it would start. */
   run<T>(task: () => Promise<T>, priority?: Priority, cancelled?: () => boolean): Promise<T>;
+  /** The landing unmounted: queued requests are dropped (never sent), new ones refused. */
+  close(): void;
+  open(): void;
 };
+
+const cancelledError = () => new ApiError('CANCELLED', 'no longer needed', 0);
 
 export function createScheduler(deps: SchedulerDeps): Scheduler {
   const queue: Job[] = [];
   const starts: number[] = [];
   let pausedUntil = 0;
   let armed = false;
+  let closed = false;
 
   function next(): Job | undefined {
     const index = queue.findIndex((j) => j.priority === 'high');
@@ -50,7 +56,7 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
     while (queue.length > 0 && now >= pausedUntil && starts.length < RATE) {
       const job = next()!;
       if (job.cancelled()) {
-        job.reject(new ApiError('CANCELLED', 'no longer needed', 0));
+        job.reject(cancelledError());
         continue;
       }
       starts.push(now);
@@ -70,7 +76,7 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
     try {
       job.resolve(await job.task());
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'RATE_LIMITED' && job.refusals < RETRIES) {
+      if (error instanceof ApiError && error.code === 'RATE_LIMITED' && job.refusals < RETRIES && !closed) {
         job.refusals += 1;
         pausedUntil = Math.max(pausedUntil, deps.now() + (error.retryAfterMs ?? DEFAULT_PAUSE_MS));
         queue.unshift(job);
@@ -83,10 +89,18 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
 
   return {
     run<T>(task: () => Promise<T>, priority: Priority = 'low', cancelled: () => boolean = () => false): Promise<T> {
+      if (closed) return Promise.reject(cancelledError());
       return new Promise<T>((resolve, reject) => {
         queue.push({ task, priority, cancelled, refusals: 0, resolve: resolve as (v: unknown) => void, reject });
         pump();
       });
+    },
+    close() {
+      closed = true;
+      for (const job of queue.splice(0)) job.reject(cancelledError());
+    },
+    open() {
+      closed = false;
     },
   };
 }

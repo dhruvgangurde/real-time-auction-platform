@@ -1,19 +1,15 @@
-// The landing under its headline (brief 8): the hero's sentence and actions, then the sections.
-// Loaded lazily by app/Home.tsx: this chunk holds the landing's code and strings.
-import { Link } from 'react-router';
-
-import { landingEnIN as t } from '../strings/landing-en-IN';
-import styles from './landing.module.css';
+// The landing under its headline (brief 8): the hero, then the sections. Loaded lazily by
+// app/Home.tsx: this chunk holds the landing's code and strings. Every request it makes is
+// anonymous and goes through one scheduler (useLanding.ts); no socket is opened (FR-28).
+import { useApp, useToken } from '../app/context';
+import { Hero } from './Hero';
+import { useLandingApi, useNewestLive, useOverview } from './useLanding';
 
 export default function LandingBody() {
-  return (
-    <>
-      <p className={styles.lede}>{t.hero.ledeEmpty}</p>
-      <div className={styles.actions} role="group" aria-label={t.hero.actions}>
-        <Link className={styles.primary} to="/register">
-          {t.hero.start}
-        </Link>
-      </div>
-    </>
-  );
+  const { api } = useApp();
+  const signedIn = useToken() !== null;
+  const demo = useLandingApi(api);
+  const [overview] = useOverview(demo);
+  const live = useNewestLive(demo);
+  return <Hero demo={demo} overview={overview} live={live} signedIn={signedIn} />;
 }

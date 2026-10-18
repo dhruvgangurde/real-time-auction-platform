@@ -4,6 +4,7 @@
   font: var(--ui-lg);
   color: var(--ink-2);
   max-width: 36em;
+  min-height: 64px; /* two lines, before GET /demo says which sentence (CLS) */
   margin: 16px 0 0;
 }
 
@@ -12,6 +13,7 @@
   gap: 12px;
   margin-top: 32px;
   flex-wrap: wrap;
+  min-height: 44px; /* the actions appear together, once the live lot is known */
 }
 
 .primary,
@@ -45,8 +47,13 @@
     line-height: 28px;
   }
 
+  .lede {
+    min-height: 112px;
+  }
+
   .actions {
     flex-direction: column;
+    min-height: 48px;
   }
 
   .primary,
