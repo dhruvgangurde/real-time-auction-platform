@@ -118,8 +118,12 @@ class Metrics:
 
     # ------------------------------------------------------------------ reading
 
+    async def redis_time(self) -> tuple[int, int]:
+        seconds, micros = await self._redis.time()
+        return int(seconds), int(micros)
+
     async def _now(self) -> int:
-        return int((await self._redis.time())[0])
+        return (await self.redis_time())[0]
 
     async def bids(self) -> dict[str, Any]:
         """The last 60 whole seconds, oldest first."""
@@ -182,6 +186,24 @@ class Metrics:
             "celery_waiting": int(waiting),
             "celery_unacked": int(unacked),
             "outbox_backlog": int(backlog),
+        }
+
+    async def health(self) -> dict[str, str]:
+        """The dependencies an operator looks at first: Postgres, Redis and the Celery broker."""
+        from app.services import health
+
+        async def state(check: Coroutine[Any, Any, Any]) -> str:
+            try:
+                await asyncio.wait_for(check, health.TIMEOUT_S)
+                return "ok"
+            except Exception:
+                return "unreachable"
+
+        broker = self._broker or self._redis
+        return {
+            "postgres": await state(health.check_postgres()),
+            "redis": await state(self._redis.ping()),
+            "broker": await state(broker.ping()),
         }
 
     async def reconciliation(self) -> dict[str, Any]:

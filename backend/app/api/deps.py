@@ -96,17 +96,10 @@ def get_user_service() -> UserService:
     return UserService(get_sessions(), get_clock(), _denylist(), notify_revoked=_notify_revoked)
 
 
-@cache
-def _metrics() -> Metrics:
-    from app.core.redis import create_redis
-
-    return Metrics(get_redis(), create_redis(settings.celery_broker_url))
-
-
-def get_metrics(conn: HTTPConnection) -> Metrics:
-    """This instance's counters (NFR-8), made at startup; one shared set when the app runs
-    without its lifespan (tests over ASGITransport)."""
-    return getattr(conn.app.state, "metrics", None) or _metrics()
+def get_metrics(conn: HTTPConnection, redis: Redis = Depends(get_redis)) -> Metrics:
+    """This instance's counters (NFR-8), made at startup with the hub; an app run without its
+    lifespan (tests over ASGITransport) counts on the request's Redis instead."""
+    return getattr(conn.app.state, "metrics", None) or Metrics(redis)
 
 
 @cache

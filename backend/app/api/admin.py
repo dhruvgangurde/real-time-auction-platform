@@ -6,14 +6,15 @@ Every endpoint needs the admin role (FORBIDDEN otherwise); every state change ne
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import AwareDatetime
 
-from app.api.deps import get_admin_service, get_user_service, require_roles
+from app.api.deps import get_admin_service, get_metrics, get_user_service, require_roles
 from app.schemas.auctions import AdminReason, Role, UserStatus
 from app.schemas.auth import UserProfile
 from app.services.admin import AdminService
 from app.services.auth import CurrentUser
+from app.services.metrics import Metrics
 from app.services.users import UserService
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -121,3 +122,34 @@ async def audit_log(
         before_id=before_id,
         limit=limit,
     )
+
+
+@router.get("/overview")
+async def overview(
+    response: Response,
+    _: CurrentUser = Depends(admin_only),
+    service: AdminService = Depends(get_admin_service),
+    metrics: Metrics = Depends(get_metrics),
+) -> dict[str, Any]:
+    """FR-81's dashboard and NFR-8's counters, for administrators only; never cached."""
+    response.headers["Cache-Control"] = "no-store"
+    seconds, micros = await metrics.redis_time()
+    audit = await service.audit(
+        actor_id=None,
+        entity_type=None,
+        entity_id=None,
+        since=None,
+        until=None,
+        before_id=None,
+        limit=10,
+    )
+    return {
+        "server_time_ms": seconds * 1000 + micros // 1000,
+        "bids": await metrics.bids(),
+        "sockets": await metrics.instances(),
+        "queues": await metrics.queues(),
+        "reconciliation": await metrics.reconciliation(),
+        "errors": await metrics.errors(),
+        "health": await metrics.health(),
+        "recent_audit": audit["items"],
+    }

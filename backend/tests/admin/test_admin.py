@@ -57,6 +57,7 @@ ENDPOINTS = [
     ("PUT", "/api/v1/admin/users/{u}/roles/seller", REASON),
     ("DELETE", "/api/v1/admin/users/{u}/roles/seller", REASON),
     ("GET", "/api/v1/admin/audit", None),
+    ("GET", "/api/v1/admin/overview", None),
 ]
 STATE_CHANGES = [e for e in ENDPOINTS if e[2] is not None]
 
