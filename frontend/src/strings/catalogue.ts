@@ -589,6 +589,7 @@ export type PayCatalogue = {
   notWinner: string;
   notFound: string;
   noSale: string;
+  demo: string;
   belowMinimum: string;
   statusTitle: string;
   statusWon: (name: string, amount: string) => string;

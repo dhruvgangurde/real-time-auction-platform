@@ -27,6 +27,13 @@ describe('who sees what (FR-65, FR-69)', () => {
     expect(run([loaded(settlement(), 'u-seller')])).toMatchObject({ kind: 'status' });
   });
 
+  test('a demo lot is never paid: winner, seller and admin all see "Demo lot: nothing to pay" (B2 Q1)', () => {
+    const demo = settlement({ status: 'demo' });
+    expect(run([loaded(demo)])).toEqual({ kind: 'demo' });
+    expect(run([loaded(demo, 'u-seller')])).toEqual({ kind: 'demo' });
+    expect(run([loaded(demo), { type: 'pay' }])).toEqual({ kind: 'demo' }); // no Pay to press
+  });
+
   test('a no-sale settlement has nothing to pay', () => {
     expect(run([loaded(settlement({ status: 'no_sale', final_price: null, winner: null }), 'u-seller')])).toEqual({ kind: 'noSale' });
   });

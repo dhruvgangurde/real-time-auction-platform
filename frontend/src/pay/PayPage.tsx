@@ -200,6 +200,9 @@ export function PayPage() {
     case 'noSale':
       panel = <p className={styles.text}>{p.noSale}</p>;
       break;
+    case 'demo':
+      panel = <p className={styles.text}>{p.demo}</p>;
+      break;
     case 'status':
       panel = (
         <>

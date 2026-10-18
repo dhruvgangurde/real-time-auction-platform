@@ -1,6 +1,7 @@
 // The payment page as a state machine (brief 9.5; FR-65 to FR-69). Who may pay comes from the
 // settlement: its winner pays, the seller (or an admin) reads the status, a no-sale has nothing to
-// pay. Razorpay's checkout handing back ids means only "confirming": the page says Paid when the
+// pay, and a demo lot's sale has nothing to pay for anyone (no Pay at all). Razorpay's checkout
+// handing back ids means only "confirming": the page says Paid when the
 // settlement read says paid (the checkout callback, the webhook or the reconciler completed it),
 // never before. A failure is the server's answer or a failure inside the open window. An amount
 // below the gateway's minimum charge can never be paid online, so that refusal ends the paying.
@@ -13,6 +14,8 @@ export type PayState =
   | { kind: 'error'; code: string }
   | { kind: 'refused'; code: string }
   | { kind: 'noSale' }
+  /** a demo lot's sale: nothing to pay, for anyone (B2 Q1; the server refuses DEMO_NOT_PAYABLE) */
+  | { kind: 'demo' }
   | { kind: 'status'; settlement: Settlement }
   | { kind: 'due'; amount: number; lastFailed: boolean; notice: string | null; retryAfterMs: number | null }
   | { kind: 'opening'; amount: number }
@@ -56,6 +59,7 @@ function paid(s: Settlement): PayState {
 
 function fromSettlement(s: Settlement, viewerId: string): PayState {
   if (s.status === 'no_sale') return { kind: 'noSale' };
+  if (s.status === 'demo') return { kind: 'demo' };
   if (s.winner?.id !== viewerId) return { kind: 'status', settlement: s }; // the seller or an admin (FR-69)
   if (s.status === 'paid') return paid(s);
   return due(s.final_price ?? 0, null, null, s.payment?.status === 'failed');
