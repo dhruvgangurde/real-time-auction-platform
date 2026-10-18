@@ -223,7 +223,15 @@ async def _loadtest_report(sessions: async_sessionmaker[AsyncSession], base: Pat
     run_date = datetime.fromtimestamp(evidence.plan["start_ms"] / 1000, UTC).date().isoformat()
     earlier = sorted(p for p in (base / "results").glob("*.json") if p.stem < run_date)
     previous = json.loads(earlier[-1].read_text(encoding="utf-8")) if earlier else None
-    doc = loadtest.document(evidence, loadtest.machine(base / ".run"), previous)
+    notes_file = base / "notes" / f"{run_date}.md"  # this run's observations, "- " lines
+    notes = [
+        line[2:].strip()
+        for line in (
+            notes_file.read_text(encoding="utf-8").splitlines() if notes_file.exists() else []
+        )
+        if line.startswith("- ")
+    ]
+    doc = loadtest.document(evidence, loadtest.machine(base / ".run"), previous, notes)
     out = base / "results" / f"{doc['date']}.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")

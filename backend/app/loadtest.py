@@ -1177,7 +1177,10 @@ def comparison(
 
 
 def document(
-    ev: Evidence, host: dict[str, Any], previous: dict[str, Any] | None = None
+    ev: Evidence,
+    host: dict[str, Any],
+    previous: dict[str, Any] | None = None,
+    notes: list[str] | None = None,
 ) -> dict[str, Any]:
     """The results file: the requirements, the run, the machine, the limits raised, and NFR-1
     and NFR-2 beside the previous run's."""
@@ -1196,6 +1199,7 @@ def document(
         "date": opened.date().isoformat(),
         "requirements": rows,
         "compared_with": comparison(rows, previous),
+        "notes": notes or [],  # observations by hand (loadtest/notes.md), beside the figures
         "run": {
             "auction_id": ev.plan["auction_id"],
             "opened_at": opened.isoformat(),
@@ -1273,6 +1277,7 @@ def markdown(doc: dict[str, Any]) -> str:
         ],
         "",
         *_compared(doc.get("compared_with")),
+        *(["## Notes", "", *[f"- {n}" for n in doc["notes"]], ""] if doc.get("notes") else []),
         "## The run",
         "",
         f"- One auction, `{run['auction_id']}`: opened {run['opened_at']}, scheduled to end "

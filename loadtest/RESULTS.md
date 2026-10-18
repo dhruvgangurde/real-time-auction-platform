@@ -25,6 +25,10 @@ The run of 2026-10-18, against the Docker Compose dev stack: web (nginx) in fron
 | NFR-1 | 0.128 ms | 0.121 ms |
 | NFR-2 | 10.0 ms | 10.0 ms |
 
+## Notes
+
+- NFR-7: the persistence p95 rose from 159.9 ms (2026-10-17) to 275.1 ms (p99 218.0 to 384.2 ms), still well inside its 2 s target. An observation, no action: the cause is not established (the watcher's per-second counter reads beside its 100 ms Postgres poll, and a larger development database, are the candidates).
+
 ## The run
 
 - One auction, `d520ad8e-ff41-4924-a589-54e73919e2c3`: opened 2026-10-18T15:57:18.115000+00:00, scheduled to end 2026-10-18T16:01:18.115000+00:00; 10 soft-close extensions, ended 2026-10-18T16:02:58.115000+00:00, closed_sold.

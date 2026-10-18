@@ -639,3 +639,13 @@ def test_nfr1_and_nfr2_are_set_beside_the_previous_run() -> None:
     assert "## Compared with the run of 2026-10-17" in page
     assert "| NFR-1 | 0.128 ms | 0.080 ms |" in page
     assert comparison(rows, None) is None
+
+
+def test_notes_on_a_run_are_kept_in_the_file_and_the_page() -> None:
+    """Observations written by hand in loadtest/notes.md, beside the generated figures."""
+    note = "NFR-7's p95 rose from 159.9 ms to 275.1 ms, inside its 2 s target: an observation."
+    doc = document(passing(), HOST, None, notes=[note])
+    assert doc["notes"] == [note]
+    page = markdown(doc)
+    assert f"## Notes\n\n- {note}\n" in page
+    assert "## Notes" not in markdown(document(passing(), HOST))
