@@ -22,15 +22,18 @@ from app.core.middleware import RequestIdMiddleware
 from app.core.redis import create_redis
 from app.core.security import check_startup_config
 from app.core.storage import MEDIA_URL_PREFIX
+from app.services.metrics import Metrics
 from app.services.snapshot import SnapshotCache
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """One fan-out hub per instance (CI-7). Tests set app.state.redis_url before startup."""
+    """One fan-out hub and one set of counters per instance (CI-7, NFR-8). Tests set
+    app.state.redis_url before startup."""
     from app.services.fanout import Hub
 
     url = getattr(app.state, "redis_url", settings.redis_url)
+    app.state.metrics = Metrics(create_redis(url), create_redis(settings.celery_broker_url))
     hub = Hub(url, create_redis(url))
     await hub.start()
     app.state.hub = hub

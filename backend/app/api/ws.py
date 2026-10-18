@@ -38,6 +38,7 @@ from app.api.deps import (
     get_bid_service,
     get_clock,
     get_limiter,
+    get_metrics,
     get_redis,
     get_sessions,
 )
@@ -62,6 +63,7 @@ from app.services.auth import AuthService, CurrentUser
 from app.services.bidding import BidResult, BidService, ProxyResult, log_bid, log_proxy
 from app.services.fanout import Connection, Hub
 from app.services.live_events import alias, event
+from app.services.metrics import Metrics, ledger_rows
 from app.services.snapshot import live_snapshot
 
 router = APIRouter()
@@ -137,6 +139,7 @@ async def live_socket(
     sessions: async_sessionmaker[AsyncSession] = Depends(get_sessions),
     limiter: RateLimiter = Depends(get_limiter),
     clock: Clock = Depends(get_clock),
+    metrics: Metrics = Depends(get_metrics),
 ) -> None:
     origin = websocket.headers.get("origin")
     if origin is not None and origin not in settings.origin_allowlist:
@@ -169,7 +172,7 @@ async def live_socket(
     log.info("ws authenticated", extra=_fields(conn_id=conn_id, user_id=str(user.id)))
     conn.offer(event("authenticated", user_id=str(user.id), expires_at_ms=user.expires_at * 1000))
 
-    session = LiveSession(conn, hub, auth, bids, redis, sessions, limiter, clock)
+    session = LiveSession(conn, hub, auth, bids, redis, sessions, limiter, clock, metrics)
     tasks = [
         asyncio.create_task(session.read_loop(), name="read"),
         asyncio.create_task(conn.run_writer(), name="write"),
@@ -222,9 +225,11 @@ class LiveSession:
         sessions: async_sessionmaker[AsyncSession],
         limiter: RateLimiter,
         clock: Clock,
+        metrics: Metrics,
     ) -> None:
         self.conn, self.hub, self.auth, self.bids = conn, hub, auth, bids
         self.redis, self.sessions, self.limiter, self.clock = redis, sessions, limiter, clock
+        self.metrics = metrics
         self.client_code: int | None = None  # close code the client sent, if it closed
         self.strikes = 0
         self.strike_mark = 0.0  # clock time from which the next strike is forgiven
@@ -453,6 +458,7 @@ class LiveSession:
             self._reject(message, result.code or "SERVICE_UNAVAILABLE", result)
             return
         self.conn.offer(self._ack(message, result))  # acknowledge first (FR-40, NFR-3)
+        self.metrics.record_bid(accepted=ledger_rows(result), code=None)  # after the ack (NFR-8)
         try:
             await live_events.publish_bid_events(
                 self.redis, message.auction_id, self.conn.user.id, result, self.bids.record_outbid
@@ -524,3 +530,5 @@ class LiveSession:
                 **{k: v for k, v in extra.items() if v is not None},
             )
         )
+        if isinstance(message, PlaceBid):
+            self.metrics.record_bid(accepted=0, code=code)  # after the answer (NFR-8)

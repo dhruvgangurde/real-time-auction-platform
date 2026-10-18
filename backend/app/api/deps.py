@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import Depends, Header, Request
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from starlette.requests import HTTPConnection
 
 from app.core.clock import Clock, SystemClock
 from app.core.config import settings
@@ -26,6 +27,7 @@ from app.services.closing import Closer
 from app.services.demo import DemoService
 from app.services.denylist import Denylist
 from app.services.email import ConsoleEmailSender, EmailSender, QueuedEmailSender
+from app.services.metrics import Metrics
 from app.services.notifications import NotificationService
 from app.services.payment_gateway import razorpay_from_settings
 from app.services.payments import PaymentService
@@ -92,6 +94,19 @@ def get_auth_service() -> AuthService:
 @cache
 def get_user_service() -> UserService:
     return UserService(get_sessions(), get_clock(), _denylist(), notify_revoked=_notify_revoked)
+
+
+@cache
+def _metrics() -> Metrics:
+    from app.core.redis import create_redis
+
+    return Metrics(get_redis(), create_redis(settings.celery_broker_url))
+
+
+def get_metrics(conn: HTTPConnection) -> Metrics:
+    """This instance's counters (NFR-8), made at startup; one shared set when the app runs
+    without its lifespan (tests over ASGITransport)."""
+    return getattr(conn.app.state, "metrics", None) or _metrics()
 
 
 @cache

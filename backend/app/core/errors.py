@@ -2,10 +2,12 @@
 optional "fields" object of per-field messages for validation failures (FR-12)."""
 
 import logging
+from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger(__name__)
@@ -19,6 +21,7 @@ class AppError(Exception):
         status: int = 400,
         headers: dict[str, str] | None = None,
         fields: dict[str, str] | None = None,
+        after: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -26,6 +29,7 @@ class AppError(Exception):
         self.status = status
         self.headers = headers or {}
         self.fields = fields
+        self.after = after  # runs once the error response is sent (a count, never the answer)
 
 
 def envelope(
@@ -42,7 +46,10 @@ def envelope(
 
 
 async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
-    return envelope(exc.code, exc.message, exc.status, exc.headers, exc.fields)
+    response = envelope(exc.code, exc.message, exc.status, exc.headers, exc.fields)
+    if exc.after is not None:
+        response.background = BackgroundTask(exc.after)
+    return response
 
 
 async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:

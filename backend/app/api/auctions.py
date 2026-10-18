@@ -4,6 +4,7 @@ The fallback calls the same BidService with the same request_id contract. The HT
 the acknowledgement; room and user events are published after it is sent (FR-40).
 """
 
+from functools import partial
 from typing import Any
 from uuid import UUID
 
@@ -17,6 +18,7 @@ from app.api.deps import (
     current_user,
     get_bid_service,
     get_limiter,
+    get_metrics,
     get_redis,
     get_sessions,
     optional_user,
@@ -36,6 +38,7 @@ from app.services.bidding import (
     log_bid,
     log_proxy,
 )
+from app.services.metrics import Metrics, ledger_rows
 from app.services.snapshot import SnapshotCache, live_snapshot
 
 router = APIRouter(prefix="/api/v1/auctions", tags=["auctions"])
@@ -112,6 +115,7 @@ async def place_bid(
     bids: BidService = Depends(get_bid_service),
     redis: Redis = Depends(get_redis),
     limiter: RateLimiter = Depends(get_limiter),
+    metrics: Metrics = Depends(get_metrics),
 ) -> dict[str, Any]:
     # the same per-user limit as the WebSocket path (FR-44, NFR-22)
     try:
@@ -120,13 +124,18 @@ async def place_bid(
         )
     except AppError as exc:  # refused before arbitration: still one FR-44 line
         log_bid(auction_id, user.id, body.amount, body.request_id, BidResult(False, exc.code))
+        exc.after = partial(metrics.count_bid, 0, exc.code)  # NFR-8, once the answer is sent
         raise
     result = await bids.place_bid(auction_id, user.id, body.amount, body.request_id)
     if not result.accepted:
-        raise _rejection(result.code or "SERVICE_UNAVAILABLE", result.min_next)
+        code = result.code or "SERVICE_UNAVAILABLE"
+        error = _rejection(code, result.min_next)
+        error.after = partial(metrics.count_bid, 0, code)
+        raise error
     background.add_task(
         live_events.publish_bid_events, redis, auction_id, user.id, result, bids.record_outbid
     )
+    background.add_task(metrics.count_bid, ledger_rows(result), None)
     return _bid_ack(auction_id, body.request_id, result)
 
 
@@ -139,6 +148,7 @@ async def set_proxy(
     bids: BidService = Depends(get_bid_service),
     redis: Redis = Depends(get_redis),
     limiter: RateLimiter = Depends(get_limiter),
+    metrics: Metrics = Depends(get_metrics),
 ) -> dict[str, Any]:
     try:
         await limiter.hit(
@@ -153,6 +163,8 @@ async def set_proxy(
     background.add_task(
         live_events.publish_bid_events, redis, auction_id, user.id, result, bids.record_outbid
     )
+    if result.automatic_bids:  # bids the maximum placed are accepted bids too (NFR-8)
+        background.add_task(metrics.count_bid, ledger_rows(result), None)
     return _proxy_ack(auction_id, body.request_id, result)
 
 

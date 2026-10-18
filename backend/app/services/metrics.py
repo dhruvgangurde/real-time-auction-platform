@@ -20,6 +20,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app import lua
+from app.services.bidding import BidResult, ProxyResult
 
 log = logging.getLogger("metrics")
 
@@ -33,6 +34,12 @@ LAST_RECONCILE = "metrics:reconcile:last"
 BID_TTL_S = 120
 ERROR_TTL_S = 700
 MINUTES = 10
+
+
+def ledger_rows(result: BidResult | ProxyResult) -> int:
+    """The ledger rows a decision created: the bid itself, if accepted, and automatic bids."""
+    own = 1 if isinstance(result, BidResult) and result.accepted else 0
+    return own + len(result.automatic_bids)
 
 
 class Metrics:
@@ -58,6 +65,10 @@ class Metrics:
     def record_bid(self, *, accepted: int, code: str | None) -> None:
         """One bid decision: the ledger rows it created, or the reason it was refused."""
         self.spawn(self._quietly(self.bump_bids(accepted=accepted, rejected=code)))
+
+    async def count_bid(self, accepted: int, code: str | None) -> None:
+        """For an HTTP background task, which runs after the response is sent."""
+        self.record_bid(accepted=accepted, code=code)
 
     def record_5xx(self) -> None:
         self.spawn(self._quietly(self.bump_5xx()))
