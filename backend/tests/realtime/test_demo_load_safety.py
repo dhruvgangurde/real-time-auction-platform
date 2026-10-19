@@ -64,8 +64,12 @@ async def test_twenty_visitors_at_once_make_one_run(node: Instance, db: asyncpg.
 
 
 async def test_one_address_at_once_gets_through_three_times_at_most(
-    node: Instance, db: asyncpg.Connection, redis: Redis
+    node: Instance, db: asyncpg.Connection, redis: Redis, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # the code default (3 an hour), whatever a local .env raises it to for a recording
+    default = Settings.model_fields["rate_limit_demo_stress_ip"].default
+    assert default == "3/3600"
+    monkeypatch.setattr(settings, "rate_limit_demo_stress_ip", default)
     async with httpx.AsyncClient(base_url=node.http) as http:
         answers = await asyncio.gather(*(_press(http, "198.51.100.7") for _ in range(10)))
     codes = sorted(a.status_code for a in answers)
