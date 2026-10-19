@@ -90,7 +90,7 @@ export function createRoomController(deps: RoomDeps) {
   }
 
   function schedulePoll(): void {
-    if (stopped || deps.socket !== null) return;
+    if (stopped || deps.socket !== null || state.terminal !== null) return; // a closed lot changes no more
     pollTimer = deps.timers.setTimeout(() => {
       pollTimer = null;
       if (deps.hidden()) {

@@ -101,6 +101,8 @@ export function BidControl({ state, session, profile, signedIn, startTimeMs, pai
       </div>
     ));
   }
+  // a closed lot: nothing to bid on, whoever is looking (the winner's Pay panel is below)
+  if (state.terminal !== null && state.own.result !== 'won') return null;
   // after 4004 the token is forgotten, so this comes before the anonymous panel
   if (state.closedCode === 4004) {
     return panel(b.signedOutHead, b.signedOutNote, (
@@ -152,7 +154,6 @@ export function BidControl({ state, session, profile, signedIn, startTimeMs, pai
       </div>
     );
   }
-  if (state.terminal !== null) return null; // lost, no sale, cancelled: nothing to do next
   if (state.status === 'scheduled') {
     return (
       <div className={styles.panel}>

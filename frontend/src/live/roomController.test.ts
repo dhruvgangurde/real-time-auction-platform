@@ -79,6 +79,20 @@ describe('polling mode (item 3)', () => {
     expect(room.actions.map((a) => a.type)).toEqual(['snapshot', 'snapshot', 'snapshot', 'bidSent', 'frame']);
   });
 
+  test('polling stops once a snapshot says the lot is closed', async () => {
+    const timers = new FakeTimers();
+    let status: LiveSnapshot['status'] = 'live';
+    const fake = fakeApi(() => snapshot(1, { status }));
+    const room = createRoomController({ auctionId: A, api: fake.api, socket: null, timers, hidden: () => false, requestId: () => 'rid-1' });
+    await room.start();
+    status = 'closed_sold';
+    await timers.advance(2_000);
+    expect(fake.calls).toEqual(['live', 'live']);
+    expect(room.getState().terminal).toBe('closed_sold');
+    await timers.advance(10_000);
+    expect(fake.calls).toHaveLength(2); // a closed lot changes no more: nothing is asked again
+  });
+
   test('a REST rejection reaches the reducer as a bid_rejected frame with min_next', async () => {
     const timers = new FakeTimers();
     const fake = fakeApi(() => snapshot(2));

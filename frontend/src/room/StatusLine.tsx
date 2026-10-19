@@ -23,6 +23,7 @@ export function StatusLine({
   const live = !isStale(state) && (state.connection === 'connected' || state.connection === 'reconnected') && state.subscribed;
   let text: string;
   let useTab = false;
+  if (state.terminal !== null) return null; // closed: no connection to speak of, the price block says how it ended
   if (state.status === null) text = s.connecting;
   else if (state.status === 'draft') text = s.draft;
   else if (state.degraded) {
