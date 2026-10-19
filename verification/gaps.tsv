@@ -18,4 +18,3 @@ CI-5	The message types are in backend/app/schemas/ws.py and the server's events 
 NFR-16	TLS and strict transport security are a deployment matter (TBD-2)
 NFR-23	Postgres and Redis have no public port (docker-compose.override.yml binds 127.0.0.1 only), but Redis requires no authentication
 OR-7	No test stores and reads back non-ASCII names, titles or descriptions
-FR-39	No test asserts all three effects of one acceptance together (new highest bid and bidder, the sequence increment, the soft close); test_concurrency.py shows highest and sequence move as one, test_soft_close.py that the same call extends. Until 2026-10-19 the matrix counted the helper proxy_model.py (audit M12)
