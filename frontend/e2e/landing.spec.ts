@@ -132,6 +132,9 @@ test('the hero replays a real run from its ledger, once, and again on Replay aga
   await expect(b.getByText(l.board.replay, { exact: true })).toBeVisible();
   // it plays by itself, at the recorded pace: the first bid, then the end
   await expect(b.locator('tbody tr')).not.toHaveCount(0, { timeout: 20_000 });
+  // while it plays: the present tense
+  await expect(b.getByText(l.board.currentBid, { exact: true })).toBeVisible();
+  await expect(b.getByText(/ leads with bid №\d+\./)).toBeVisible();
   await expect(b.getByRole('button', { name: l.board.again })).toBeVisible({ timeout: 40_000 });
 
   // the four bids in the ledger, newest first; the proxy's two by maximum, never the maximum
@@ -141,6 +144,11 @@ test('the hero replays a real run from its ledger, once, and again on Replay aga
   await expect(rows.locator('td:nth-child(3)')).toHaveText(['₹10,500', '₹10,000', '₹9,500', '₹9,000']);
   await expect(b.locator('tbody td').getByText(l.board.ledger.byMaximum, { exact: true })).toHaveCount(2);
   await expect(b.getByText(l.board.sold(winner, '₹10,500', 4))).toBeVisible();
+  // at the close: the outcome, never the present tense
+  await expect(b.getByText(l.board.finalBid, { exact: true })).toBeVisible();
+  await expect(b.getByText(l.board.won(winner, 4))).toBeVisible();
+  await expect(b.getByText(l.board.currentBid, { exact: true })).toHaveCount(0);
+  await expect(b.getByText(/ leads with bid №/)).toHaveCount(0);
   await expect(b.getByText(l.board.reserveMet)).toBeVisible();
   // the card (design/polish): how the newest bid landed, with its real number; what the run proved; its ledger
   await expect(b.getByRole('listitem').filter({ hasText: l.board.steps.decides(4) })).toBeVisible();

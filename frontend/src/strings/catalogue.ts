@@ -828,8 +828,10 @@ export type LandingCatalogue = {
     replayOf: (day: string, time: string) => string;
     loading: string;
     currentBid: string;
+    finalBid: string;
     startingPrice: string;
     leads: (alias: string, sequence: number) => string;
+    won: (alias: string, sequence: number) => string;
     bids: (n: number) => string;
     noBids: (amount: string) => string;
     ends: (time: string, windowS: number, extension: string) => string;

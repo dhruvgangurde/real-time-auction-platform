@@ -11,6 +11,7 @@ import { changedFrom } from '../room/time';
 import { landingEnIN } from '../strings/landing-en-IN';
 import type { LandingApi } from './api';
 import styles from './board.module.css';
+import { cardWords } from './cardWords';
 import { ANIMATED, frameAt, type ReplayBid } from './replay';
 import { FRAME_MS, usePlayback, useRecording } from './useReplay';
 
@@ -118,11 +119,12 @@ export function Board({ demo, auctionId }: { demo: LandingApi; auctionId: string
     const count = frame.applied + rec.earlier;
     const reserve = lot.has_reserve ? (lot.reserve_met ? t.reserveMet : t.reserveNotMet) : t.noReserve;
     const time = (ms: number) => formatLocal(ms, { seconds: true });
+    const words = cardWords(latest, play.finished, lot.status === 'closed_sold', formatINR(lot.start_price));
     body = (
       <>
         <div className={styles.priceRow}>
           <div>
-            <div className={styles.label}>{latest === null ? t.startingPrice : t.currentBid}</div>
+            <div className={styles.label}>{words.label}</div>
             <p className={`${styles.price} tabular`}>
               {latest === null ? formatINR(lot.start_price) : <Price amount={latest.amount} previous={previous} fresh={play.t - latest.at < BAND_MS} />}
             </p>
@@ -130,7 +132,7 @@ export function Board({ demo, auctionId }: { demo: LandingApi; auctionId: string
           <span className={`${styles.clockTime} tabular`}>{formatRemaining(frame.remainingMs)}</span>
         </div>
         <p className={styles.lead}>
-          {latest === null ? t.noBids(formatINR(lot.start_price)) : t.leads(latest.alias, latest.seq)}{' '}
+          {words.lead}{' '}
           {latest === null ? null : t.bids(count)} {reserve}{' '}
           {play.finished
             ? t.closedAt(time(rec.endMs))
