@@ -126,6 +126,16 @@ From the load-test run of 2026-10-18 on one laptop (110 simulated bidders in one
 
 [docs/verification.md](docs/verification.md) maps every requirement of the specification to the tests, load-test rows, inspections and demonstrations that verify it, and lists the ones without any as gaps, with the reason. `npm test` fails when it falls out of date.
 
+## Known issues
+
+From the project audit of 2026-10-19. The open ones are to be fixed before any deployment; none affects the local development stack in normal use.
+
+- **C1, fixed:** the app refuses to start outside `APP_ENV=local` with a placeholder or committed dev `JWT_SECRET` or `ALIAS_SECRET`. `APP_ENV` defaults to `local`, so a deployment must set it explicitly.
+- **H1:** after a Redis crash that loses its last second of writes, a bid colliding with an already persisted sequence number is set aside, but the auction still settles, possibly against the bidder Redis told was leading.
+- **H2:** behind a reverse proxy every client shares one IP address, so the per-address rate limits apply to the whole site.
+- **H3:** there is no production compose file: the base file runs the development server with code reloading, without restart policies or log rotation.
+- **H4:** while Postgres is down, bids are still accepted on Redis alone, with no bound on how long or how many.
+
 ## Backup and restore
 
 The `backup` service takes one database dump and one archive of the uploaded images per day while the stack runs, keeps seven days, and writes them to `BACKUP_DIR`, a folder outside the repository. `bash backend/scripts/restore-drill.sh` takes a backup with the same code, restores it into a scratch database and folder, and checks it: every table's rows, the six ledger checks on a real run, every image byte for byte. Its evidence: [ops/evidence/](ops/evidence/).
