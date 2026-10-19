@@ -10,7 +10,8 @@ any other; nothing marks it as a maximum (audit M1).
 
 The first test arms a leading maximum with a distinctive value that is never reached and asserts
 it appears nowhere except in its owner's own result: not in other bidders' results, not in any
-log line, not in audit_log.
+log line as the app writes it (JsonFormatter: the message plus record.fields, audit M11), not in
+audit_log. The WebSocket path is checked the same way.
 """
 
 import dataclasses
@@ -20,14 +21,36 @@ import asyncpg
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.logging import JsonFormatter
 from app.services.bidding import AutomaticBid, BidResult, BidService
 from app.services.ledger import persist_outbox
 from app.services.live_events import bid_events
 from app.services.reconciliation import reconcile_auction
 from tests.bidding.conftest import AuctionFactory
+from tests.realtime.client import Client
+from tests.realtime.conftest import (  # noqa: F401  fixtures for the WebSocket path
+    auth_service,
+    bid_service,
+    clock,
+    email,
+    limiter,
+    make_bidder,
+    notify,
+    start_instance,
+    started_instances,
+    tuned,
+    user_service,
+)
 
 SECRET_MAX = 777_001  # alice's leading maximum: never reached, must never leak
 RUNNER_UP_MAX = 555_001  # bob's maximum: becomes a public bid amount under FR-49
+
+
+def _leaks(records: list[logging.LogRecord], secret: str) -> list[str]:
+    """Every captured record as the app writes it (JsonFormatter: the message and the record's
+    `fields`) that contains the secret. caplog.text would show the message alone."""
+    formatter = JsonFormatter()
+    return [line for line in (formatter.format(r) for r in records) if secret in line]
 
 
 async def test_leading_maximum_appears_only_in_owner_result(
@@ -64,7 +87,8 @@ async def test_leading_maximum_appears_only_in_owner_result(
     secret = str(SECRET_MAX)
     for result in others:
         assert secret not in repr(result), result
-    assert secret not in caplog.text, "the leading maximum reached a log line"
+    assert {r.getMessage() for r in caplog.records} >= {"bid", "proxy"}  # the lines exist
+    assert _leaks(caplog.records, secret) == [], "the leading maximum reached a log line"
     for record in caplog.records:
         fields = getattr(record, "fields", {})
         if record.getMessage() == "proxy":
@@ -120,3 +144,33 @@ async def test_a_maximum_can_be_the_resulting_bid_but_nothing_labels_it(
     rows = await db.fetch("SELECT * FROM bids WHERE auction_id = $1 ORDER BY sequence_no", a)
     assert (rows[-1]["amount"], rows[-1]["bid_type"]) == (1_600_000, "automatic")
     assert not [c for c in rows[-1].keys() if "max" in c]
+
+
+async def test_leading_maximum_never_reaches_a_log_line_over_the_websocket(
+    start_instance,  # noqa: F811  imported fixture
+    make_bidder,  # noqa: F811  imported fixture
+    auction: AuctionFactory,
+    caplog,
+) -> None:
+    """M11: the WebSocket path (FR-44 bid and proxy lines, NFR-32) renders no maximum either."""
+    node = await start_instance()
+    a = await auction(start_price=10_000, min_increment=100)
+    _, alice_token = await make_bidder()
+    _, bob_token = await make_bidder()
+    alice = await Client.open(node.ws, token=alice_token)
+    bob = await Client.open(node.ws, token=bob_token)
+    await alice.subscribe(a)
+    await bob.subscribe(a)
+    proxy = {"type": "set_proxy", "auction_id": str(a), "max_amount": SECRET_MAX}
+    bid = {"type": "place_bid", "auction_id": str(a), "amount": 600_000}
+    with caplog.at_level(logging.DEBUG):
+        await alice.send({**proxy, "request_id": "p1"})
+        armed = await alice.expect("proxy_armed", request_id="p1")
+        await bob.send({**bid, "request_id": "b1"})
+        await bob.expect("bid_accepted", request_id="b1")
+    assert armed["max_amount"] == SECRET_MAX  # the owner's own frame (FR-51)
+    # the websockets library dumps every frame at DEBUG, the owner's own proxy_armed included;
+    # that transport trace sits below the app's LOG_LEVEL (INFO), so it is left out here
+    records = [r for r in caplog.records if not r.name.startswith("websockets")]
+    assert {r.getMessage() for r in records} >= {"bid", "proxy"}  # the lines exist
+    assert _leaks(records, str(SECRET_MAX)) == [], "the leading maximum reached a log line"
