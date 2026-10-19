@@ -230,7 +230,8 @@ class AuthService:
         now = self._clock.now()
         async with self._sessions() as session, session.begin():
             repo = SessionRepository(session)
-            row = await repo.get_by_token_hash(token_hash(raw_refresh))
+            old_digest = token_hash(raw_refresh)
+            row = await repo.get_by_token_hash(old_digest)
             if row is None or row.revoked_at is not None or row.expires_at <= now:
                 raise invalid
             users = UserRepository(session)
@@ -240,9 +241,9 @@ class AuthService:
             self._require_active(user.status)
             roles = await users.roles(user.id)
             new_raw, new_digest = new_token()
-            await repo.rotate(
-                row.id, new_digest, now + timedelta(seconds=settings.refresh_token_ttl_s)
-            )
+            ttl = timedelta(seconds=settings.refresh_token_ttl_s)
+            if not await repo.rotate(row.id, old_digest, new_digest, now + ttl):
+                raise invalid  # another refresh with the same token rotated it first
             sid = row.id
         return Tokens(
             issue_access_token(user.id, roles, sid, now), new_raw, settings.access_token_ttl_s

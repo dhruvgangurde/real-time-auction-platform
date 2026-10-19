@@ -1,5 +1,7 @@
 """Refresh rotation and logout (FR-5, FR-6, NFR-17, NFR-21)."""
 
+import asyncio
+
 import pytest
 from httpx import AsyncClient
 from redis.asyncio import Redis
@@ -208,3 +210,26 @@ async def test_access_token_expires_by_clock(
     clock.advance(15 * 60 + 1)
     r = await client.get("/api/v1/users/me", headers=bearer(token))
     assert r.status_code == 401 and r.json()["error"]["code"] == "TOKEN_EXPIRED"
+
+
+async def test_concurrent_refreshes_with_one_token_give_exactly_one_success(
+    client: AsyncClient, email: RecordingEmail
+) -> None:
+    """NFR-17 (audit M3): rotation is conditional on the token presented, so two refreshes racing
+    with the same token cannot both succeed; the loser gets INVALID_TOKEN."""
+    for _ in range(3):  # several sessions: each round is one race on one token
+        address = fresh_email()
+        await register_verified(client, email, address)
+        await login(client, address)
+        raw = client.cookies.get("refresh_token", path="/api/v1/auth")
+        client.cookies.clear()  # both requests present exactly this token, not the jar's
+        headers = {**CSRF, "Cookie": f"refresh_token={raw}"}
+        both = await asyncio.gather(
+            client.post("/api/v1/auth/refresh", headers=headers),
+            client.post("/api/v1/auth/refresh", headers=headers),
+        )
+        codes = sorted(r.status_code for r in both)
+        assert codes == [200, 401], [r.text for r in both]
+        loser = next(r for r in both if r.status_code == 401)
+        assert loser.json()["error"]["code"] == "INVALID_TOKEN"
+        client.cookies.clear()

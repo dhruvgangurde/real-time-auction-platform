@@ -24,13 +24,18 @@ class SessionRepository(BaseRepository):
         stmt = select(SessionRow).where(SessionRow.refresh_token_hash == token_hash)
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
-    async def rotate(self, session_id: UUID, new_hash: str, expires_at: datetime) -> None:
-        """Replace the refresh token on the same session; the old one stops working (NFR-17)."""
-        await self.session.execute(
+    async def rotate(
+        self, session_id: UUID, old_hash: str, new_hash: str, expires_at: datetime
+    ) -> bool:
+        """Replace the refresh token on the same session; the old one stops working (NFR-17).
+        Only while the session still holds the token presented: of two refreshes racing with one
+        token, the second finds the hash already replaced and changes nothing (audit M3)."""
+        result = await self.session.execute(
             update(SessionRow)
-            .where(SessionRow.id == session_id)
+            .where(SessionRow.id == session_id, SessionRow.refresh_token_hash == old_hash)
             .values(refresh_token_hash=new_hash, expires_at=expires_at)
         )
+        return bool(result.rowcount)
 
     async def revoke(self, session_id: UUID, now: datetime) -> bool:
         result = await self.session.execute(
