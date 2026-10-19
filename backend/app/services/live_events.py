@@ -22,11 +22,11 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app.core.config import settings
+from app.core.security import _DEV_ALIAS_SECRET
 from app.services.bidding import BidResult, OutbidRecorder, ProxyResult
 
 log = logging.getLogger("live_events")
 
-_DEV_ALIAS_SECRET = "dev-only-alias-secret-not-for-deployment-012345"
 FINAL_EXTENSION = 10  # FR-54
 
 

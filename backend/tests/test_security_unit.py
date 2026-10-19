@@ -122,3 +122,59 @@ def test_startup_refuses_dev_secret_outside_local(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(settings, "razorpay_key_secret", "s")
     monkeypatch.setattr(settings, "razorpay_webhook_secret", "w")
     security.check_startup_config()
+
+
+# C1 (audit 2026-10-19): a known secret signs forgeable admin tokens, whatever its length
+_OLD_PLACEHOLDERS = (
+    "change-me-to-a-random-string-of-at-least-32-bytes",  # .env.example JWT_SECRET until 2026-10-19
+    "change-me-to-another-random-string-of-32-bytes",  # .env.example ALIAS_SECRET until 2026-10-19
+)
+_STRONG = "Q2xK4vH8nR1tY6uW0zB3mN7cE5fG9hJ2kL4pS8dA1qX6rT0v"  # 48 chars, no marker
+
+
+def _deployable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every other startup check satisfied, outside local."""
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "jwt_secret", _STRONG)
+    monkeypatch.setattr(settings, "alias_secret", _STRONG[::-1])
+    monkeypatch.setattr(settings, "email_backend", "smtp")
+    monkeypatch.setattr(settings, "razorpay_key_id", "rzp_test_x")
+    monkeypatch.setattr(settings, "razorpay_key_secret", "s")
+    monkeypatch.setattr(settings, "razorpay_webhook_secret", "w")
+
+
+@pytest.mark.parametrize("name", ["jwt_secret", "alias_secret"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        *_OLD_PLACEHOLDERS,
+        security._DEV_SECRET,
+        security._DEV_ALIAS_SECRET,
+        "please-CHANGE-ME-before-deploying-this-secret-value",
+    ],
+)
+def test_startup_refuses_known_secrets_outside_local(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    """NFR-26: a secret that is public (committed or a placeholder) is refused however long."""
+    _deployable(monkeypatch)
+    monkeypatch.setattr(settings, name, value)
+    with pytest.raises(RuntimeError, match=name.upper()):
+        security.check_startup_config()
+
+
+def test_startup_accepts_generated_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    _deployable(monkeypatch)
+    security.check_startup_config()
+
+
+@pytest.mark.parametrize("name", ["jwt_secret", "alias_secret"])
+def test_local_warns_on_a_placeholder_and_starts(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, name: str
+) -> None:
+    _deployable(monkeypatch)
+    monkeypatch.setattr(settings, "app_env", "local")
+    monkeypatch.setattr(settings, name, _OLD_PLACEHOLDERS[0])
+    with caplog.at_level("WARNING", logger="security"):
+        security.check_startup_config()
+    assert any(name.upper() in r.getMessage() for r in caplog.records)

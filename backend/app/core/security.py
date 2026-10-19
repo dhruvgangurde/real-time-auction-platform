@@ -24,6 +24,7 @@ log = logging.getLogger("security")
 
 TOKEN_PATTERN = r"^[A-Za-z0-9_-]{43}$"  # secrets.token_urlsafe(32)
 _DEV_SECRET = "dev-only-jwt-secret-not-for-deployment-0123456789"
+_DEV_ALIAS_SECRET = "dev-only-alias-secret-not-for-deployment-012345"  # NFR-27 pseudonyms, local
 _hasher = PasswordHasher(
     time_cost=settings.argon2_time_cost,
     memory_cost=settings.argon2_memory_kib,
@@ -67,19 +68,31 @@ def jwt_secret() -> str:
     return _DEV_SECRET
 
 
+def _known_secret(value: str) -> bool:
+    """A secret anyone can read: a committed dev fallback, or a placeholder (every one the
+    .env.example ever shipped says "change-me"). Length does not make it secret (audit C1)."""
+    return value in (_DEV_SECRET, _DEV_ALIAS_SECRET) or "change-me" in value.lower()
+
+
 def check_startup_config() -> None:
     """Refuse to start with dev-only security settings outside the local environment (NFR-26),
-    and with live payment keys anywhere: Release 1 uses the gateway's test mode only (AS-5)."""
+    and with live payment keys anywhere: Release 1 uses the gateway's test mode only (AS-5).
+    APP_ENV defaults to local, so a deployment must set it explicitly (decisions.md)."""
     if settings.razorpay_key_id and not settings.razorpay_key_id.startswith("rzp_test_"):
         raise RuntimeError("RAZORPAY_KEY_ID must be a test-mode key (rzp_test_...)")
+    secrets_ = {"JWT_SECRET": settings.jwt_secret, "ALIAS_SECRET": settings.alias_secret}
     if settings.app_env == "local":
         if len(settings.jwt_secret.encode()) < 32:
             log.warning("JWT_SECRET missing or short; using the dev-only secret (APP_ENV=local)")
+        for name, value in secrets_.items():
+            if _known_secret(value):
+                log.warning("%s is a placeholder or a dev secret; local use only", name)
         return
-    if len(settings.jwt_secret.encode()) < 32:
-        raise RuntimeError("JWT_SECRET must be at least 32 bytes outside APP_ENV=local")
-    if len(settings.alias_secret.encode()) < 32:
-        raise RuntimeError("ALIAS_SECRET must be at least 32 bytes outside APP_ENV=local")
+    for name, value in secrets_.items():
+        if len(value.encode()) < 32:
+            raise RuntimeError(f"{name} must be at least 32 bytes outside APP_ENV=local")
+        if _known_secret(value):
+            raise RuntimeError(f"{name} is a placeholder or a committed dev secret; generate one")
     if settings.email_backend == "console":
         raise RuntimeError("EMAIL_BACKEND=console is dev-only; configure a real sender (TBD-1)")
     if not (
