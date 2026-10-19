@@ -30,9 +30,9 @@ function Diagram({ topic, labels, description }: { topic: HelpTopic; labels: str
           <line x1="190" y1="26" x2="190" y2="74" stroke={INK} strokeWidth="1.5" strokeDasharray="4 3" />
           {t(20, 80, 0)}
           {t(340, 80, 1, { textAnchor: 'end' })}
-          {t(30, 32, 2)}
-          {t(200, 32, 3, { fill: GREEN })}
-          {t(190, 18, 4, { textAnchor: 'middle', fill: INK })}
+          {t(30, 34, 2)}
+          {t(200, 34, 3, { fill: GREEN })}
+          {t(190, 12, 4, { textAnchor: 'middle', fill: INK })}
         </svg>
       );
     case 'increment':
@@ -73,7 +73,7 @@ function Diagram({ topic, labels, description }: { topic: HelpTopic; labels: str
           {t(230, 26, 0, { textAnchor: 'middle', fill: INK })}
           {t(260, 80, 1, { textAnchor: 'middle' })}
           {t(340, 80, 2, { textAnchor: 'end' })}
-          {t(180, 34, 3)}
+          {t(176, 34, 3, { textAnchor: 'end' })}
           {t(300, 36, 4, { textAnchor: 'middle', fill: INK })}
         </svg>
       );
