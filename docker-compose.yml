@@ -76,7 +76,8 @@ services:
       - ./web/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./frontend/dist:/usr/share/nginx/html:ro  # empty until the SPA is built (Phase 10c)
     ports:
-      - "${WEB_HOST_PORT:-8011}:80"
+      # loopback only until deployment (audit M4): a reverse proxy on the same host still reaches it
+      - "127.0.0.1:${WEB_HOST_PORT:-8011}:80"
     networks:
       edge:
         ipv4_address: ${WEB_PROXY_IP:-10.201.0.10}  # the one address the api trusts

@@ -35,7 +35,7 @@ Open http://localhost:8011. `docker compose ps` shows `migrate` as `Exited (0)`:
 | Redis | 6389 |
 | Mailpit, the development mail inbox | 8025 |
 
-Change them with `WEB_HOST_PORT`, `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` and `MAILPIT_UI_HOST_PORT` in `.env`.
+Every port is published on 127.0.0.1 only, so nothing is reachable from your network. Change them with `WEB_HOST_PORT`, `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` and `MAILPIT_UI_HOST_PORT` in `.env`.
 
 ### Demo mode
 
