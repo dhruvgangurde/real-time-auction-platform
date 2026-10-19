@@ -5,7 +5,17 @@ import { execFileSync } from 'node:child_process';
 
 import { expect, test } from 'vitest';
 
+// @ts-expect-error: a plain .mjs script, no types
+import { build } from '../scripts/verification.mjs';
+
 test('the verification matrix is current and cites only SRS IDs', () => {
   const said = execFileSync('node', ['scripts/verification.mjs', '--check'], { encoding: 'utf8' });
   expect(said).toMatch(/^docs\/verification\.md is current: \d+ mapped, \d+ gaps/);
+});
+
+test('only test modules count as tests: helpers, fakes and conftest.py cite nothing (audit M12)', () => {
+  const page: string = build().page;
+  const cited = [...page.matchAll(/backend\/tests\/[\w/]+\.py/g)].map((m) => m[0]);
+  expect(cited.length).toBeGreaterThan(0);
+  expect(cited.filter((path) => !/\/test_\w+\.py$/.test(path))).toEqual([]);
 });
